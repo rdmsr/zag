@@ -1,0 +1,8 @@
+.zig-cache/
+zig-out/
+deps/
+iso_root*/
+docs/
+*.a
+zig-pkg/
+.config*
