@@ -1,6 +1,7 @@
 const std = @import("std");
 const ksyms = @import("ksyms");
 const pl = @import("base").pl;
+pub const rtl = @import("rtl");
 
 const DebugWriter = struct {
     pub const Error = error{};

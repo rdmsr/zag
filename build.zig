@@ -58,7 +58,17 @@ pub fn build(b: *std.Build) void {
 
     rtl_module.addImport("rtl", rtl_module);
 
-    const kernel_nosym = addKernel(b, plat, optimize, config_module, empty_ksyms_module, rtl_module);
+    const base_module = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .imports = &.{
+            .{ .name = "config", .module = config_module },
+            .{ .name = "rtl", .module = rtl_module },
+        },
+    });
+
+    base_module.addImport("base", base_module);
+
+    const kernel_nosym = addKernel(b, plat, optimize, config_module, empty_ksyms_module, rtl_module, base_module);
 
     b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
 
@@ -74,9 +84,34 @@ pub fn build(b: *std.Build) void {
     });
 
     // second pass
-    const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module);
+    const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, base_module);
 
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
+
+    const docs_module = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .target = b.graph.host,
+        .imports = &.{
+            .{ .name = "config", .module = config_module },
+            .{ .name = "ksyms", .module = ksyms_module },
+            .{ .name = "rtl", .module = rtl_module },
+        },
+    });
+    docs_module.addImport("base", docs_module);
+
+    const docs_obj = b.addObject(.{
+        .name = "kernel_docs",
+        .root_module = docs_module,
+    });
+
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    const docs_step = b.step("docs", "Generate and install documentation");
+    docs_step.dependOn(&install_docs.step);
 
     const iso_step = b.step("iso", "Build the ISO image");
     const result = image.addIso(b, plat.arch, "myos", kernel, b.dependency("limine", .{}));
@@ -124,7 +159,7 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
     return q;
 }
 
-fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module) *std.Build.Step.Compile {
+fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module, base: *std.Build.Module) *std.Build.Step.Compile {
     const target = b.resolveTargetQuery(targetQueryForPlatform(plat));
 
     const name = b.fmt("kernel-{s}", .{@tagName(plat.arch)});
@@ -140,20 +175,9 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
         }),
     });
 
-    const base_module = b.createModule(.{
-        .root_source_file = b.path("src/root.zig"),
-        .imports = &.{
-            .{ .name = "config", .module = config_module },
-            .{ .name = "ksyms", .module = ksyms_module },
-            .{ .name = "rtl", .module = rtl },
-        },
-    });
-
-    base_module.addImport("base", base_module);
-
     kernel.root_module.addImport("config", config_module);
     kernel.root_module.addImport("ksyms", ksyms_module);
-    kernel.root_module.addImport("base", base_module);
+    kernel.root_module.addImport("base", base);
     kernel.root_module.addImport("rtl", rtl);
 
     kernel.use_llvm = true;

@@ -2,6 +2,8 @@ const b = @import("base");
 
 pub const std_options = b.std_options;
 
+pub const rtl = @import("rtl");
+
 const std = @import("std");
 const ke = b.ke;
 const pl = b.pl;
