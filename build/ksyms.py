@@ -62,5 +62,6 @@ with open(args.output, 'w') as f:
     f.write("pub const KSym = struct {\n    addr: u64,\n    name: []const u8,\n};\n\n")
     f.write("pub const ksyms: []const KSym = &.{\n")
     for addr, name in symbols:
-        f.write(f"    .{{ .addr = 0x{addr:016x}, .name = \"{name}\" }},\n")
+        escaped = name.replace('\\', '\\\\').replace('"', '\\"')
+        f.write(f"    .{{ .addr = 0x{addr:016x}, .name = \"{escaped}\" }},\n")
     f.write("};\n")
