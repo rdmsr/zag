@@ -150,7 +150,7 @@ pub fn late_init() linksection(b.init) void {
 
     _ = posix.sigaction(posix.SIG.USR1, &sa, null);
 
-    std.log.info("bum: starting {} thread{s}", .{
+    std.log.info("um: starting {} thread{s}", .{
         ke.ncpus - 1,
         if ((ke.ncpus - 1) > 1) "s" else "",
     });
