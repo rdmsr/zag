@@ -1,0 +1,133 @@
+const std = @import("std");
+const config = @import("config");
+const rtl = @import("rtl");
+const b = @import("base");
+const ke = b.ke;
+const ki = ke.private;
+
+/// Deferred Procedure Call (DPC) structure.
+/// Used for scheduling work to be done when IPL is lowered below `ke.Ipl.Dispatch`.
+pub const Dpc = struct {
+    /// Entry into per-CPU DPC queue
+    link: rtl.List.Entry,
+    /// Routine to call
+    func: *const fn (?*anyopaque) void,
+    /// Argument passed to the routine
+    arg: ?*anyopaque,
+    /// Whether or not the DPC is currently inserted
+    inserted: bool,
+
+    /// Initialize a DPC for `func`.
+    pub fn init(func: *const fn (?*anyopaque) void) Dpc {
+        return .{
+            .link = undefined,
+            .func = func,
+            .arg = undefined,
+            .inserted = false,
+        };
+    }
+};
+
+/// Enqueue a DPC.
+/// If the DPC is already enqueued, this function is a no-op.
+pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
+    const ipl = ke.ipl.raise(.High);
+    const cpu = ke.curcpu();
+
+    if (!dpc.inserted) {
+        dpc.arg = arg;
+
+        // Insert the DPC on this CPU's DPC queue
+        cpu.dpc_lock.acquire_no_ipl();
+
+        cpu.dpc_queue.insert_tail(&dpc.link);
+
+        // Mark the DPC as pending on this CPU
+        ki.ipl.set_softint_pending(cpu, .Dispatch);
+
+        dpc.inserted = true;
+
+        cpu.dpc_lock.release_no_ipl();
+    }
+
+    ke.ipl.lower(ipl);
+}
+
+fn dispatch_queue(cpu: *ke.Cpu) void {
+    cpu.ipl = .Dispatch;
+
+    // Mark as handled, this must be done before enabling interrupts or we will race.
+    ki.ipl.clear_softint_pending(cpu, .Dispatch);
+
+    _ = ki.impl.enable_interrupts();
+
+    while (true) {
+        const ipl = cpu.dpc_lock.acquire_at(.High);
+
+        var dpc: *Dpc = undefined;
+
+        if (cpu.dpc_queue.is_empty()) {
+            // No more DPCs to process.
+            cpu.dpc_lock.release(ipl);
+            break;
+        }
+
+        // Pop the head
+        var first_elem = cpu.dpc_queue.first();
+
+        first_elem.remove();
+
+        dpc = @fieldParentPtr("link", first_elem);
+        dpc.inserted = false;
+
+        // An interrupt which would enqueue this DPC could occur between loading the argument and calling the routine,
+        // which is why we capture it here to ensure that we get the intended context.
+        const arg = dpc.arg;
+
+        cpu.dpc_lock.release(ipl);
+
+        std.debug.assert(cpu.ipl == .Dispatch);
+
+        dpc.func(arg);
+    }
+
+    if (cpu.start_timer) {
+        ke.timer.set(&cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &cpu.resched_dpc);
+    }
+
+    if (cpu.preemption_reason == .HigherPriority) {
+        // Reload the quantum for the new thread.
+        ke.timer.cancel(&cpu.resched_timer);
+
+        ke.timer.set(&cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &cpu.resched_dpc);
+    }
+
+    cpu.start_timer = false;
+    cpu.preemption_reason = .None;
+
+    if (cpu.next_thread != null) {
+        ki.sched.handle_preemption(cpu);
+    }
+
+    _ = ki.impl.disable_interrupts();
+}
+
+/// Dispatch the DPC queue on `cpu`.
+pub fn dispatch(cpu: *ke.Cpu) void {
+    // DPC processing is done at Ipl.Dispatch
+    // We can't call lower/raise here because they might call us again recursively.
+    var mycpu = cpu;
+    const old_ipl = cpu.ipl;
+    const int_state = ki.impl.disable_interrupts();
+
+    while (ki.ipl.is_softint_pending(mycpu, .Dispatch)) {
+        dispatch_queue(mycpu);
+
+        // Our CPU might have changed.
+        mycpu = ke.curcpu();
+    }
+
+    cpu.ipl = old_ipl;
+
+    ki.impl.restore_interrupts(int_state);
+}

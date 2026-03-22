@@ -1,0 +1,24 @@
+.{
+    .fingerprint = 0x9179a89c7cb7baa,
+    .name = .zag,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.15.0",
+    .dependencies = .{
+        .limine = .{
+            .url = "git+https://codeberg.org/Limine/Limine#v10.x-binary",
+            .hash = "N-V-__8AAL1qTADWWlnz4JFHM8Pg-h0E3DlZ-Fr5aMZ-gatM",
+        },
+
+        .ovmf = .{
+            .url = "https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-20260318T020202Z/edk2-ovmf.tar.gz",
+            .hash = "N-V-__8AAAAAjAwsopZIlbp4U6NN1Eh573uVdLTwl1mkFUug",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "build",
+    },
+}
