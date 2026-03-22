@@ -37,8 +37,6 @@ pub const GlobalState = struct {
 pub var global_state: GlobalState = undefined;
 pub threadlocal var my_cpu: *ke.Cpu = undefined;
 
-var cpu_id: u32 = 0;
-
 pub fn devices_init() void {}
 
 pub fn debug_write(char: u8) void {
@@ -64,9 +62,7 @@ pub fn early_init() linksection(b.init) void {
 
     my_cpu.impl.pthread = c.pthread_self();
 
-    // Allocate our ID
     my_cpu.id = 0;
-    cpu_id += 1;
 
     const memfd: i32 = @intCast(linux.memfd_create("phys_memory", 0));
 
@@ -119,7 +115,6 @@ var cpus_up = std.atomic.Value(usize).init(0);
 fn other_cpu_entry(arg: ?*anyopaque) callconv(.c) ?*anyopaque {
     my_cpu = @ptrCast(@alignCast(arg.?));
 
-    my_cpu.id = @atomicRmw(u32, &cpu_id, .Add, 1, .monotonic);
     my_cpu.impl.pthread = c.pthread_self();
 
     my_cpu.init(my_cpu.idle_thread.?);
@@ -169,6 +164,7 @@ pub fn late_init() linksection(b.init) void {
         ke.cpus[i] = allocator.create(ke.Cpu) catch @panic("oom");
 
         ke.cpus[i].idle_thread = allocator.create(ke.Thread) catch @panic("oom");
+        ke.cpus[i].id = @intCast(i);
 
         make_thread(idle, ke.cpus[i].idle_thread.?);
 
