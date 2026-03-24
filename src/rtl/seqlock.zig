@@ -43,7 +43,7 @@ pub fn SeqLock(comptime T: type) type {
             self.sequence.store(seq + 1, .monotonic);
 
             // Ensure the data write happens *after* the sequence is incremented.
-            rtl.fence.wmb();
+            rtl.barrier.wmb();
 
             // Relaxed store memcpy is needed here since data races are UB.
             rtl.barrier.atomic_store_memcpy(&self.raw, &data, .monotonic);
