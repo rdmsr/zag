@@ -132,6 +132,9 @@ pub fn cmp_timer(a: *rtl.pairing_heap.Node, b_: *rtl.pairing_heap.Node) std.math
 /// Called by the platform on a clock interrupt.
 pub fn clock() void {
     ke.dpc.enqueue(&percpu.local().dpc, null);
+    // Check for overflows.
+    // This is fine to call a lot, as the function only gets expensive (i.e seqlock store) when an overflow actually happens.
+    ki.timecounter.update_overflow();
 }
 
 // Called in a DPC when a timer has expired.
