@@ -96,6 +96,14 @@ const runqueues_n = 64;
 const interactivity_threshold = 30;
 const scaling_factor = 50;
 const preempt_threshold = ke.Thread.Priority.realtime;
+const balance_interval = @as(u64, config.CONFIG_BALANCE_INTERVAL);
+const steal_threshold = 1;
+
+var balance_timer: ke.Timer = undefined;
+var balance_dpc: ke.Dpc = undefined;
+
+// LCG values taken from FreeBSD.
+var lcg = std.Random.lcg.Wrapping(u32).init(0, 69069, 5);
 
 pub const RunQueue = struct {
     /// Bitmap of non-empty queues. A set bit represents a non-empty queue.
@@ -275,6 +283,13 @@ fn init_cpu() linksection(b.init) callconv(.c) void {
     for (0..runqueues_n) |i| {
         percpu.realtime_queue.queues[i].init();
     }
+}
+
+/// Called on CPU 0 to initialize load balancing mechanisms.
+pub fn late_init() linksection(b.init) void {
+    balance_dpc = ke.Dpc.init(balance);
+    balance_timer.init();
+    ke.timer.set(&balance_timer, balance_interval * std.time.ns_per_ms, &balance_dpc);
 }
 
 fn calendar_queue_increment(cpu: *PerCpu) void {
@@ -769,6 +784,7 @@ fn yield(cpu: *ke.Cpu) void {
     if (next == null) {
         // Nothing to run, go idle.
         next = cpu.idle_thread;
+        sched_cpu.steal_work = true;
     }
 
     sched_cpu.queues_lock.release_no_ipl();
@@ -777,4 +793,179 @@ fn yield(cpu: *ke.Cpu) void {
     do_switch(cpu, cur.?, next.?);
 
     // cur lock dropped
+}
+
+fn find_most_loaded(exclude: ?*ke.CpuMask) ?*ke.Cpu {
+    var most: ?*ke.Cpu = null;
+    var most_load: usize = 0;
+    var equal = true;
+
+    for (0..ke.ncpus) |i| {
+        if (exclude) |mask| {
+            if (mask.is_set(i)) {
+                continue;
+            }
+        }
+
+        const cpu = ke.cpus[i];
+        const load = percpu_data.remote(cpu).load.load(.monotonic);
+
+        if (most == null or load > most_load) {
+            most = cpu;
+            most_load = load;
+        } else if (load > most_load) {
+            most = cpu;
+            most_load = load;
+            equal = false;
+        } else if (load < most_load) {
+            equal = false;
+        }
+    }
+
+    if (equal) {
+        // All CPUs have the same load, return null to indicate this.
+        return null;
+    }
+
+    return most;
+}
+
+fn find_least_loaded(exclude: ?*ke.CpuMask) ?*ke.Cpu {
+    var least: ?*ke.Cpu = null;
+    var least_load: usize = 0;
+    var equal = true;
+
+    for (0..ke.ncpus) |i| {
+        if (exclude) |mask| {
+            if (mask.is_set(i)) {
+                continue;
+            }
+        }
+
+        const cpu = ke.cpus[i];
+        const load = percpu_data.remote(cpu).load.load(.monotonic);
+
+        if (least == null) {
+            least = cpu;
+            least_load = load;
+        } else if (load < least_load) {
+            least = cpu;
+            least_load = load;
+            equal = false;
+        } else if (load > least_load) {
+            equal = false;
+        }
+    }
+
+    if (equal) {
+        // All CPUs have the same load, return null to indicate this.
+        return null;
+    }
+
+    return least;
+}
+
+fn steal_thread_from_cpu(cpu: *ke.Cpu) ?*ke.Thread {
+    const sched_cpu = percpu_data.remote(cpu);
+    sched_cpu.queues_lock.acquire_no_ipl();
+
+    const td = select_thread(null, cpu, true);
+
+    sched_cpu.queues_lock.release_no_ipl();
+
+    return td;
+}
+
+fn steal_work(cpu: *ke.Cpu) ?*ke.Thread {
+    const most = find_most_loaded(null);
+
+    if (most == cpu) {
+        // We're the most loaded CPU, nothing to steal.
+        return null;
+    }
+
+    if (most) |other| {
+        if (percpu_data.remote(other).load.load(.monotonic) < steal_threshold) {
+            return null;
+        }
+
+        return steal_thread_from_cpu(other);
+    }
+
+    return null;
+}
+
+/// Idle loop for a CPU. Must be set up in the idle thread.
+pub fn idle(_: ?*anyopaque) noreturn {
+    const cpu = ke.curcpu();
+
+    while (true) {
+        const percpu = percpu_data.local();
+
+        if (percpu.steal_work) {
+            // When first going idle, try stealing work from the most loaded CPU.
+            percpu.steal_work = false;
+
+            const ipl = ke.ipl.raise(.Dispatch);
+
+            // Steal a thread.
+            if (steal_work(cpu)) |td| {
+                // Enqueue it on this CPU.
+                enqueue_on_cpu(cpu, td);
+            }
+
+            ke.ipl.lower(ipl);
+        }
+
+        std.atomic.spinLoopHint();
+    }
+}
+
+/// Called every secondto balance work between CPUs on CPU0.
+/// Takes a thread from the most loaded CPU and puts it on the least loaded one.
+fn balance(_: ?*anyopaque) void {
+    var high_mask = ke.CpuMask.empty();
+    var low_mask: ke.CpuMask = undefined;
+
+    while (true) {
+        const high = find_most_loaded(&high_mask);
+
+        if (high == null or percpu_data.remote(high.?).load.load(.monotonic) == 0) {
+            // No highest loaded CPU.
+            break;
+        }
+
+        // Don't steal from this CPU again.
+        high_mask.set(high.?.id);
+        low_mask = high_mask;
+
+        if (high_mask.is_full()) {
+            // All CPUs are masked, nothing to steal.
+            break;
+        }
+
+        const low = find_least_loaded(&low_mask);
+
+        if (low == null) {
+            // No lowest loaded CPU.
+            break;
+        }
+
+        // Steal a thread from the high CPU and put it on the low CPU.
+        const td = steal_thread_from_cpu(high.?);
+
+        if (td) |thread| {
+            thread.lock.acquire_no_ipl();
+            enqueue_on_cpu(low.?, thread);
+            thread.lock.release_no_ipl();
+        }
+
+        // Don't shuffle threads around.
+        high_mask.set(low.?.id);
+    }
+
+    const offset = lcg.next() % balance_interval;
+    const ms = (balance_interval) + offset;
+
+    ke.timer.set(&balance_timer, ms * std.time.ns_per_ms, &balance_dpc);
 }

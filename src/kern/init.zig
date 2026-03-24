@@ -6,12 +6,6 @@ const ki = ke.private;
 
 var thread0: ke.Thread = undefined;
 
-fn idle(_: ?*anyopaque) void {
-    while (true) {
-        std.atomic.spinLoopHint();
-    }
-}
-
 var stack: [8192]u8 align(16) = undefined;
 
 fn handler(_: ?*anyopaque) void {
@@ -32,7 +26,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     pl.early_init();
     ki.bootstrap_cpu.init(&thread0);
 
-    thread0.init(@intFromPtr(&stack), 8192, idle, null);
+    thread0.init(@intFromPtr(&stack), 8192, ki.sched.idle, null);
     thread0.priority = 0;
     thread0.priority_class = .Idle;
 
@@ -40,6 +34,8 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     std.log.info("Zag for {s}, cmdline is {?s}", .{ pl.name, boot_info.cmdline });
 
     pl.late_init();
+
+    ki.sched.late_init();
 
     _ = ke.ipl.raise(.Dispatch);
 

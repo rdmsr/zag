@@ -9,7 +9,7 @@ choice
         bool "amd64"
         help
           Enable this option to select the AMD64 (x86_64) architecture.
-        
+
     config ARCH_AARCH64
         bool "aarch64"
         help
@@ -38,23 +38,6 @@ endchoice
 
 menu "Kernel Options"
 
-choice
-    prompt "Scheduling Algorithm"
-    default SCHED_RR
-
-    config SCHED_ULE
-        bool "ULE"
-        help
-          Enable this option to select the ULE-like scheduler.
-        
-    config SCHED_RR
-        bool "Round-Robin"
-        help
-          Enable this option to select the Round-Robin scheduler.
-
-endchoice
-
-
 config SCHED_TIMESLICE
 	   int "Scheduler time slice"
 	   default 10
@@ -63,7 +46,6 @@ config SCHED_TIMESLICE
 
 config BALANCE_INTERVAL
 	   int "Load balancing interval"
-	   depends on (SCHED_ULE)
 	   default 1000
 	   help
 		  This option sets the rate (in milliseconds) at which thread load balancing is perfomed.
