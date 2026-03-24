@@ -28,26 +28,45 @@ pub const Dpc = struct {
     }
 };
 
+const PerCpu = struct {
+    /// Queue of DPCs on this CPU.
+    queue: rtl.List,
+    /// Lock over this CPU's DPC queue.
+    lock: ke.SpinLock,
+};
+
+const pcpu = ke.CpuLocal(PerCpu, .{
+    .lock = .init(),
+    .queue = undefined,
+});
+
+export const dpc_percpu_init linksection(b.percpu_init) = &pcpu_init;
+
+fn pcpu_init() linksection(b.init) callconv(.c) void {
+    pcpu.local().queue.init();
+}
+
 /// Enqueue a DPC.
 /// If the DPC is already enqueued, this function is a no-op.
 pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
     const ipl = ke.ipl.raise(.High);
     const cpu = ke.curcpu();
+    const dpc_cpu = pcpu.local();
 
     if (!dpc.inserted) {
         dpc.arg = arg;
 
         // Insert the DPC on this CPU's DPC queue
-        cpu.dpc_lock.acquire_no_ipl();
+        dpc_cpu.lock.acquire_no_ipl();
 
-        cpu.dpc_queue.insert_tail(&dpc.link);
+        dpc_cpu.queue.insert_tail(&dpc.link);
 
         // Mark the DPC as pending on this CPU
         ki.ipl.set_softint_pending(cpu, .Dispatch);
 
         dpc.inserted = true;
 
-        cpu.dpc_lock.release_no_ipl();
+        dpc_cpu.lock.release_no_ipl();
     }
 
     ke.ipl.lower(ipl);
@@ -55,6 +74,7 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
 
 fn dispatch_queue(cpu: *ke.Cpu) void {
     cpu.ipl = .Dispatch;
+    const dpc_cpu = pcpu.remote(cpu);
 
     // Mark as handled, this must be done before enabling interrupts or we will race.
     ki.ipl.clear_softint_pending(cpu, .Dispatch);
@@ -62,18 +82,18 @@ fn dispatch_queue(cpu: *ke.Cpu) void {
     _ = ki.impl.enable_interrupts();
 
     while (true) {
-        const ipl = cpu.dpc_lock.acquire_at(.High);
+        const ipl = dpc_cpu.lock.acquire_at(.High);
 
         var dpc: *Dpc = undefined;
 
-        if (cpu.dpc_queue.is_empty()) {
+        if (dpc_cpu.queue.is_empty()) {
             // No more DPCs to process.
-            cpu.dpc_lock.release(ipl);
+            dpc_cpu.lock.release(ipl);
             break;
         }
 
         // Pop the head
-        var first_elem = cpu.dpc_queue.first();
+        var first_elem = dpc_cpu.queue.first();
 
         first_elem.remove();
 
@@ -84,7 +104,7 @@ fn dispatch_queue(cpu: *ke.Cpu) void {
         // which is why we capture it here to ensure that we get the intended context.
         const arg = dpc.arg;
 
-        cpu.dpc_lock.release(ipl);
+        dpc_cpu.lock.release(ipl);
 
         std.debug.assert(cpu.ipl == .Dispatch);
 
@@ -120,7 +140,7 @@ pub fn dispatch(cpu: *ke.Cpu) void {
     const old_ipl = cpu.ipl;
     const int_state = ki.impl.disable_interrupts();
 
-    while (ki.ipl.is_softint_pending(mycpu, .Dispatch)) {
+    while (ki.ipl.is_softint_pending(.Dispatch)) {
         dispatch_queue(mycpu);
 
         // Our CPU might have changed.

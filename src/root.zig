@@ -4,7 +4,9 @@ pub const pl = @import("platform/root.zig");
 pub const rtl = @import("rtl");
 pub const ksyms = @import("ksyms");
 
-pub const init = ".init.text";
+pub const init = ".text.init";
+pub const percpu_init = ".percpu_init_array";
+pub const percpu = ".data.percpu";
 
 pub const VAddr = usize;
 pub const PAddr = usize;

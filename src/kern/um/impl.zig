@@ -60,7 +60,7 @@ pub const ThreadContext = struct {
     fn real_entry(entry_int: c_ulong, arg_int: c_ulong) callconv(.c) void {
         const entry: *const fn (?*anyopaque) void = @ptrFromInt(entry_int);
         const arg: ?*anyopaque = @ptrFromInt(arg_int);
-        ke.ipl.lower(.Zero);
+        ke.ipl.lower(.Passive);
         entry(arg);
     }
 
@@ -104,3 +104,11 @@ pub const ThreadContext = struct {
         }
     }
 };
+
+pub inline fn percpu_ptr_other(variable: anytype, cpu_id: usize) @TypeOf(variable) {
+    return @ptrFromInt(@intFromPtr(variable) +% b.pl.impl.cpu_offsets[cpu_id]);
+}
+
+pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
+    return @ptrFromInt(@intFromPtr(variable) +% b.pl.impl.cpu_offsets[b.pl.impl.my_cpu.id]);
+}

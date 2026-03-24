@@ -53,12 +53,13 @@ pub const wait = struct {
 };
 
 pub const Cpu = p.cpu.Cpu;
+pub const CpuLocal = p.cpu.CpuLocal;
 
 comptime {
     if (!@hasDecl(p.impl, "curcpu")) @compileError("impl must provide curcpu()");
 }
 
-/// Returns the current CPU
+/// Return the current CPU
 pub const curcpu: fn () *Cpu = p.impl.curcpu;
 
 /// Number of CPUs on the system
