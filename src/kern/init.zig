@@ -43,12 +43,12 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
     _ = ke.ipl.raise(.Dispatch);
 
-    for (0..10) |i| {
+    for (0..threads.len) |i| {
         make_thread(handler, &threads[i]);
         ke.sched.enqueue(&threads[i]);
     }
 
-    ke.ipl.lower(.Zero);
+    ke.ipl.lower(.Passive);
 
     while (true) {}
 }

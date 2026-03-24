@@ -74,7 +74,8 @@ pub const Status = enum(u8) {
 
 /// Wait for the provided object to be signaled.
 pub fn wait_one(object: *DispatchHeader, timeout: ?b.Nanoseconds) !usize {
-    return wait_any(object, timeout, null);
+    var objects = [_]*DispatchHeader{object};
+    return wait_any(&objects, timeout, null);
 }
 
 /// Wait for any of the provided objects to be signaled.
@@ -85,7 +86,7 @@ pub fn wait_one(object: *DispatchHeader, timeout: ?b.Nanoseconds) !usize {
 pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks: ?[*]WaitBlock) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
-    const curtd = ke.curcpu().current_thread;
+    const curtd = ke.curcpu().current_thread.?;
     const obj_count = objects.len;
     const has_timeout = timeout != null;
     const blocks = waitblocks orelse blk: {
@@ -99,7 +100,7 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks:
     const timer_block = &curtd.waitblocks[3];
 
     var satisfier: ?usize = null;
-    curtd.wait_status.store(.InProgress, .acquire);
+    curtd.wait_status.store(.InProgress, .release);
 
     for (0..total_count) |i| {
         const is_timer = has_timeout and i == timer_i;
@@ -111,7 +112,7 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks:
 
         if (obj.signaled > 0) {
             // Object was already signaled. Try consuming it.
-            if (curtd.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acquire, .monotonic) == null) {
+            if (curtd.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acq_rel, .monotonic) == null) {
                 obj.consume();
             }
             // We have already been satisfied in the meantime, abort.
@@ -128,18 +129,20 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks:
 
     // Wait was already satisfied, back out.
     if (satisfier != null or (has_timeout and timeout.? == 0)) {
-        std.debug.assert(curtd.wait_status.load(.monotonic) == .Satisfied);
+        std.debug.assert(curtd.wait_status.load(.acquire) == .Satisfied);
 
-        // Remove any wait block we might've installed
-        for (0..satisfier) |i| {
-            const is_timer = has_timeout and i == timer_i;
-            var obj = if (is_timer) &timer.hdr else objects[i];
-            var wb = if (is_timer) timer_block else &blocks[i];
+        if (satisfier) |sat| {
+            // Remove any wait block we might've installed
+            for (0..sat) |i| {
+                const is_timer = has_timeout and i == timer_i;
+                var obj = if (is_timer) &timer.hdr else objects[i];
+                var wb = if (is_timer) timer_block else &blocks[i];
 
-            obj.lock.acquire_no_ipl();
-            wb.status = .Inactive;
-            wb.link.remove();
-            obj.lock.release_no_ipl();
+                obj.lock.acquire_no_ipl();
+                wb.status = .Inactive;
+                wb.link.remove();
+                obj.lock.release_no_ipl();
+            }
         }
 
         return satisfier orelse error.Timeout;
@@ -152,7 +155,7 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks:
     // Now try committing the wait.
     // While we're trying to commit the wait, the object locks have been released, and the state could therefore change.
     // We need to re-check the state of the wait before actually blocking.
-    if (curtd.wait_status.cmpxchgStrong(.InProgress, .Committed, .acquire, .monotonic) == null) {
+    if (curtd.wait_status.cmpxchgStrong(.InProgress, .Committed, .acq_rel, .monotonic) == null) {
         // We're good, now actually block.
         ke.sched.block();
     }
@@ -174,7 +177,7 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks:
             // Waitblock is still active, remove it from the list.
             wb.link.remove();
         }
-        if (wb.status == .Signaled or wb.status == .SignaledInProgress) {
+        if (wb.status == .Signaled) {
             // This waitblock was signaled, it must be the one that satisfied the wait.
             std.debug.assert(satisfier == null);
             satisfier = i;
@@ -206,14 +209,14 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
         // 3. The wait was already satisfied by another object (status == .Satisfied).
 
         // 1.
-        if (td.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acquire, .monotonic) == null) {
+        if (td.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acq_rel, .monotonic) == null) {
             // We interrupted the wait while it was being prepared.
             wb.status = .Signaled;
             obj.consume();
         }
 
         // 2.
-        else if (td.wait_status.cmpxchgStrong(.Committed, .Satisfied, .acquire, .monotonic) == null) {
+        else if (td.wait_status.cmpxchgStrong(.Committed, .Satisfied, .acq_rel, .monotonic) == null) {
             // We interrupted the wait while it was committed.
             // Wake the thread.
             wb.status = .Signaled;

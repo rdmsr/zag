@@ -212,6 +212,7 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
         kernel.linker_script = b.path(b.fmt("build/linker-scripts/{s}.lds", .{@tagName(plat.arch)}));
     } else {
+        kernel.linker_script = b.path("build/linker-scripts/uml.lds");
         kernel.root_module.link_libc = true;
     }
 

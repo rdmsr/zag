@@ -56,8 +56,15 @@ fn check_function(fn_name: []const u8, ret: usize) void {
     }
 }
 
+const bootstrap_offsets = [1]usize{0};
+
+pub var cpu_offsets: []usize = undefined;
+
 pub fn early_init() linksection(b.init) void {
-    // Set current CPU to the bootstrap CPU
+    // Ensure we can use per-cpu data.
+    cpu_offsets = @constCast(&bootstrap_offsets);
+
+    // Set current CPU to the bootstrap CPU.
     my_cpu = &ki.bootstrap_cpu;
 
     my_cpu.impl.pthread = c.pthread_self();
@@ -96,7 +103,7 @@ pub fn early_init() linksection(b.init) void {
 }
 
 fn sigusr1_handler(_: posix.SIG, _: *const posix.siginfo_t, _: ?*anyopaque) callconv(.c) void {
-    if (@intFromEnum(ke.curcpu().ipl) < @intFromEnum(ke.Ipl.Dispatch) and ki.ipl.is_softint_pending(ke.curcpu(), .Dispatch)) {
+    if (@intFromEnum(ke.curcpu().ipl) < @intFromEnum(ke.Ipl.Dispatch) and ki.ipl.is_softint_pending(.Dispatch)) {
         ki.dpc.dispatch(ke.curcpu());
     }
 }
@@ -128,7 +135,12 @@ fn other_cpu_entry(arg: ?*anyopaque) callconv(.c) ?*anyopaque {
     return null;
 }
 
+var cpu: ke.Cpu linksection(b.percpu) = undefined;
+
 fn idle(_: ?*anyopaque) void {}
+
+extern var __percpu_start: u8;
+extern var __percpu_end: u8;
 
 pub fn late_init() linksection(b.init) void {
     timer.init();
@@ -158,10 +170,19 @@ pub fn late_init() linksection(b.init) void {
         allocator.alloc(c.pthread_t, other_count) catch @panic("oom");
 
     ke.cpus = allocator.alloc(*ke.Cpu, ke.ncpus) catch @panic("oom");
+    cpu_offsets = allocator.alloc(usize, ke.ncpus) catch @panic("oom");
     ke.cpus[0] = &ki.bootstrap_cpu;
+    cpu_offsets[0] = 0;
+
+    const size = @intFromPtr(&__percpu_end) - @intFromPtr(&__percpu_start);
 
     for (1..ke.ncpus) |i| {
-        ke.cpus[i] = allocator.create(ke.Cpu) catch @panic("oom");
+        const block = allocator.alloc(u8, size) catch @panic("oom");
+        cpu_offsets[i] = @intFromPtr(block.ptr) -% @intFromPtr(&__percpu_start);
+
+        ke.cpus[i] = ki.impl.percpu_ptr_other(&cpu, i);
+
+        @memcpy(block, @as([*]u8, @ptrCast(&__percpu_start))[0..size]);
 
         ke.cpus[i].idle_thread = allocator.create(ke.Thread) catch @panic("oom");
         ke.cpus[i].id = @intCast(i);

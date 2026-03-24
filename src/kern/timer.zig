@@ -7,6 +7,14 @@ const ke = b.ke;
 const ki = ke.private;
 const pl = b.pl;
 
+const PerCpu = struct {
+    /// Heap of pending timers on this CPU.
+    timers: rtl.PairingHeap(.min, ki.timer.cmp_timer),
+    /// Lock over the timer heap.
+    lock: ke.SpinLock,
+    dpc: ke.Dpc,
+};
+
 pub const Timer = struct {
     pub const State = enum(u8) {
         /// The timer is currently being handled.
@@ -28,7 +36,7 @@ pub const Timer = struct {
     /// Intrusive pairing heap node.
     node: rtl.pairing_heap.Node,
     /// CPU this timer is enqueued on.
-    cpu: ?*ke.Cpu,
+    cpu: ?*PerCpu,
 
     pub fn init(self: *Timer) void {
         self.* = .{
@@ -44,21 +52,27 @@ pub const Timer = struct {
     }
 };
 
+const percpu = ke.CpuLocal(PerCpu, .{
+    .timers = .init(),
+    .lock = .init(),
+    .dpc = .init(handle_expiry),
+});
+
 /// Start a timer with an expiration time.
 /// A DPC that will be enqueued upon expiration can be passed.
 pub fn set(timer: *Timer, time: b.Nanoseconds, dpc: ?*ke.Dpc) void {
     const ipl = timer.hdr.lock.acquire();
     defer timer.hdr.lock.release(ipl);
 
-    const cpu = ke.curcpu();
+    const cpu = percpu.local();
 
     if (timer.state.cmpxchgStrong(.Stopped, .Pending, .acquire, .monotonic) != null) {
         // Could not set the timer.
         return;
     }
 
-    cpu.timers_lock.acquire_no_ipl();
-    defer cpu.timers_lock.release_no_ipl();
+    cpu.lock.acquire_no_ipl();
+    defer cpu.lock.release_no_ipl();
 
     // Initialize the timer.
     timer.deadline = ke.timecounter.read_time_nano() + time;
@@ -67,9 +81,9 @@ pub fn set(timer: *Timer, time: b.Nanoseconds, dpc: ?*ke.Dpc) void {
     timer.dpc = dpc;
     timer.hdr.signaled = 0;
 
-    cpu.timers_heap.insert(&timer.node);
+    cpu.timers.insert(&timer.node);
 
-    if (cpu.timers_heap.root == &timer.node) {
+    if (cpu.timers.root == &timer.node) {
         // This is the earliest timer to expire, arm the hardware timer.
         pl.arm_timer(time);
     }
@@ -96,12 +110,12 @@ pub fn cancel(timer: *Timer) void {
 
     if (timer.cpu) |cpu| {
         // Dequeue the timer.
-        cpu.timers_lock.acquire_no_ipl();
+        cpu.lock.acquire_no_ipl();
 
-        cpu.timers_heap.remove(&timer.node);
+        cpu.timers.remove(&timer.node);
         timer.cpu = null;
 
-        cpu.timers_lock.release_no_ipl();
+        cpu.lock.release_no_ipl();
     }
 
     // Lock dropped
@@ -115,19 +129,24 @@ pub fn cmp_timer(a: *rtl.pairing_heap.Node, b_: *rtl.pairing_heap.Node) std.math
     return std.math.order(timer_a.deadline, timer_b.deadline);
 }
 
-/// Called in a DPC when a timer has expired.
-pub fn handle_expiry(_: ?*anyopaque) void {
-    const cpu = ke.curcpu();
-    std.debug.assert(cpu.ipl == .Dispatch);
+/// Called by the platform on a clock interrupt.
+pub fn clock() void {
+    ke.dpc.enqueue(&percpu.local().dpc, null);
+}
+
+// Called in a DPC when a timer has expired.
+fn handle_expiry(_: ?*anyopaque) void {
+    std.debug.assert(ke.curcpu().ipl == .Dispatch);
+    const cpu = percpu.local();
 
     while (true) {
         const curtime = ke.timecounter.read_time_nano();
 
-        cpu.timers_lock.acquire_no_ipl();
+        cpu.lock.acquire_no_ipl();
 
         // Get the timer that expires the soonest.
-        const timer_node = cpu.timers_heap.root orelse {
-            cpu.timers_lock.release_no_ipl();
+        const timer_node = cpu.timers.root orelse {
+            cpu.lock.release_no_ipl();
             return;
         };
 
@@ -137,7 +156,7 @@ pub fn handle_expiry(_: ?*anyopaque) void {
         // Sub-millisecond differences are close enough to expire immediately.
         if (timer.deadline > curtime and timer.deadline - curtime > std.time.ns_per_ms) {
             const next = timer;
-            cpu.timers_lock.release_no_ipl();
+            cpu.lock.release_no_ipl();
 
             // Re-check in case the timer expired while we were here.
             const now = ke.timecounter.read_time_nano();
@@ -150,8 +169,8 @@ pub fn handle_expiry(_: ?*anyopaque) void {
             return;
         }
 
-        _ = cpu.timers_heap.pop();
-        cpu.timers_lock.release_no_ipl();
+        _ = cpu.timers.pop();
+        cpu.lock.release_no_ipl();
 
         if (timer.state.cmpxchgStrong(.Pending, .Running, .acquire, .monotonic) != null) {
             // Timer must've been canceled.

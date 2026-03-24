@@ -11,11 +11,11 @@ threadlocal var timerid: c.timer_t = undefined;
 fn timer_handler(_: posix.SIG, _: *const posix.siginfo_t, _: ?*anyopaque) callconv(.c) void {
     const old_ipl = ke.ipl.set_hardware(.Device);
 
-    ke.dpc.enqueue(&ke.curcpu().timer_dpc, null);
+    ki.timer.clock();
 
     _ = ke.ipl.set_hardware(old_ipl);
 
-    if (@intFromEnum(old_ipl) < @intFromEnum(ke.Ipl.Dispatch) and ki.ipl.is_softint_pending(ke.curcpu(), .Dispatch)) {
+    if (@intFromEnum(old_ipl) < @intFromEnum(ke.Ipl.Dispatch) and ki.ipl.is_softint_pending(.Dispatch)) {
         ki.dpc.dispatch(ke.curcpu());
     }
 }
