@@ -54,6 +54,7 @@ pub const wait = struct {
 
 pub const Cpu = p.cpu.Cpu;
 pub const CpuLocal = p.cpu.CpuLocal;
+pub const CpuMask = p.cpu.CpuMask;
 
 comptime {
     if (!@hasDecl(p.impl, "curcpu")) @compileError("impl must provide curcpu()");
