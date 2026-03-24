@@ -58,14 +58,12 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
 
         // Insert the DPC on this CPU's DPC queue
         dpc_cpu.lock.acquire_no_ipl();
-
         dpc_cpu.queue.insert_tail(&dpc.link);
 
         // Mark the DPC as pending on this CPU
         ki.ipl.set_softint_pending(cpu, .Dispatch);
 
         dpc.inserted = true;
-
         dpc_cpu.lock.release_no_ipl();
     }
 
@@ -83,7 +81,6 @@ fn dispatch_queue(cpu: *ke.Cpu) void {
 
     while (true) {
         const ipl = dpc_cpu.lock.acquire_at(.High);
-
         var dpc: *Dpc = undefined;
 
         if (dpc_cpu.queue.is_empty()) {
@@ -94,7 +91,6 @@ fn dispatch_queue(cpu: *ke.Cpu) void {
 
         // Pop the head
         var first_elem = dpc_cpu.queue.first();
-
         first_elem.remove();
 
         dpc = @fieldParentPtr("link", first_elem);
@@ -105,7 +101,6 @@ fn dispatch_queue(cpu: *ke.Cpu) void {
         const arg = dpc.arg;
 
         dpc_cpu.lock.release(ipl);
-
         std.debug.assert(cpu.ipl == .Dispatch);
 
         dpc.func(arg);
@@ -118,7 +113,6 @@ fn dispatch_queue(cpu: *ke.Cpu) void {
     if (cpu.preemption_reason == .HigherPriority) {
         // Reload the quantum for the new thread.
         ke.timer.cancel(&cpu.resched_timer);
-
         ke.timer.set(&cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &cpu.resched_dpc);
     }
 

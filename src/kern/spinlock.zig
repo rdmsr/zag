@@ -15,9 +15,7 @@ pub const SpinLock = struct {
     /// Acquire the lock at IPL `ipl`.
     pub fn acquire_at(self: *SpinLock, ipl: ke.Ipl) ke.Ipl {
         const old_ipl = ke.ipl.raise(ipl);
-
         self.acquire_no_ipl();
-
         return old_ipl;
     }
 
