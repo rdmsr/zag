@@ -26,8 +26,8 @@ pub const SpinLock = struct {
 
     /// Release the lock at IPL `ipl`.
     pub fn release(self: *SpinLock, ipl: ke.Ipl) void {
-        ke.ipl.lower(ipl);
         self.release_no_ipl();
+        ke.ipl.lower(ipl);
     }
 
     /// Acquire the lock without changing the IPL.
