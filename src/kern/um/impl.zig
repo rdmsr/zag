@@ -17,18 +17,19 @@ fn set_signals(enabled: bool) bool {
 
     _ = c.sigfillset(&newmask);
 
-    const how = if (enabled) c.SIG_BLOCK else c.SIG_UNBLOCK;
+    const how = if (enabled) c.SIG_UNBLOCK else c.SIG_BLOCK;
 
     if (c.pthread_sigmask(how, &newmask, &oldmask) != 0) {
         ke.panic("pthread_sigmask failed", .{});
     }
 
-    return std.mem.eql(u8, std.mem.asBytes(&newmask), std.mem.asBytes(&oldmask));
+    return c.sigismember(&oldmask, c.SIGUSR1) == 0;
 }
 
 /// Set the hardware IPL.
 pub fn set_hardware_ipl(ipl: ke.Ipl) void {
-    _ = set_signals(@intFromEnum(ipl) > @intFromEnum(ke.Ipl.get_max_software()));
+    // This is a no-op since we handle this in enable_interrupts().
+    _ = ipl;
 }
 
 /// Disable interrupts and return the previous state.
@@ -38,16 +39,14 @@ pub fn disable_interrupts() bool {
 
 /// Enable interrupts and return the previous state.
 pub fn enable_interrupts() bool {
-    return set_signals(true);
+    const ipl_allows_ints = @intFromEnum(ke.curcpu().ipl) <= @intFromEnum(ke.Ipl.get_max_software());
+    return set_signals(ipl_allows_ints);
 }
 
 /// Restore an interrupt state.
 pub fn restore_interrupts(val: bool) void {
-    if (val) {
-        _ = enable_interrupts();
-    } else {
-        _ = disable_interrupts();
-    }
+    const ipl_allows_ints = @intFromEnum(ke.curcpu().ipl) <= @intFromEnum(ke.Ipl.get_max_software());
+    _ = set_signals(val and ipl_allows_ints);
 }
 
 pub fn send_resched_ipi(cpu: *ke.Cpu) void {
