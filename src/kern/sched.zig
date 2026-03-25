@@ -188,7 +188,7 @@ pub fn clock(_: ?*anyopaque) void {
     // Advance the insert index every tick, while keeping a separation of 1 with runidx.
     // This ensures fairness.
     if (sched_cpu.runidx == sched_cpu.insidx) {
-        sched_cpu.insidx = (sched_cpu.insidx) % runqueues_n;
+        sched_cpu.insidx = (sched_cpu.insidx + 1) % runqueues_n;
     }
 
     if (curtd.priority_class == .Batch) {
@@ -243,7 +243,7 @@ pub fn unblock(td: *ke.Thread) void {
 
     td.sleep_time = (ke.timecounter.read_time_nano() - td.sleep_start) / std.time.ns_per_ms;
 
-    if (td.sleep_time >= config.CONFIG_SCHED_TIMESLICE and .priority_class == .Batch) {
+    if (td.sleep_time >= config.CONFIG_SCHED_TIMESLICE and td.priority_class == .Batch) {
         // If we have slept for more than a tick, update interactivity.
         clamp_time(td);
         recompute_priority(td);
@@ -311,7 +311,7 @@ fn pick_realtime_thread(cpu: *PerCpu, minprio: u8, migrate: bool) ?*ke.Thread {
     // Search higher priority queues first.
     var i: usize = ke.Thread.Priority.max;
 
-    qloop: while (i >= minprio) : (i -= 1) {
+    qloop: while (i >= minprio and i > 0) : (i -= 1) {
         const bit = (@as(u64, 1) << @intCast(i));
 
         if (runq.status & bit == 0) {
@@ -345,6 +345,8 @@ fn pick_realtime_thread(cpu: *PerCpu, minprio: u8, migrate: bool) ?*ke.Thread {
             // Queue is now empty, clear its bit.
             runq.status &= ~bit;
         }
+
+        return td;
     }
 
     return null;
@@ -415,7 +417,7 @@ fn pick_idle_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
     // Just get the first thread from the queue.
     const td: *ke.Thread = @fieldParentPtr("runq_link", cpu.idle_queue.first());
 
-    if (!migrate and td.pinned) {
+    if (!(migrate and td.pinned)) {
         // We can safely remove it.
         td.runq_link.remove();
     }
@@ -429,7 +431,6 @@ fn insert_in_list(list: *rtl.List, link: *rtl.List.Entry, head: bool) void {
 
 // Insert a thread into its respective queue.
 fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, head: bool) void {
-    std.debug.assert(td.lock.is_locked());
     std.debug.assert(cpu.queues_lock.is_locked());
 
     if (td.priority_class == .Realtime or td.interactive) {
@@ -629,7 +630,7 @@ fn should_preempt_cpu(td: *ke.Thread, cpu: *ke.Cpu) bool {
 
 // Enqueue a thread on a CPU.
 fn enqueue_on_cpu(cpu: *ke.Cpu, td: *ke.Thread) void {
-    var c = percpu_data.local();
+    var c = percpu_data.remote(cpu);
 
     c.queues_lock.acquire_no_ipl();
 
@@ -810,7 +811,7 @@ fn find_most_loaded(exclude: ?*ke.CpuMask) ?*ke.Cpu {
         const cpu = ke.cpus[i];
         const load = percpu_data.remote(cpu).load.load(.monotonic);
 
-        if (most == null or load > most_load) {
+        if (most == null) {
             most = cpu;
             most_load = load;
         } else if (load > most_load) {
