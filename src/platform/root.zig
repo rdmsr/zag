@@ -59,6 +59,14 @@ pub const BootInfo = struct {
         entries: [256]Entry,
     };
 
+    pub const Framebuffer = struct {
+        address: usize,
+        width: u32,
+        height: u32,
+        pitch: u32,
+        bpp: u8,
+    };
+
     pub const KernelAddress = struct { physical_base: usize, virtual_base: usize };
 
     /// RSDP on ACPI machines
@@ -69,6 +77,9 @@ pub const BootInfo = struct {
 
     /// Memory map
     memory_map: MemMap,
+
+    /// Framebuffer info, if available
+    framebuffer: ?Framebuffer,
 
     /// Kernel address
     kernel_address: KernelAddress,
