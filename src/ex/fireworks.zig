@@ -254,8 +254,6 @@ pub fn start(param: ?*anyopaque) void {
         fb_width = fb.width;
         fb_height = fb.height;
         pixel_buffer = @ptrCast(@alignCast(@as(*anyopaque, @ptrFromInt(fb.address))));
-
-        std.debug.print("Framebuffer: {d}x{d}, pitch {d}, bpp {d}\n", .{ fb.width, fb.height, fb.pitch, fb.bpp });
     }
 
     fill_screen(0x09090F);
