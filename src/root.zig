@@ -1,5 +1,6 @@
 const std = @import("std");
 pub const ke = @import("kern/root.zig");
+pub const ex = @import("ex/root.zig");
 pub const pl = @import("platform/root.zig");
 pub const rtl = @import("rtl");
 pub const ksyms = @import("ksyms");
