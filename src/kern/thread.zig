@@ -99,7 +99,7 @@ pub const Thread = struct {
     pub fn init(thread: *Thread, stack: b.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) void {
         thread.* = .{
             .context = .init(stack, stack_size, entry, arg),
-            .lock = ke.SpinLock.init(),
+            .lock = .init(),
             .nice = 0,
             .priority = Thread.Priority.default,
             .priority_class = Thread.Priority.Class.Batch,
