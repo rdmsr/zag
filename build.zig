@@ -38,10 +38,11 @@ pub fn build(b: *std.Build) void {
         return;
     };
 
-    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .Debug });
+    const optimize = b.standardOptimizeOption(.{});
 
     const config_module = b.createModule(.{
         .root_source_file = config_wf.getDirectory().path(b, "config.gen.zig"),
+        .optimize = optimize,
     });
 
     // first pass
@@ -50,10 +51,12 @@ pub fn build(b: *std.Build) void {
     const empty_zig = empty_cmd.addOutputFileArg("ksyms_empty.gen.zig");
     const empty_ksyms_module = b.createModule(.{
         .root_source_file = empty_zig,
+        .optimize = optimize,
     });
 
     const rtl_module = b.createModule(.{
         .root_source_file = b.path("src/rtl/root.zig"),
+        .optimize = optimize,
     });
 
     rtl_module.addImport("rtl", rtl_module);
@@ -64,6 +67,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "config", .module = config_module },
             .{ .name = "rtl", .module = rtl_module },
         },
+        .optimize = optimize,
     });
 
     base_module.addImport("base", base_module);
@@ -81,6 +85,7 @@ pub fn build(b: *std.Build) void {
     const ksyms_zig = ksyms.addOutputFileArg("ksyms.gen.zig");
     const ksyms_module = b.createModule(.{
         .root_source_file = ksyms_zig,
+        .optimize = optimize,
     });
 
     // second pass
@@ -214,6 +219,9 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
     } else {
         kernel.linker_script = b.path("build/linker-scripts/uml.lds");
         kernel.root_module.link_libc = true;
+        kernel.linker_allow_shlib_undefined = true;
+        kernel.root_module.linkSystemLibrary("sdl2-compat", .{ .use_pkg_config = .force });
+        kernel.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib64" });
     }
 
     return kernel;

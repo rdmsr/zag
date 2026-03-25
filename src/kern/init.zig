@@ -14,13 +14,13 @@ fn handler(_: ?*anyopaque) void {
     while (true) {}
 }
 
-fn make_thread(entry: *const fn (?*anyopaque) void, td: *ke.Thread) void {
+fn make_thread(entry: *const fn (?*anyopaque) void, td: *ke.Thread, arg: ?*anyopaque) void {
     const _stack = std.heap.page_allocator.alloc(u8, 16384) catch @panic("wtf");
 
-    td.init(@intFromPtr(_stack.ptr), 16384, entry, null);
+    td.init(@intFromPtr(_stack.ptr), 16384, entry, arg);
 }
 
-var threads: [10]ke.Thread = undefined;
+var threads: [1]ke.Thread = undefined;
 
 pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     pl.early_init();
@@ -37,14 +37,21 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
     ki.sched.late_init();
 
-    _ = ke.ipl.raise(.Dispatch);
+    if (boot_info.framebuffer == null) {
+        const ipl = ke.ipl.raise(.Dispatch);
 
-    for (0..threads.len) |i| {
-        make_thread(handler, &threads[i]);
-        ke.sched.enqueue(&threads[i]);
+        for (&threads) |*td| {
+            make_thread(&handler, td, null);
+            td.priority = ke.Thread.Priority.default;
+            td.priority_class = .Batch;
+            ke.sched.enqueue(td);
+        }
+
+        ke.ipl.lower(ipl);
+    } else {
+        make_thread(&b.ex.fireworks.start, &threads[0], boot_info);
+        ke.sched.enqueue(&threads[0]);
     }
-
-    ke.ipl.lower(.Passive);
 
     while (true) {}
 }
