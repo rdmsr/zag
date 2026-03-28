@@ -60,7 +60,7 @@ fn ticks_to_ns(tc: *TimeCounter, count: u64) u64 {
 /// Register a time-keeping source.
 /// The TimeCounter will be used if it is the highest quality one available.
 /// This function cannot be safely called when the hardware timer has been started, as data races on `best_tc` are not avoided.
-pub fn register(tc: *TimeCounter) void {
+pub fn register_source(tc: *TimeCounter) void {
     // Precompute scaling factors for the fast multiply-shift path.
     // This is meant to avoid 128-bit division and only use multiplication for 64-bit counters.
     if (tc.mask == std.math.maxInt(u64)) {

@@ -10,8 +10,12 @@ pub const Ipl = p.ipl.Ipl;
 pub const SpinLock = p.spinlock.SpinLock;
 pub const Thread = p.thread.Thread;
 pub const Dpc = p.dpc.Dpc;
-pub const TimeCounter = p.timecounter.TimeCounter;
+pub const TimeCounter = p.time.TimeCounter;
 pub const Timer = p.timer.Timer;
+pub const Console = p.log.Console;
+pub const Cpu = p.cpu.Cpu;
+pub const CpuLocal = p.cpu.CpuLocal;
+pub const CpuMask = p.cpu.CpuMask;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
@@ -30,9 +34,9 @@ pub const dpc = struct {
     pub const enqueue = p.dpc.enqueue;
 };
 
-pub const timecounter = struct {
-    pub const register = p.timecounter.register;
-    pub const read_time_nano = p.timecounter.read_time_nano;
+pub const time = struct {
+    pub const register_source = p.time.register_source;
+    pub const read_time_nano = p.time.read_time_nano;
 };
 
 pub const sched = struct {
@@ -55,12 +59,6 @@ pub const log = struct {
     pub const register_console = p.log.register_console;
     pub const log = p.log.log;
 };
-
-pub const Console = p.log.Console;
-
-pub const Cpu = p.cpu.Cpu;
-pub const CpuLocal = p.cpu.CpuLocal;
-pub const CpuMask = p.cpu.CpuMask;
 
 comptime {
     if (!@hasDecl(p.impl, "curcpu")) @compileError("impl must provide curcpu()");
