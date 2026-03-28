@@ -48,8 +48,18 @@ pub const SpinLock = struct {
     }
 
     /// Try to acquire the lock. Return true if lock was acquired.
-    pub fn try_acquire(self: *SpinLock) bool {
+    pub fn try_acquire_no_ipl(self: *SpinLock) bool {
         return @cmpxchgStrong(u8, &self.locked, 0, 1, .acquire, .monotonic) == null;
+    }
+
+    pub fn try_acquire(self: *SpinLock) ?ke.Ipl {
+        const old_ipl = ke.ipl.raise(.Dispatch);
+        if (self.try_acquire_no_ipl()) {
+            return old_ipl;
+        } else {
+            ke.ipl.lower(old_ipl);
+            return null;
+        }
     }
 
     pub fn is_locked(self: *SpinLock) bool {
