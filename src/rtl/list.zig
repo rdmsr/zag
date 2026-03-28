@@ -11,13 +11,13 @@ pub const List = struct {
         /// Previous element
         prev: *Entry = undefined,
 
-        /// Removes an entry from whatever list it's in
+        /// Remove an entry from whatever list it's in.
         pub fn remove(elem: *Entry) void {
             elem.prev.next = elem.next;
             elem.next.prev = elem.prev;
         }
 
-        /// Inserts elem before `before`
+        /// Insert elem before `before`.
         pub fn insert_before(elem: *Entry, before: *Entry) void {
             elem.prev = before.prev;
             elem.next = before;
@@ -26,18 +26,18 @@ pub const List = struct {
         }
     };
 
-    /// Initializes the list
+    /// Initialize the list.
     pub fn init(self: *List) void {
         self.head.next = &self.head;
         self.head.prev = &self.head;
     }
 
-    /// Returns whether the list is empty
+    /// Return whether the list is empty.
     pub fn is_empty(self: *List) bool {
         return self.head.next == &self.head;
     }
 
-    /// Inserts elem at the end of the list
+    /// Insert elem at the end of the list.
     pub fn insert_tail(self: *List, elem: *Entry) void {
         self.head.prev.next = elem;
         elem.next = &self.head;
@@ -45,7 +45,7 @@ pub const List = struct {
         self.head.prev = elem;
     }
 
-    /// Inserts elem at the beginning of the list
+    /// Insert elem at the beginning of the list.
     pub fn insert_head(self: *List, elem: *Entry) void {
         self.head.next.prev = elem;
         elem.next = self.head.next;
@@ -53,12 +53,12 @@ pub const List = struct {
         self.head.next = elem;
     }
 
-    /// Returns the first element of the list
+    /// Return the first element of the list.
     pub fn first(self: *List) *Entry {
         return self.head.next;
     }
 
-    /// Returns the last element of the list
+    /// Return the last element of the list.
     pub fn last(self: *List) *Entry {
         return self.head.prev;
     }
