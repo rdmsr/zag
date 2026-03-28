@@ -1,10 +1,10 @@
-const rtl = @import("rtl");
+const tagged_ptr = @import("tagged_ptr.zig");
 const std = @import("std");
 
 pub const Node = struct {
     left: *Node,
     right: *Node,
-    parent: rtl.TaggedPtr(Node),
+    parent: tagged_ptr.TaggedPtr(Node),
 };
 
 /// Base struct for binary search trees.
@@ -20,7 +20,7 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
         pub fn init(self: *Self) void {
             self.nil.left = &self.nil;
             self.nil.right = &self.nil;
-            self.nil.parent = &self.nil;
+            self.nil.parent.set_ptr(&self.nil);
             self.root = &self.nil;
         }
 
@@ -97,5 +97,82 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
             }
             v.parent.set_ptr(u_parent);
         }
+
+        // Insert `elem` into the BST, if already inserted, do nothing.
+        // This does not perform any balancing.
+        pub fn insert(self: *Self, elem: *Node) void {
+            var current = self.root;
+
+            if (self.is_nil(current)) {
+                self.root = elem;
+                elem.left = &self.nil;
+                elem.right = &self.nil;
+                elem.parent.set_ptr(&self.nil);
+                return;
+            }
+
+            while (!self.is_nil(current)) {
+                const order = cmp(elem, current);
+
+                if (order == .lt) {
+                    if (self.is_nil(current.left)) {
+                        current.left = elem;
+                        break;
+                    }
+                    current = current.left;
+                } else if (order == .gt) {
+                    if (self.is_nil(current.right)) {
+                        current.right = elem;
+                        break;
+                    }
+                    current = current.right;
+                } else {
+                    // Already in the tree, do nothing.
+                    return;
+                }
+            }
+
+            elem.left = &self.nil;
+            elem.right = &self.nil;
+            elem.parent.set_ptr(current);
+        }
     };
+}
+
+const MyNode = struct {
+    node: Node,
+    value: u32,
+};
+
+fn node_cmp(a: *Node, b: *Node) std.math.Order {
+    const a_node: *MyNode = @fieldParentPtr("node", a);
+    const b_node: *MyNode = @fieldParentPtr("node", b);
+    if (a_node.value < b_node.value) return .lt;
+    if (a_node.value > b_node.value) return .gt;
+    return .eq;
+}
+
+test BST {
+    var tree: BST(node_cmp) = undefined;
+    tree.init();
+
+    var nodes = [_]MyNode{
+        .{ .value = 5, .node = undefined },
+        .{ .value = 3, .node = undefined },
+        .{ .value = 7, .node = undefined },
+        .{ .value = 2, .node = undefined },
+        .{ .value = 4, .node = undefined },
+        .{ .value = 6, .node = undefined },
+        .{ .value = 8, .node = undefined },
+    };
+
+    for (&nodes) |*node| {
+        tree.insert(&node.node);
+    }
+
+    for (&nodes) |*node| {
+        const found = tree.search(&node.node);
+        try std.testing.expect(found != null);
+        try std.testing.expectEqual(node.value, @as(*MyNode, @fieldParentPtr("node", found.?)).value);
+    }
 }
