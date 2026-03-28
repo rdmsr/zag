@@ -1,10 +1,10 @@
-const tagged_ptr = @import("tagged_ptr.zig");
+const rtl = @import("rtl");
 const std = @import("std");
 
 pub const Node = struct {
     left: *Node,
     right: *Node,
-    parent: tagged_ptr.TaggedPtr(Node),
+    parent: rtl.TaggedPtr(Node),
 };
 
 /// Base struct for binary search trees.

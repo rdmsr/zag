@@ -132,6 +132,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    rtl_tests.root_module.addImport("rtl", rtl_tests.root_module);
+
     const run_tests = b.addRunArtifact(rtl_tests);
     const test_step = b.step("test", "Run tests");
 
@@ -174,8 +176,7 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
         switch (bl) {
             .Limine => "limine",
         }
-    else
-        @tagName(plat.arch);
+    else if (plat.os == .linux) "um" else @tagName(plat.arch);
 
     const root_source_file = b.fmt("src/platform/{s}/entry.zig", .{platform_name});
 

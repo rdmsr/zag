@@ -89,7 +89,7 @@ pub fn getPlatform(config: Config) !Platform {
         return error.NoArchConfigured;
     };
 
-    if (ret.arch == .x86_64 or ret.arch == .aarch64) {
+    if (ret.os == .freestanding and (ret.arch == .x86_64 or ret.arch == .aarch64)) {
         ret.bootloader = blk: {
             if (config.get("CONFIG_BOOT_LIMINE")) |val| {
                 if (std.mem.eql(u8, val, "y")) break :blk .Limine;
