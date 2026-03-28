@@ -14,7 +14,6 @@ pub const TimeCounter = p.timecounter.TimeCounter;
 pub const Timer = p.timer.Timer;
 
 // === Exported Interfaces ===
-pub const log = p.log.log;
 pub const panic = p.panic.panic;
 
 pub const ipl = struct {
@@ -51,6 +50,13 @@ pub const wait = struct {
     pub const wait_one = p.wait.wait_one;
     pub const wait_any = p.wait.wait_any;
 };
+
+pub const log = struct {
+    pub const register_console = p.log.register_console;
+    pub const log = p.log.log;
+};
+
+pub const Console = p.log.Console;
 
 pub const Cpu = p.cpu.Cpu;
 pub const CpuLocal = p.cpu.CpuLocal;

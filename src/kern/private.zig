@@ -29,3 +29,4 @@ pub const timecounter = @import("timecounter.zig");
 pub const sched = @import("sched.zig");
 pub const wait = @import("wait.zig");
 pub const timer = @import("timer.zig");
+pub const log_ring = @import("log_ring.zig");
