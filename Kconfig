@@ -57,4 +57,9 @@ config NCPUS
 	   help
 			This option sets the maximum number of CPUs the kernel can support.
 
+config LOG_BUFFER_SHIFT
+         int "Log buffer size shift"
+         default 14
+         help
+             This option sets the size of the kernel log buffer as a power of two. The actual size is calculated as 2 raised to the power of this value (i.e., 2^LOG_BUFFER_SHIFT bytes).
 endmenu
