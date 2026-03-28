@@ -14,8 +14,17 @@ fn handler(_: ?*anyopaque) void {
     while (true) {}
 }
 
+var temp_stack1: [8192]u8 align(16) = undefined;
+var temp_stack2: [8192]u8 align(16) = undefined;
+var temp_stack3: [8192]u8 align(16) = undefined;
+
+var stacks: []const []u8 = &.{&temp_stack1, &temp_stack2, &temp_stack3};
+var which_stack: usize = 0;
+
 fn make_thread(entry: *const fn (?*anyopaque) void, td: *ke.Thread, arg: ?*anyopaque) void {
-    const _stack = std.heap.page_allocator.alloc(u8, 16384) catch @panic("wtf");
+    std.debug.assert(which_stack < 3);
+    const _stack = stacks[which_stack];
+    which_stack += 1;
 
     td.init(@intFromPtr(_stack.ptr), 16384, entry, arg);
 }
@@ -49,8 +58,8 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
         ke.ipl.lower(ipl);
     } else {
-        make_thread(&b.ex.fireworks.start, &threads[0], boot_info);
-        ke.sched.enqueue(&threads[0]);
+        // make_thread(&b.ex.fireworks.start, &threads[0], boot_info);
+        // ke.sched.enqueue(&threads[0]);
     }
 
     while (true) {}

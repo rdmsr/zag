@@ -10,6 +10,10 @@ else if (@hasDecl(config, "CONFIG_ARCH_UM"))
 else
     @compileError("unsupported architecture");
 
+pub inline fn first_init() void {
+    return impl.first_init();
+}
+
 /// Early platform-specific initialization, called before anything else.
 pub inline fn early_init() void {
     return impl.early_init();

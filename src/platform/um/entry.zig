@@ -1,6 +1,7 @@
 const b = @import("base");
 
 pub const std_options = b.std_options;
+pub const panic = b.panic;
 
 pub const rtl = @import("rtl");
 
