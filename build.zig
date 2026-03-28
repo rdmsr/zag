@@ -150,6 +150,7 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
         switch (plat.arch) {
             .x86_64 => {
                 const f = std.Target.Cpu.Feature.FeatureSetFns(std.Target.x86.Feature);
+                q.cpu_features_add = f.featureSet(&.{.soft_float});
                 q.cpu_features_sub = f.featureSet(&.{ .x87, .mmx, .sse, .sse2 });
             },
             .aarch64 => {
@@ -169,7 +170,14 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     const name = b.fmt("kernel-{s}", .{@tagName(plat.arch)});
 
-    const root_source_file = if (plat.os == .freestanding) "src/main.zig" else "src/platform/um/entry.zig";
+    const platform_name = if (plat.bootloader) |bl|
+        switch (bl) {
+            .Limine => "limine",
+        }
+    else
+        @tagName(plat.arch);
+
+    const root_source_file = b.fmt("src/platform/{s}/entry.zig", .{platform_name});
 
     const kernel = b.addExecutable(.{
         .name = name,
@@ -191,12 +199,8 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
     if (plat.os == .freestanding) {
         kernel.linkage = .static;
         kernel.pie = false;
-        kernel.bundle_compiler_rt = false;
-        kernel.bundle_ubsan_rt = false;
 
-        kernel.root_module.link_libc = false;
         kernel.root_module.pic = false;
-        kernel.root_module.single_threaded = true;
         kernel.root_module.strip = false;
         kernel.root_module.stack_check = false;
         kernel.root_module.stack_protector = false;

@@ -40,3 +40,5 @@ pub fn tib(comptime N: u32) usize {
 pub const std_options = std.Options{
     .logFn = ke.log.log,
 };
+
+pub const panic = std.debug.FullPanic(ke.panic);

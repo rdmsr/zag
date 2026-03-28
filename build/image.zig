@@ -94,6 +94,7 @@ pub fn addIso(
     mkiso.addArg("-o");
     const iso_out = mkiso.addOutputFileArg(b.fmt("{s}.iso", .{image_name}));
     mkiso.step.dependOn(&prep.step);
+    _ = mkiso.captureStdErr(.{});
 
     if (arch == .x86_64) {
         const bios_install = b.addRunArtifact(limine_tool);

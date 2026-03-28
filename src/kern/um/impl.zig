@@ -20,7 +20,7 @@ fn set_signals(enabled: bool) bool {
     const how = if (enabled) c.SIG_UNBLOCK else c.SIG_BLOCK;
 
     if (c.pthread_sigmask(how, &newmask, &oldmask) != 0) {
-        ke.panic("pthread_sigmask failed", .{});
+        @panic("pthread_sigmask failed");
     }
 
     return c.sigismember(&oldmask, c.SIGUSR1) == 0;
@@ -67,7 +67,7 @@ pub const ThreadContext = struct {
         var new: ThreadContext = .{ .ucontext = undefined };
 
         if (c.getcontext(&new.ucontext) == -1) {
-            ke.panic("getcontext() failed", .{});
+            @panic("getcontext() failed");
         }
 
         new.ucontext.uc_stack.ss_sp = @ptrFromInt(stack);
@@ -99,7 +99,7 @@ pub const ThreadContext = struct {
         thread.lock.release_no_ipl();
 
         if (c.swapcontext(&self.ucontext, &new.ucontext) == -1) {
-            ke.panic("swapcontext() failed", .{});
+            @panic("swapcontext() failed");
         }
     }
 };

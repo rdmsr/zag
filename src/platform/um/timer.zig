@@ -27,7 +27,7 @@ pub fn arm_timer(ns: b.Nanoseconds) void {
     }, .it_interval = .{ .tv_sec = 0, .tv_nsec = 0 } };
 
     if (c.timer_settime(timerid, 0, &value, null) == -1) {
-        ke.panic("timer_settime failed", .{});
+        @panic("timer_settime failed");
     }
 }
 
@@ -68,6 +68,6 @@ pub fn init_cpu() void {
     sev._sigev_un._tid = linux.gettid();
 
     if (c.timer_create(c.CLOCK_MONOTONIC, &sev, &timerid) == -1) {
-        ke.panic("timer_create failed", .{});
+        @panic("timer_create failed");
     }
 }

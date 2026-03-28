@@ -3,9 +3,15 @@ const builtin = @import("builtin");
 
 pub const Config = std.StringHashMap([]const u8);
 
+pub const Bootloader = enum {
+    Limine,
+};
+
 pub const Platform = struct {
     arch: std.Target.Cpu.Arch,
     os: std.Target.Os.Tag,
+
+    bootloader: ?Bootloader = null,
 };
 
 pub fn parseConfig(b: *std.Build) !Config {
@@ -73,11 +79,25 @@ pub fn getPlatform(config: Config) !Platform {
         .{ "CONFIG_ARCH_UM", Platform{ .arch = builtin.cpu.arch, .os = .linux } },
     };
 
-    inline for (keys) |entry| {
-        if (config.get(entry[0])) |val| {
-            if (std.mem.eql(u8, val, "y")) return entry[1];
+    var ret = blk: {
+        inline for (keys) |entry| {
+            if (config.get(entry[0])) |val| {
+                if (std.mem.eql(u8, val, "y")) break :blk entry[1];
+            }
         }
+
+        return error.NoArchConfigured;
+    };
+
+    if (ret.arch == .x86_64 or ret.arch == .aarch64) {
+        ret.bootloader = blk: {
+            if (config.get("CONFIG_BOOT_LIMINE")) |val| {
+                if (std.mem.eql(u8, val, "y")) break :blk .Limine;
+            }
+
+            return error.NoBootloaderConfigured;
+        };
     }
 
-    return error.NoArchConfigured;
+    return ret;
 }
