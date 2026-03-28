@@ -4,7 +4,7 @@ const std = @import("std");
 
 /// Get the string value of `key` in `cmdline`.
 pub fn get_string(cmdline: []const u8, key: []const u8) ?[]const u8 {
-    var parts = std.mem.splitAny(u8, cmdline, " ");
+    var parts = std.mem.splitScalar(u8, cmdline, ' ');
     while (parts.next()) |part| {
         if (part.len > key.len + 1 and
             std.mem.startsWith(u8, part, key) and
