@@ -37,8 +37,6 @@ pub const GlobalState = struct {
 pub var global_state: GlobalState = undefined;
 pub threadlocal var my_cpu: *ke.Cpu = undefined;
 
-pub fn devices_init() void {}
-
 pub fn debug_write(char: u8) void {
     _ = linux.write(linux.STDERR_FILENO, @ptrCast(&char), 1);
 }

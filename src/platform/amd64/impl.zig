@@ -1,9 +1,7 @@
 const b = @import("base");
 const ki = b.ke.private;
 
-pub const name = "AMD64";
-
-pub fn first_init() void {}
+pub const name = "amd64";
 
 pub fn early_init() void {
     const impl_cpu = &ki.bootstrap_cpu.impl;

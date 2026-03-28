@@ -174,7 +174,7 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     const platform_name = if (plat.bootloader) |bl|
         switch (bl) {
-            .Limine => "limine",
+            .Limine => "boot/limine",
         }
     else if (plat.os == .linux) "um" else @tagName(plat.arch);
 
