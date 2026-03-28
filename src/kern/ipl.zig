@@ -31,7 +31,7 @@ pub fn raise(new: Ipl) Ipl {
     const old = cpu.ipl;
 
     if (@intFromEnum(new) < @intFromEnum(old)) {
-        ke.panic("ke.ipl.raise(): Target IPL ({}) is lower than current IPL ({})\n", .{ new, old });
+        std.debug.panic("ke.ipl.raise(): Target IPL ({}) is lower than current IPL ({})", .{ new, old });
     }
 
     if (@intFromEnum(new) > @intFromEnum(Ipl.get_max_software())) {
@@ -53,7 +53,7 @@ pub fn lower(new: Ipl) void {
     const old = cpu.ipl;
 
     if (@intFromEnum(new) > @intFromEnum(old)) {
-        ke.panic("ke.ipl.lower(): Target IPL ({}) is higher than current IPL ({})\n", .{ new, old });
+        std.debug.panic("ke.ipl.lower(): Target IPL ({}) is higher than current IPL ({})", .{ new, old });
     }
 
     if (@intFromEnum(new) <= @intFromEnum(Ipl.get_max_software()) and @intFromEnum(old) > @intFromEnum(Ipl.get_max_software())) {
