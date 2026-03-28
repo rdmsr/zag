@@ -75,7 +75,7 @@ pub fn set(timer: *Timer, time: b.Nanoseconds, dpc: ?*ke.Dpc) void {
     defer cpu.lock.release_no_ipl();
 
     // Initialize the timer.
-    timer.deadline = ke.timecounter.read_time_nano() + time;
+    timer.deadline = ke.time.read_time_nano() + time;
 
     timer.cpu = cpu;
     timer.dpc = dpc;
@@ -134,7 +134,7 @@ pub fn clock() void {
     ke.dpc.enqueue(&percpu.local().dpc, null);
     // Check for overflows.
     // This is fine to call a lot, as the function only gets expensive (i.e seqlock store) when an overflow actually happens.
-    ki.timecounter.update_overflow();
+    ki.time.update_overflow();
 }
 
 // Called in a DPC when a timer has expired.
@@ -143,7 +143,7 @@ fn handle_expiry(_: ?*anyopaque) void {
     const cpu = percpu.local();
 
     while (true) {
-        const curtime = ke.timecounter.read_time_nano();
+        const curtime = ke.time.read_time_nano();
 
         cpu.lock.acquire_no_ipl();
 
@@ -162,7 +162,7 @@ fn handle_expiry(_: ?*anyopaque) void {
             cpu.lock.release_no_ipl();
 
             // Re-check in case the timer expired while we were here.
-            const now = ke.timecounter.read_time_nano();
+            const now = ke.time.read_time_nano();
             if (next.deadline <= now or next.deadline - now <= std.time.ns_per_ms) {
                 continue; // expired in the meantime, loop again
             }

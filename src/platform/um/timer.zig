@@ -57,7 +57,7 @@ pub fn init() void {
 
     posix.sigaction(posix.SIG.ALRM, &act, null);
 
-    ke.timecounter.register(&tc);
+    ke.time.register_source(&tc);
 }
 
 pub fn init_cpu() void {

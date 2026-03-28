@@ -96,7 +96,7 @@ pub fn log(
 
     var res = ringbuffer.reserve(discarder.fullCount()) catch return;
 
-    res.info.timestamp = ke.timecounter.read_time_nano();
+    res.info.timestamp = ke.time.read_time_nano();
     res.info.length = @truncate(discarder.fullCount());
 
     res.buf = std.fmt.bufPrint(res.buf, fmt ++ "\n", args) catch return;
