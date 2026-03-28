@@ -39,8 +39,8 @@ pub threadlocal var my_cpu: *ke.Cpu = undefined;
 
 pub fn devices_init() void {}
 
-pub fn debug_write(char: u8) void {
-    std.debug.print("{c}", .{char});
+fn debug_write(_: *ke.Console, buf: []const u8) void {
+    _ = linux.write(1, buf.ptr, @intCast(buf.len));
 }
 
 pub const arm_timer = timer.arm_timer;
@@ -59,6 +59,12 @@ fn check_function(fn_name: []const u8, ret: usize) void {
 const bootstrap_offsets = [1]usize{0};
 
 pub var cpu_offsets: []usize = undefined;
+
+var early_console: ke.Console = .{
+    .write = debug_write,
+    .last_seq = 0,
+    .link = undefined,
+};
 
 pub fn early_init() linksection(b.init) void {
     // Ensure we can use per-cpu data.
@@ -100,6 +106,8 @@ pub fn early_init() linksection(b.init) void {
     b.kernel_heap_base = heap_base;
 
     std.log.info("um: kernel heap lives at {X}", .{heap_base});
+
+    ke.log.register_console(&early_console);
 }
 
 fn sigusr1_handler(_: posix.SIG, _: *const posix.siginfo_t, _: ?*anyopaque) callconv(.c) void {

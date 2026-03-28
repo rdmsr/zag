@@ -38,5 +38,5 @@ pub fn tib(comptime N: u32) usize {
 }
 
 pub const std_options = std.Options{
-    .logFn = ke.log,
+    .logFn = ke.log.log,
 };
