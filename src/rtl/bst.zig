@@ -1,10 +1,10 @@
-const rtl = @import("rtl");
+const TaggedPtr = @import("tagged_ptr.zig").TaggedPtr;
 const std = @import("std");
 
 pub const Node = struct {
     left: *Node,
     right: *Node,
-    parent: rtl.TaggedPtr(Node),
+    parent: TaggedPtr(Node),
 };
 
 /// Base struct for binary search trees.
@@ -20,7 +20,7 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
         pub fn init(self: *Self) void {
             self.nil.left = &self.nil;
             self.nil.right = &self.nil;
-            self.nil.parent.set_ptr(&self.nil);
+            self.nil.parent = .init(&self.nil, 0);
             self.root = &self.nil;
         }
 
@@ -100,7 +100,7 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
 
         // Insert `elem` into the BST, if already inserted, do nothing.
         // This does not perform any balancing.
-        pub fn insert(self: *Self, elem: *Node) void {
+        pub fn insert(self: *Self, elem: *Node) !void {
             var current = self.root;
 
             if (self.is_nil(current)) {
@@ -128,13 +128,18 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
                     current = current.right;
                 } else {
                     // Already in the tree, do nothing.
-                    return;
+                    return error.AlreadyExists;
                 }
             }
 
             elem.left = &self.nil;
             elem.right = &self.nil;
             elem.parent.set_ptr(current);
+        }
+
+        /// Return whether or not the tree is empty.
+        pub fn is_empty(self: *Self) bool {
+            return self.is_nil(self.root);
         }
     };
 }
@@ -167,7 +172,7 @@ test BST {
     };
 
     for (&nodes) |*node| {
-        tree.insert(&node.node);
+        try tree.insert(&node.node);
     }
 
     for (&nodes) |*node| {
