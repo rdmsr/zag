@@ -43,6 +43,7 @@ pub const sched = struct {
     pub const enqueue = p.sched.enqueue;
     pub const block = p.sched.block;
     pub const unblock = p.sched.unblock;
+    pub const late_init = p.sched.late_init;
 };
 
 pub const timer = struct {

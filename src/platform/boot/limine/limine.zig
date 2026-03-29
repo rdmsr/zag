@@ -79,7 +79,7 @@ pub const RsdpRequest = extern struct {
 
 pub const RsdpResponse = extern struct {
     revision: u64,
-    rsdp_address: ?*anyopaque,
+    rsdp: ?*anyopaque,
 };
 
 pub const cmdline_request_id: [4]u64 = .{
@@ -97,7 +97,7 @@ pub const CmdlineRequest = extern struct {
 
 pub const CmdlineResponse = extern struct {
     revision: u64,
-    cmdline: ?[*]u8,
+    cmdline: ?[*:0]u8,
 };
 
 pub const executable_address_request_id: [4]u64 = .{

@@ -70,7 +70,7 @@ pub const BootInfo = struct {
     pub const KernelAddress = struct { physical_base: usize, virtual_base: usize };
 
     /// RSDP on ACPI machines
-    rsdp: usize,
+    rsdp: ?usize,
 
     /// Kernel command-line arguments
     cmdline: ?[]const u8,
