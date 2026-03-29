@@ -42,8 +42,8 @@ pub export var cmdline_request: limine.CmdlineRequest linksection(".limine_reque
     .response = null,
 };
 
-pub export var kernel_address_request: limine.KernelAddressRequest linksection(".limine_requests") = .{
-    .id = limine.kernel_address_request_id,
+pub export var kernel_address_request: limine.ExecutableAddressRequest linksection(".limine_requests") = .{
+    .id = limine.executable_address_request_id,
     .revision = 0,
     .response = null,
 };
@@ -76,26 +76,14 @@ fn build_memory_map() void {
 }
 
 export fn kmain() callconv(.c) void {
-    boot_info.cmdline = if (cmdline_request.response) |cmdline_response| {
-        cmdline_response.cmdline;
-    } else {
-        null;
-    };
+    boot_info.cmdline = if (cmdline_request.response) |cmdline_response| std.mem.span(cmdline_response.cmdline) else null;
 
-    boot_info.rsdp = if (rsdp_request.response) |rsdp_response| {
-        rsdp_response.rsdp;
-    } else {
-        0;
-    };
+    boot_info.rsdp = if (rsdp_request.response) |rsdp_response| @intFromPtr(rsdp_response.rsdp) else null;
 
-    boot_info.kernel_address = if (kernel_address_request.response) |ka_response| {
-        .{
-            .physical_base = ka_response.kernel_address.physical_base,
-            .virtual_base = ka_response.kernel_address.virtual_base,
-        };
-    } else {
-        .{ .physical_base = 0, .virtual_base = 0 };
-    };
+    boot_info.kernel_address = if (kernel_address_request.response) |ka_response| .{
+        .physical_base = ka_response.physical_base,
+        .virtual_base = ka_response.virtual_base,
+    } else .{ .physical_base = 0, .virtual_base = 0 };
 
     build_memory_map();
 
