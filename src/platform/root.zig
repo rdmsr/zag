@@ -41,7 +41,7 @@ pub const BootInfo = struct {
     pub const MemMap = struct {
         /// A memory map entry.
         pub const Entry = struct {
-            pub const Kind = enum {
+            pub const Type = enum {
                 Free,
                 Reserved,
                 LoaderReclaimable,
@@ -50,7 +50,7 @@ pub const BootInfo = struct {
                 Kernel,
             };
 
-            kind: Kind,
+            type: Type,
             base: usize,
             size: usize,
         };
