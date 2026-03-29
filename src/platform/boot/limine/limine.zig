@@ -15,7 +15,7 @@ pub const requests_end_marker: [2]u64 = .{
     0x9572709f31764c62,
 };
 
-pub fn baseRevision(rev: u64) [3]u64 {
+pub fn base_revision(rev: u64) [3]u64 {
     return .{
         0xf9562b2d5c95a6c8,
         0x6a7b384944536bdc,
@@ -23,10 +23,101 @@ pub fn baseRevision(rev: u64) [3]u64 {
     };
 }
 
-pub fn baseRevisionSupported(base_rev: *const [3]u64) bool {
-    // Limine will overwrite base_rev[2] with 0 if it supports the requested revision.
+pub fn base_revision_supported(base_rev: *const [3]u64) bool {
     return base_rev[2] == 0;
 }
+
+pub const memmap_request_id: [4]u64 = .{
+    common_magic[0],
+    common_magic[1],
+    0x67cf3d9d378a806f,
+    0xe304acdfc50c3c62,
+};
+
+pub const MemmapRequest = extern struct {
+    id: [4]u64,
+    revision: u64,
+    response: ?*MemmapResponse,
+};
+
+pub const MemmapResponse = extern struct {
+    revision: u64,
+    entry_count: u64,
+    entries: ?[*]*MemmapEntry,
+};
+
+pub const MemmapEntryType = enum(u64) {
+    Usable = 0,
+    Reserved = 1,
+    AcpiReclaimable = 2,
+    AcpiNvs = 3,
+    BadMemory = 4,
+    BootloaderReclaimable = 5,
+    KernelAndModules = 6,
+    Framebuffer = 7,
+    ReservedMapped = 8,
+};
+
+pub const MemmapEntry = extern struct {
+    base: u64,
+    length: u64,
+    type: MemmapEntryType,
+};
+
+pub const rsdp_request_id: [4]u64 = .{
+    common_magic[0],
+    common_magic[1],
+    0xc5e77b6b397e7b43,
+    0x27637845accdcf3c,
+};
+
+pub const RsdpRequest = extern struct {
+    id: [4]u64,
+    revision: u64,
+    response: ?*RsdpResponse,
+};
+
+pub const RsdpResponse = extern struct {
+    revision: u64,
+    rsdp_address: ?*anyopaque,
+};
+
+pub const cmdline_request_id: [4]u64 = .{
+    common_magic[0],
+    common_magic[1],
+    0x4b161536e598651e,
+    0xb390ad4a2f1f303a,
+};
+
+pub const CmdlineRequest = extern struct {
+    id: [4]u64,
+    revision: u64,
+    response: ?*CmdlineResponse,
+};
+
+pub const CmdlineResponse = extern struct {
+    revision: u64,
+    cmdline: ?[*]u8,
+};
+
+pub const executable_address_request_id: [4]u64 = .{
+    common_magic[0],
+    common_magic[1],
+    0x71ba76863cc55f63,
+    0xb2644a48c516a487,
+};
+
+pub const ExecutableAddressRequest = extern struct {
+    id: [4]u64,
+    revision: u64,
+    response: ?*ExecutableAddressResponse,
+};
+
+pub const ExecutableAddressResponse = extern struct {
+    revision: u64,
+    physical_base: u64,
+    virtual_base: u64,
+};
 
 pub const framebuffer_request_id: [4]u64 = .{
     common_magic[0],
@@ -63,8 +154,4 @@ pub const Framebuffer = extern struct {
     unused: [7]u8,
     edid_size: u64,
     edid: ?*anyopaque,
-    // Response revision 1 fields (ignored by this template).
-    mode_count: u64,
-    modes: ?[*]*anyopaque,
 };
-
