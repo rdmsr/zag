@@ -1,3 +1,62 @@
+//! Lock-free multi-producer multi-consumer ring buffer designed for kernel logging.
+//!
+//! # Overview
+//!
+//! `RingBuffer` is a concurrent ring buffer that allows multiple writers and readers
+//! to operate simultaneously without locks, making it safe to use from interrupt and
+//! NMI context. It is modelled after Linux's `printk_ringbuffer`, but is simpler (no "committed" state).
+//! See linux's printk_ringbuffer.c for more details.
+//!
+//! The ring buffer is composed of three parallel arrays:
+//!
+//!   - `descs`  - descriptor ring: tracks the state and data location of each record
+//!   - `data`   - data ring: byte storage for the actual messages
+//!   - `infos`  - array containing metadata: stores sequence number, timestamp, and length per record
+//!
+//! `infos` is indexed by descriptor IDs, so it doesn't *really* count as a ring.
+//! `head_id` is the ID of the newest descriptor, the last slot claimed by a writer.
+//! `tail_id` is the ID of the oldest descriptor, the oldest slot which is the next to be evicted.
+//! `tail_id` must always point to a free or published descriptor.
+//! The number of live descriptors at any moment is `head_id - tail_id`,
+//! when this reaches the maximum descriptor count (`desc_count`), the ring is full and `tail_id` must be advanced.
+//! `head_lpos` and `tail_lpos` are the logical positions of the next data block to be written and the oldest data block, respectively.
+//!
+//! # Descriptor states
+//!
+//! Each descriptor transitions through the following states:
+//!
+//!   Reserved -> Published  -> Free
+//!
+//!   `Reserved`   A writer has claimed this slot and is actively writing.
+//!   `Published`  The record is complete and visible to readers.
+//!   `Free`       The slot has been recycled and is available for reuse.
+//!   `Miss`       Pseudo-state: the slot has been recycled to a newer generation.
+//!                Returned when the ID embedded in a descriptor state does not match
+//!                the expected ID, indicating the record is gone.
+//!
+//! # IDs and logical positions
+//!
+//! Both descriptor IDs and data logical positions (`lpos`) are monotonically
+//! increasing integers that never reset. The physical array index is derived
+//! by masking off the lower bits:
+//!
+//!   desc index  =  id   & desc_mask
+//!   data index  =  lpos & data_mask
+//!
+//! The upper bits act as a generation/wrap counter. This means two IDs that map
+//! to the same physical slot can always be distinguished by comparing the full
+//! integer, which prevents ABA bugs.
+//! The `State` atomic packs both the descriptor ID and its state into a single
+//! `usize`, allowing both to be read and updated atomically via CAS (a CAS is used to prevent ABA where the generation could overflow):
+//!
+//!   [ id (upper 62 bits) | state (lower 2 bits) ] (on 64-bit platforms)
+//!
+//! # Wrap handling
+//!
+//! Data blocks are never split across the physical boundary of the data array.
+//! If an allocation would cross the boundary, the block is placed at offset 0 of
+//! the next generation and a stub (containing only the descriptor ID) is left at
+//! the original position so the data ring can be walked linearly during eviction.
 const std = @import("std");
 const base = @import("base");
 const rtl = @import("rtl");
@@ -87,7 +146,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
 
         const Self = @This();
 
-        // Returns the exact Id of the descriptor that occupied this physical slot one loop ago.
+        // Return the exact Id of the descriptor that occupied this physical slot one generation ago.
         fn prev_wrap(id: Id) Id {
             return id -% desc_count;
         }
@@ -100,6 +159,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             return expected.state;
         }
 
+        // Ensure block sizes are always aligned to usize.
         fn to_block_size(size: usize) usize {
             var sz = size;
             sz += @sizeOf(DataBlock);
@@ -124,9 +184,12 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             return size <= data_size / 2;
         }
 
+        // Return true if `lpos_current` has not yet reached `lpos_next`.
+        // Uses wrapping subtraction so that:
+        //   - if lpos_current > lpos_next (another CPU already advanced past the target), returns false.
+        //   - if lpos_current == lpos_next (already at target), the -% 1 wraps to usize max, returns false.
+        //   - if the distance exceeds data_size (should never happen), returns false.
         fn need_more_space(lpos_current: usize, lpos_next: usize) bool {
-            // Unsigned wrapping arithmetic safely calculates distance between positions
-            // across overflow, checking if it exceeds the ring's physical capacity.
             return lpos_next -% lpos_current -% 1 < data_size;
         }
 
@@ -356,8 +419,9 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             return new_id;
         }
 
-        // Check if a block crosses the buffer boundary.
-        // `lpos` encodes a "generation" in its upper bits to track wrapping.
+        // Return true if the range [begin, end) crosses the buffer boundary.
+        // Compares the generation counters (upper bits) of begin and end-1.
+        // The -% 1 ensures a block that fits exactly at the end does not count as wrapping.
         fn data_wraps(begin: usize, end: usize) bool {
             return (begin >> data_size_bits) != ((end -% 1) >> data_size_bits);
         }
@@ -453,17 +517,25 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
 
         /// Initialize and return a new ring buffer instance.
         pub fn init() Self {
+            // Start near usize max so that the first wrap of the ID/lpos space happens
+            // almost immediately, testing overflow handling early rather than after
+            // billions of records.
             const dummy_id: Id = 0 -% @as(Id, desc_count + 1);
             const blk0: usize = -%@as(usize, data_size);
 
             var self: Self = std.mem.zeroes(Self);
 
+            // Place a dummy descriptor in the last slot. head_id and tail_id both start
+            // here so that the first reservation (head_id + 1) lands in slot 0, giving
+            // the first real record sequence number 0.
             self.descs[desc_count - 1].state.store(.{ .state = .Free, .id = dummy_id }, .monotonic);
             self.descs[desc_count - 1].blk_pos = .{ .begin = lpos_no_data, .end = lpos_no_data };
 
             self.head_id.store(dummy_id, .monotonic);
             self.tail_id.store(dummy_id, .monotonic);
 
+            // Make it -(desc_count) so that when the slot is first reserved and the sequence is advanced by desc_count,
+            // the first record gets sequence number 0.
             self.infos[0].sequence = -%(@as(u64, desc_count));
 
             self.head_lpos.store(blk0, .monotonic);
@@ -491,10 +563,14 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             reservation.id = id;
 
             if (seq == 0 and (id & desc_mask) != 0) {
-                // Bootstrap sequence number for initial descriptors.
+                // First time this slot has been used.
+                // Slot 0 never hits this branch, its seq is set to -(desc_count)
+                // in init() so that the else branch below produces seq=0 on its first use.
                 info.sequence = @as(u64, id & desc_mask);
             } else {
-                // Advance sequence by ring size for subsequent iterations.
+                // Slot is being recycled (or is slot 0 on first use).
+                // Adding desc_count advances the sequence by one full ring wrap,
+                // keeping sequence numbers monotonically increasing across generations.
                 info.sequence = seq +% desc_count;
             }
 
