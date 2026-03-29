@@ -9,7 +9,7 @@ const ke = b.ke;
 /// Header for waitable objects.
 /// This must be added to any structured which is considered waitable.
 pub const DispatchHeader = struct {
-    pub const Kind = enum {
+    pub const Type = enum {
         /// When signaled, `signaled` is kept high and all waiters are woken up.
         Notification,
         /// When signaled, `signaled` is decreased until 0, and a single waiter is woken up.
@@ -18,23 +18,23 @@ pub const DispatchHeader = struct {
 
     /// List of WaitBlocks.
     waitblocks: rtl.List,
-    /// Kind of object.
-    kind: Kind,
+    /// Type of object.
+    type: Type,
     /// Lock protecting the object.
     lock: ke.SpinLock,
     /// Signaled count.
     signaled: u32,
 
     /// Initialize a waitable object.
-    pub fn init(obj: *DispatchHeader, kind: Kind) void {
-        obj.kind = kind;
+    pub fn init(obj: *DispatchHeader, kind: Type) void {
+        obj.type = kind;
         obj.lock = ke.SpinLock.init();
         obj.signaled = 0;
         obj.waitblocks.init();
     }
 
     fn consume(self: *DispatchHeader) void {
-        switch (self.kind) {
+        switch (self.type) {
             .Synchronization => self.signaled -= 1,
             .Notification => {
                 // Object remains signaled.
@@ -192,7 +192,7 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks:
 
 /// Satisfy a wait on an object.
 pub fn satisfy_wait(obj: *DispatchHeader) void {
-    const all = obj.kind == .Notification;
+    const all = obj.type == .Notification;
 
     // Go through (potentially) all wait blocks and try to satisfy them.
     while (!obj.waitblocks.is_empty() and obj.signaled > 0) {

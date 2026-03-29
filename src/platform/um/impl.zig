@@ -81,7 +81,7 @@ pub fn early_init() linksection(b.init) void {
     global_state.boot_info.memory_map.entry_count = 1;
     global_state.boot_info.memory_map.entries[0].base = phys_base;
     global_state.boot_info.memory_map.entries[0].size = global_state.params.mem_size;
-    global_state.boot_info.memory_map.entries[0].kind = .Free;
+    global_state.boot_info.memory_map.entries[0].type = .Free;
 
     global_state.phys_memory_memfd = memfd;
     global_state.phys_base = phys_base;
