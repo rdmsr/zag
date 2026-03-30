@@ -1,5 +1,7 @@
 const b = @import("base");
 const ke = b.ke;
+const pl = b.pl;
+const amd64 = pl.impl;
 
 const std = @import("std");
 
@@ -118,19 +120,21 @@ pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
     return percpu_ptr_for(variable, curcpu());
 }
 
-pub inline fn set_hardware_ipl(_: ke.Ipl) void {}
+pub inline fn set_hardware_ipl(ipl: ke.Ipl) void {
+    asm volatile ("mov %[ipl], %%cr8"
+        :
+        : [ipl] "r" (@as(u64, @intFromEnum(ipl))),
+    );
+}
 
 pub inline fn enable_interrupts() void {
-    asm volatile ("sti");
+    amd64.cpu.sti();
 }
 
 pub inline fn disable_interrupts() bool {
-    const rflags = asm volatile (
-        \\cli
-        \\pushfq
-        \\popq %[rflags]
-        : [rflags] "=r" (-> usize),
-    );
+    const rflags = amd64.cpu.rflags();
+
+    amd64.cpu.cli();
 
     return rflags & (1 << 9) != 0;
 }
