@@ -27,18 +27,6 @@ fn com1_write(c: u8) void {
 pub fn early_init() linksection(b.init) void {
     com1_init();
 
-    const impl_cpu = &ki.bootstrap_cpu.impl;
-    impl_cpu.self_ptr = impl_cpu;
-    impl_cpu.percpu_offset = 0;
-
-    const impl_cpu_ptr = @intFromPtr(impl_cpu);
-    asm volatile ("wrmsr"
-        :
-        : [_] "{eax}" (@as(u32, @intCast(impl_cpu_ptr & 0xFFFFFFFF))),
-          [_] "{edx}" (@as(u32, @truncate(impl_cpu_ptr >> 32))),
-          [_] "{ecx}" (0xC000_0101),
-    );
-
     cpu.detect_cpu_features();
 
     const f = cpu.cpu_features;

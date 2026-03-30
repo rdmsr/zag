@@ -87,10 +87,7 @@ export fn kmain() callconv(.c) void {
 
     build_memory_map();
 
-    var cpus: [1]*ke.Cpu = .{&ke.private.bootstrap_cpu};
-
     ke.ncpus = 1;
-    ke.cpus = &cpus;
 
     ki.init(&boot_info);
 }

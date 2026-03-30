@@ -34,8 +34,13 @@ pub const GlobalState = struct {
     phys_base: usize,
 };
 
+pub const CpuState = struct {
+    pthread: c.pthread_t,
+};
+
 pub var global_state: GlobalState = undefined;
-pub threadlocal var my_cpu: *ke.Cpu = undefined;
+pub threadlocal var my_cpu_id: usize = 0;
+pub const percpu = ke.CpuLocal(CpuState, undefined);
 
 pub fn debug_write(char: u8) void {
     _ = linux.write(linux.STDERR_FILENO, @ptrCast(&char), 1);
@@ -62,12 +67,8 @@ pub fn early_init() linksection(b.init) void {
     // Ensure we can use per-cpu data.
     cpu_offsets = @constCast(&bootstrap_offsets);
 
-    // Set current CPU to the bootstrap CPU.
-    my_cpu = &ki.bootstrap_cpu;
-
-    my_cpu.impl.pthread = c.pthread_self();
-
-    my_cpu.id = 0;
+    percpu.local().pthread = c.pthread_self();
+    my_cpu_id = 0;
 
     const memfd: i32 = @intCast(linux.memfd_create("phys_memory", 0));
 
@@ -101,8 +102,8 @@ pub fn early_init() linksection(b.init) void {
 }
 
 fn sigusr1_handler(_: posix.SIG, _: *const posix.siginfo_t, _: ?*anyopaque) callconv(.c) void {
-    if (@intFromEnum(ke.curcpu().ipl) < @intFromEnum(ke.Ipl.Dispatch) and ki.ipl.is_softint_pending(.Dispatch)) {
-        ki.dpc.dispatch(ke.curcpu());
+    if (@intFromEnum(ki.ipl.current()) < @intFromEnum(ke.Ipl.Dispatch) and ki.ipl.is_softint_pending(.Dispatch)) {
+        ki.dpc.dispatch(ke.cpu.current());
     }
 }
 
@@ -117,16 +118,14 @@ fn make_thread(entry: *const fn (?*anyopaque) void, td: *ke.Thread) void {
 
 var cpus_up = std.atomic.Value(usize).init(0);
 
-fn other_cpu_entry(arg: ?*anyopaque) callconv(.c) ?*anyopaque {
-    my_cpu = @ptrCast(@alignCast(arg.?));
+fn other_cpu_entry(_: ?*anyopaque) callconv(.c) ?*anyopaque {
+    my_cpu_id = cpus_up.fetchAdd(1, .monotonic) + 1;
 
-    my_cpu.impl.pthread = c.pthread_self();
+    percpu.local().pthread = c.pthread_self();
 
-    my_cpu.init(my_cpu.idle_thread.?);
+    ki.cpu.init_cpu();
 
     timer.init_cpu();
-
-    _ = cpus_up.fetchAdd(1, .monotonic);
 
     while (true) {}
 
@@ -167,9 +166,7 @@ pub fn late_init() linksection(b.init) void {
     var other_threads =
         allocator.alloc(c.pthread_t, other_count) catch @panic("oom");
 
-    ke.cpus = allocator.alloc(*ke.Cpu, ke.ncpus) catch @panic("oom");
     cpu_offsets = allocator.alloc(usize, ke.ncpus) catch @panic("oom");
-    ke.cpus[0] = &ki.bootstrap_cpu;
     cpu_offsets[0] = 0;
 
     const size = @intFromPtr(&__percpu_end) - @intFromPtr(&__percpu_start);
@@ -178,14 +175,7 @@ pub fn late_init() linksection(b.init) void {
         const block = allocator.alloc(u8, size) catch @panic("oom");
         cpu_offsets[i] = @intFromPtr(block.ptr) -% @intFromPtr(&__percpu_start);
 
-        ke.cpus[i] = ki.impl.percpu_ptr_other(&cpu, i);
-
         @memcpy(block, @as([*]u8, @ptrCast(&__percpu_start))[0..size]);
-
-        ke.cpus[i].idle_thread = allocator.create(ke.Thread) catch @panic("oom");
-        ke.cpus[i].id = @intCast(i);
-
-        make_thread(idle, ke.cpus[i].idle_thread.?);
 
         var attr: c.pthread_attr_t = undefined;
 
@@ -199,7 +189,7 @@ pub fn late_init() linksection(b.init) void {
             &other_threads[i - 1],
             &attr,
             other_cpu_entry,
-            ke.cpus[i],
+            null,
         );
 
         if (r != 0) {

@@ -4,13 +4,6 @@ const c = b.pl.impl.c;
 const ke = b.ke;
 const ki = ke.private;
 
-pub const Cpu = struct { pthread: c.pthread_t };
-
-/// Return the current CPU.
-pub fn curcpu() *ke.Cpu {
-    return b.pl.impl.my_cpu;
-}
-
 fn set_signals(enabled: bool) bool {
     var newmask: c.sigset_t = undefined;
     var oldmask: c.sigset_t = undefined;
@@ -26,10 +19,12 @@ fn set_signals(enabled: bool) bool {
     return c.sigismember(&oldmask, c.SIGUSR1) == 0;
 }
 
+threadlocal var hard_ipl: ke.Ipl = .Passive;
+
 /// Set the hardware IPL.
 pub fn set_hardware_ipl(ipl: ke.Ipl) void {
     // This is a no-op since we handle this in enable_interrupts().
-    _ = ipl;
+    hard_ipl = ipl;
 }
 
 /// Disable interrupts and return the previous state.
@@ -39,18 +34,18 @@ pub fn disable_interrupts() bool {
 
 /// Enable interrupts and return the previous state.
 pub fn enable_interrupts() bool {
-    const ipl_allows_ints = @intFromEnum(ke.curcpu().ipl) <= @intFromEnum(ke.Ipl.get_max_software());
+    const ipl_allows_ints = @intFromEnum(hard_ipl) <= @intFromEnum(ke.Ipl.get_max_software());
     return set_signals(ipl_allows_ints);
 }
 
 /// Restore an interrupt state.
 pub fn restore_interrupts(val: bool) void {
-    const ipl_allows_ints = @intFromEnum(ke.curcpu().ipl) <= @intFromEnum(ke.Ipl.get_max_software());
+    const ipl_allows_ints = @intFromEnum(hard_ipl) <= @intFromEnum(ke.Ipl.get_max_software());
     _ = set_signals(val and ipl_allows_ints);
 }
 
-pub fn send_resched_ipi(cpu: *ke.Cpu) void {
-    _ = c.pthread_kill(cpu.impl.pthread, c.SIGUSR1);
+pub fn send_resched_ipi(cpu: u32) void {
+    _ = c.pthread_kill(b.pl.impl.percpu.remote(cpu).pthread, c.SIGUSR1);
 }
 
 pub const ThreadContext = struct {
@@ -109,5 +104,5 @@ pub inline fn percpu_ptr_other(variable: anytype, cpu_id: usize) @TypeOf(variabl
 }
 
 pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
-    return @ptrFromInt(@intFromPtr(variable) +% b.pl.impl.cpu_offsets[b.pl.impl.my_cpu.id]);
+    return @ptrFromInt(@intFromPtr(variable) +% b.pl.impl.cpu_offsets[b.pl.impl.my_cpu_id]);
 }
