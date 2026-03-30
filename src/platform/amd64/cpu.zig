@@ -137,6 +137,21 @@ pub inline fn rdtsc() u64 {
     return @as(u64, high) << 32 | low;
 }
 
+pub inline fn read_cr(comptime n: u2) u64 {
+    comptime std.debug.assert(n != 1);
+    return asm volatile (std.fmt.comptimePrint("mov %%cr{}, %[ret]", .{n})
+        : [ret] "=r" (-> u64),
+    );
+}
+
+pub inline fn write_cr(comptime n: u2, value: u64) void {
+    comptime std.debug.assert(n != 1);
+    asm volatile (std.fmt.comptimePrint("mov %[value], %%cr{}", .{n})
+        :
+        : [value] "r" (value),
+    );
+}
+
 pub const CpuidResult = struct { eax: u32, ebx: u32, ecx: u32, edx: u32 };
 
 pub inline fn cpuid(leaf: u32, subleaf: u32) CpuidResult {
