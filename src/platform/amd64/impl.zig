@@ -7,7 +7,7 @@ pub const name = "amd64";
 
 const com1 = 0x3F8;
 
-fn com1_init() void {
+fn com1_init() linksection(b.init) void {
     cpu.outb(com1 + 0x3, 0x80);
     cpu.outb(com1 + 0x0, 0x0c);
     cpu.outb(com1 + 0x1, 0x00);
@@ -44,12 +44,13 @@ pub fn early_init() linksection(b.init) void {
     const f = cpu.cpu_features;
 
     std.log.info("amd64/cpu: {s}", .{&f.brand_string});
-    std.log.info("amd64/cpu: vendor={s} x2apic={} la57={} nx={} pcid={} smap={} smep={} pdpe1g={} invtsc={} xsave={} fxsave={} tsc-deadline={}", .{
+    std.log.info("amd64/cpu: vendor={s} x2apic={} la57={} nx={} pcid={} pge={} smap={} smep={} pdpe1g={} invtsc={} xsave={} fxsave={} tsc-deadline={}", .{
         &f.vendor_string,
         @intFromBool(f.x2apic),
         @intFromBool(f.five_level_paging),
         @intFromBool(f.nx),
         @intFromBool(f.pcid),
+        @intFromBool(f.pge),
         @intFromBool(f.smap),
         @intFromBool(f.smep),
         @intFromBool(f.gib_pages),

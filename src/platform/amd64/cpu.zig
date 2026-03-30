@@ -320,6 +320,7 @@ pub const CpuFeatures = struct {
     pcid: bool,
     smap: bool,
     smep: bool,
+    pge: bool,
     vendor_string: [12]u8,
     brand_string: [48]u8,
 };
@@ -343,6 +344,7 @@ pub fn detect_cpu_features() void {
     var pcid = false;
     var smap = false;
     var smep = false;
+    var pge = false;
 
     var vendor_string: [12]u8 = undefined;
     var brand_string: [48]u8 = undefined;
@@ -361,6 +363,7 @@ pub fn detect_cpu_features() void {
         xsave = ecx.xsave;
         pcid = ecx.pcid;
         fxsave = edx.fxsave;
+        pge = edx.pge;
     }
 
     if (max_basic >= 0x7) {
@@ -416,5 +419,6 @@ pub fn detect_cpu_features() void {
         .smep = smep,
         .vendor_string = vendor_string,
         .brand_string = brand_string,
+        .pge = pge,
     };
 }
