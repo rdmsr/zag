@@ -1,5 +1,5 @@
 const b = @import("base");
-const cpu = @import("cpu.zig");
+pub const cpu = @import("cpu.zig");
 const ki = b.ke.private;
 const std = @import("std");
 

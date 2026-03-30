@@ -127,6 +127,14 @@ pub inline fn hlt() void {
     asm volatile ("hlt");
 }
 
+pub inline fn rflags() u64 {
+    var flags: u64 = undefined;
+    asm volatile ("pushfq; pop %[flags]"
+        : [flags] "=r" (flags),
+    );
+    return flags;
+}
+
 pub inline fn rdtsc() u64 {
     var low: u32 = undefined;
     var high: u32 = undefined;
