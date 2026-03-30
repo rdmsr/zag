@@ -13,7 +13,6 @@ pub const Dpc = p.dpc.Dpc;
 pub const TimeCounter = p.time.TimeCounter;
 pub const Timer = p.timer.Timer;
 pub const Console = p.log.Console;
-pub const Cpu = p.cpu.Cpu;
 pub const CpuLocal = p.cpu.CpuLocal;
 pub const CpuMask = p.cpu.CpuMask;
 
@@ -24,6 +23,7 @@ pub const ipl = struct {
     pub const raise = p.ipl.raise;
     pub const lower = p.ipl.lower;
     pub const set_hardware = p.ipl.set_hardware;
+    pub const current = p.ipl.current;
 };
 
 pub const thread = struct {
@@ -61,15 +61,9 @@ pub const log = struct {
     pub const log = p.log.log;
 };
 
-comptime {
-    if (!@hasDecl(p.impl, "curcpu")) @compileError("impl must provide curcpu()");
-}
-
-/// Return the current CPU
-pub const curcpu: fn () *Cpu = p.impl.curcpu;
+pub const cpu = struct {
+    pub const current = p.cpu.current;
+};
 
 /// Number of CPUs on the system
 pub var ncpus: usize = 0;
-
-/// Array of CPUs
-pub var cpus: []*Cpu = undefined;

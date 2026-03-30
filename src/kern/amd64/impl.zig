@@ -99,25 +99,19 @@ pub const ThreadContext = struct {
     }
 };
 
-pub fn curcpu() *ke.Cpu {
-    const asm_template = std.fmt.comptimePrint("movq %%gs:{d}, %[ret]", .{@offsetOf(Cpu, "self_ptr")});
-    const impl_cpu = asm volatile (asm_template
-        : [ret] "=r" (-> *Cpu),
-    );
+inline fn percpu_ptr_for(variable: anytype, cpu: u32) @TypeOf(variable) {
+    _ = cpu; // TODO
+    @panic("TODO percpu_ptr_for");
 
-    return @fieldParentPtr("impl", impl_cpu);
+    // return @ptrFromInt(@intFromPtr(variable) +% cpu.impl.percpu_offset);
 }
 
-inline fn percpu_ptr_for(variable: anytype, cpu: *ke.Cpu) @TypeOf(variable) {
-    return @ptrFromInt(@intFromPtr(variable) +% cpu.impl.percpu_offset);
-}
-
-pub inline fn percpu_ptr_other(variable: anytype, id: usize) @TypeOf(variable) {
-    return percpu_ptr_for(variable, ke.cpus[id]);
+pub inline fn percpu_ptr_other(variable: anytype, id: u32) @TypeOf(variable) {
+    return percpu_ptr_for(variable, id);
 }
 
 pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
-    return percpu_ptr_for(variable, curcpu());
+    @panic("TODO percpu_ptr");
 }
 
 pub inline fn set_hardware_ipl(ipl: ke.Ipl) void {
@@ -147,6 +141,6 @@ pub inline fn restore_interrupts(state: bool) void {
     }
 }
 
-pub inline fn send_resched_ipi(_: *ke.Cpu) void {
+pub inline fn send_resched_ipi(_: u32) void {
     @panic("TODO send_resched_ipi");
 }

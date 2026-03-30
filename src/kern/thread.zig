@@ -77,8 +77,7 @@ pub const Thread = struct {
     /// Linkage into a scheduler run queue.
     runq_link: rtl.List.Entry,
     /// Last CPU this thread ran on.
-    last_cpu: ?*ke.Cpu,
-
+    last_cpu: ?u32,
     /// Run queue this thread is in
     runq: ?*ki.sched.RunQueue,
     /// Index into the run queue this thread is currently in.

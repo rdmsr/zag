@@ -50,7 +50,7 @@ fn pcpu_init() linksection(b.init) callconv(.c) void {
 /// If the DPC is already enqueued, this function is a no-op.
 pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
     const ipl = ke.ipl.raise(.High);
-    const cpu = ke.curcpu();
+    const mycpu = ke.cpu.current();
     const dpc_cpu = pcpu.local();
 
     if (!dpc.inserted) {
@@ -61,7 +61,7 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
         dpc_cpu.queue.insert_tail(&dpc.link);
 
         // Mark the DPC as pending on this CPU
-        ki.ipl.set_softint_pending(cpu, .Dispatch);
+        ki.ipl.set_softint_pending(mycpu, .Dispatch);
 
         dpc.inserted = true;
         dpc_cpu.lock.release_no_ipl();
@@ -70,9 +70,12 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
     ke.ipl.lower(ipl);
 }
 
-fn dispatch_queue(cpu: *ke.Cpu) void {
-    cpu.ipl = .Dispatch;
+fn dispatch_queue(cpu: u32) void {
+    const ipl_cpu = ki.ipl.percpu.remote(cpu);
     const dpc_cpu = pcpu.remote(cpu);
+    const sched_cpu = ki.sched.percpu.remote(cpu);
+
+    ipl_cpu.ipl = .Dispatch;
 
     // Mark as handled, this must be done before enabling interrupts or we will race.
     ki.ipl.clear_softint_pending(cpu, .Dispatch);
@@ -101,47 +104,46 @@ fn dispatch_queue(cpu: *ke.Cpu) void {
         const arg = dpc.arg;
 
         dpc_cpu.lock.release(ipl);
-        std.debug.assert(cpu.ipl == .Dispatch);
+        std.debug.assert(ke.ipl.current() == .Dispatch);
 
         dpc.func(arg);
     }
 
-    if (cpu.start_timer) {
-        ke.timer.set(&cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &cpu.resched_dpc);
+    if (sched_cpu.start_timer) {
+        ke.timer.set(&sched_cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &sched_cpu.resched_dpc);
     }
 
-    if (cpu.preemption_reason == .HigherPriority) {
+    if (sched_cpu.preemption_reason == .HigherPriority) {
         // Reload the quantum for the new thread.
-        ke.timer.cancel(&cpu.resched_timer);
-        ke.timer.set(&cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &cpu.resched_dpc);
+        ke.timer.cancel(&sched_cpu.resched_timer);
+        ke.timer.set(&sched_cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &sched_cpu.resched_dpc);
     }
 
-    cpu.start_timer = false;
-    cpu.preemption_reason = .None;
+    sched_cpu.start_timer = false;
+    sched_cpu.preemption_reason = .None;
 
-    if (cpu.next_thread != null) {
-        ki.sched.handle_preemption(cpu);
+    if (sched_cpu.next_thread != null) {
+        ki.sched.handle_preemption(sched_cpu);
     }
 
     _ = ki.impl.disable_interrupts();
 }
 
 /// Dispatch the DPC queue on `cpu`.
-pub fn dispatch(cpu: *ke.Cpu) void {
+pub fn dispatch(cpu: u32) void {
     // DPC processing is done at Ipl.Dispatch
     // We can't call lower/raise here because they might call us again recursively.
     var mycpu = cpu;
-    const old_ipl = cpu.ipl;
+    const old_ipl = ki.ipl.percpu.remote(mycpu).ipl;
     const int_state = ki.impl.disable_interrupts();
 
     while (ki.ipl.is_softint_pending(.Dispatch)) {
         dispatch_queue(mycpu);
-
         // Our CPU might have changed.
-        mycpu = ke.curcpu();
+        mycpu = ke.cpu.current();
     }
 
-    cpu.ipl = old_ipl;
+    ki.ipl.percpu.remote(mycpu).ipl = old_ipl;
 
     ki.impl.restore_interrupts(int_state);
 }

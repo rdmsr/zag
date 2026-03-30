@@ -15,7 +15,6 @@ else
     @compileError("unsupported architecture");
 
 pub const init = init_mod.init;
-pub var bootstrap_cpu: ke.Cpu = undefined;
 
 // === Exported Modules ===
 pub const ipl = @import("ipl.zig");

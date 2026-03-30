@@ -16,7 +16,7 @@ fn timer_handler(_: posix.SIG, _: *const posix.siginfo_t, _: ?*anyopaque) callco
     _ = ke.ipl.set_hardware(old_ipl);
 
     if (@intFromEnum(old_ipl) < @intFromEnum(ke.Ipl.Dispatch) and ki.ipl.is_softint_pending(.Dispatch)) {
-        ki.dpc.dispatch(ke.curcpu());
+        ki.dpc.dispatch(ke.cpu.current());
     }
 }
 
