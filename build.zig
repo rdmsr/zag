@@ -72,7 +72,21 @@ pub fn build(b: *std.Build) void {
 
     base_module.addImport("base", base_module);
 
-    const kernel_nosym = addKernel(b, plat, optimize, config_module, empty_ksyms_module, rtl_module, base_module);
+    const arch = if (plat.os == .freestanding) switch (plat.arch) {
+        .x86_64 => "amd64",
+        else => @tagName(plat.arch),
+    } else "um";
+
+    const arch_module = b.createModule(.{
+        .root_source_file = b.path(b.fmt("src/arch/{s}/root.zig", .{arch})),
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "config", .module = config_module },
+            .{ .name = "rtl", .module = rtl_module },
+        },
+    });
+
+    const kernel_nosym = addKernel(b, plat, optimize, config_module, empty_ksyms_module, rtl_module, base_module, arch_module);
 
     b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
 
@@ -89,7 +103,7 @@ pub fn build(b: *std.Build) void {
     });
 
     // second pass
-    const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, base_module);
+    const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, base_module, arch_module);
 
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
 
@@ -167,7 +181,7 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
     return q;
 }
 
-fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module, base: *std.Build.Module) *std.Build.Step.Compile {
+fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module, base: *std.Build.Module, arch: *std.Build.Module) *std.Build.Step.Compile {
     const target = b.resolveTargetQuery(targetQueryForPlatform(plat));
 
     const name = b.fmt("kernel-{s}", .{@tagName(plat.arch)});
@@ -176,9 +190,11 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
         switch (bl) {
             .Limine => "boot/limine",
         }
-    else if (plat.os == .linux) "um" else @tagName(plat.arch);
+    else if (plat.os == .linux) "platform/um" else @tagName(plat.arch);
 
-    const root_source_file = b.fmt("src/platform/{s}/entry.zig", .{platform_name});
+    base.addImport("arch", arch);
+
+    const root_source_file = b.fmt("src/{s}/entry.zig", .{platform_name});
 
     const kernel = b.addExecutable(.{
         .name = name,

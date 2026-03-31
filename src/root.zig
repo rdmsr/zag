@@ -4,6 +4,7 @@ pub const ex = @import("ex/root.zig");
 pub const pl = @import("platform/root.zig");
 pub const rtl = @import("rtl");
 pub const ksyms = @import("ksyms");
+pub const arch = @import("arch");
 
 pub const init = ".text.init";
 pub const percpu_init = ".percpu_init_array";

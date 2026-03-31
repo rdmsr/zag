@@ -2,6 +2,7 @@ const std = @import("std");
 const b = @import("base");
 const pl = b.pl;
 const ke = b.ke;
+const arch = b.arch;
 const ki = ke.private;
 const ex = b.ex;
 
@@ -17,7 +18,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     thread0.priority = 0;
     thread0.priority_class = .Idle;
 
-    std.log.info("Zag for {s}, cmdline is \"{?s}\"", .{ pl.name, boot_info.cmdline });
+    std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{ pl.name, arch.name, boot_info.cmdline });
 
     ex.private.init(boot_info);
 }

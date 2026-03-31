@@ -1,7 +1,7 @@
 const b = @import("base");
 const ke = b.ke;
 const pl = b.pl;
-const amd64 = pl.impl;
+const amd64 = b.arch;
 
 const std = @import("std");
 
