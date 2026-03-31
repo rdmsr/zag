@@ -4,7 +4,7 @@
 const config = @import("config");
 
 pub const impl = if (@hasDecl(config, "CONFIG_ARCH_AMD64"))
-    @import("amd64/impl.zig")
+    @import("pc/impl.zig")
 else if (@hasDecl(config, "CONFIG_ARCH_UM"))
     @import("um/impl.zig")
 else

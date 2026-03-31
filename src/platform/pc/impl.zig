@@ -1,9 +1,11 @@
 const b = @import("base");
-pub const cpu = @import("cpu.zig");
-const ki = b.ke.private;
+const amd64 = b.arch;
 const std = @import("std");
 
-pub const name = "amd64";
+const ki = b.ke.private;
+const cpu = amd64.cpu;
+
+pub const name = "PC";
 
 const com1 = 0x3F8;
 
