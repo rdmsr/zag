@@ -5,6 +5,8 @@ const amd64 = b.arch;
 
 const std = @import("std");
 
+pub const early_init = @import("init.zig").early_init;
+
 pub const Cpu = struct {
     self_ptr: *Cpu,
     percpu_offset: usize,
@@ -122,15 +124,15 @@ pub inline fn set_hardware_ipl(ipl: ke.Ipl) void {
 }
 
 pub inline fn enable_interrupts() void {
-    amd64.cpu.sti();
+    amd64.sti();
 }
 
 pub inline fn disable_interrupts() bool {
-    const rflags = amd64.cpu.rflags();
+    const ie = amd64.rflags().interrupt_enable;
 
-    amd64.cpu.cli();
+    amd64.cli();
 
-    return rflags & (1 << 9) != 0;
+    return ie;
 }
 
 pub inline fn restore_interrupts(state: bool) void {
