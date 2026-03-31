@@ -33,5 +33,6 @@ pub fn early_init() linksection(b.init) void {
 
     int.init();
 
-    asm volatile ("int3");
+    // Enable Per-CPU data for this CPU
+    amd64.wrmsr(.GsBase, 0);
 }

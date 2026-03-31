@@ -12,6 +12,8 @@ pub const Cpu = struct {
     percpu_offset: usize,
 };
 
+pub var cpu_self_offset: usize linksection(b.percpu) = 0;
+
 pub const ThreadContext = struct {
     rdi: u64,
     rsi: u64,
@@ -104,7 +106,6 @@ pub const ThreadContext = struct {
 inline fn percpu_ptr_for(variable: anytype, cpu: u32) @TypeOf(variable) {
     _ = cpu; // TODO
     @panic("TODO percpu_ptr_for");
-
     // return @ptrFromInt(@intFromPtr(variable) +% cpu.impl.percpu_offset);
 }
 
@@ -113,7 +114,12 @@ pub inline fn percpu_ptr_other(variable: anytype, id: u32) @TypeOf(variable) {
 }
 
 pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
-    @panic("TODO percpu_ptr");
+    const offset = asm volatile ("mov %%gs:(%[self]), %[out]"
+        : [out] "=r" (-> u64),
+        : [self] "r" (&cpu_self_offset),
+    );
+
+    return @ptrFromInt(offset +% @intFromPtr(variable));
 }
 
 pub inline fn set_hardware_ipl(ipl: ke.Ipl) void {
