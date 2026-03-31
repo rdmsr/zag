@@ -110,6 +110,12 @@ pub inline fn wrmsr(msr: Msr, value: u64) void {
     );
 }
 
+pub inline fn rdgsbase() usize {
+    return asm volatile ("rdgsbase %[ret]"
+        : [ret] "=r" (-> usize),
+    );
+}
+
 pub inline fn invlpg(addr: u64) void {
     asm volatile ("invlpg (%[addr])"
         :
@@ -204,7 +210,7 @@ pub const Cr4 = packed struct(u64) {
     osxmmEex: bool,
     umip: bool,
     la57: bool,
-    reserved: u4,
+    reserved: u3,
     fsgsbase: bool,
     pcide: bool,
     osxsave: bool,
@@ -213,16 +219,17 @@ pub const Cr4 = packed struct(u64) {
     smap: bool,
     pke: bool,
     cet: bool,
+    reserved2: u40,
 };
 
-pub inline fn read_cr(comptime n: u2) u64 {
+pub inline fn read_cr(comptime n: u8) u64 {
     comptime std.debug.assert(n != 1);
     return asm volatile (std.fmt.comptimePrint("mov %%cr{}, %[ret]", .{n})
         : [ret] "=r" (-> u64),
     );
 }
 
-pub inline fn write_cr(comptime n: u2, value: u64) void {
+pub inline fn write_cr(comptime n: u8, value: u64) void {
     comptime std.debug.assert(n != 1);
     asm volatile (std.fmt.comptimePrint("mov %[value], %%cr{}", .{n})
         :
