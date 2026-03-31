@@ -3,35 +3,34 @@ const amd64 = b.arch;
 const std = @import("std");
 
 const ki = b.ke.private;
-const cpu = amd64.cpu;
 
 pub const name = "PC";
 
 const com1 = 0x3F8;
 
 fn com1_init() linksection(b.init) void {
-    cpu.outb(com1 + 0x3, 0x80);
-    cpu.outb(com1 + 0x0, 0x0c);
-    cpu.outb(com1 + 0x1, 0x00);
-    cpu.outb(com1 + 0x3, 0x03);
-    cpu.outb(com1 + 0x2, 0xc7);
-    cpu.outb(com1 + 0x4, 0x00);
+    amd64.outb(com1 + 0x3, 0x80);
+    amd64.outb(com1 + 0x0, 0x0c);
+    amd64.outb(com1 + 0x1, 0x00);
+    amd64.outb(com1 + 0x3, 0x03);
+    amd64.outb(com1 + 0x2, 0xc7);
+    amd64.outb(com1 + 0x4, 0x00);
 }
 
 fn com1_write(c: u8) void {
-    while ((cpu.inb(com1 + 0x5) & 0x20) == 0) {}
+    while ((amd64.inb(com1 + 0x5) & 0x20) == 0) {}
     if (c == '\n') {
-        cpu.outb(com1, '\r');
+        amd64.outb(com1, '\r');
     }
-    cpu.outb(com1, c);
+    amd64.outb(com1, c);
 }
 
 pub fn early_init() linksection(b.init) void {
     com1_init();
 
-    cpu.detect_cpu_features();
+    amd64.detect_cpu_features();
 
-    const f = cpu.cpu_features;
+    const f = amd64.cpu_features;
 
     std.log.info("amd64/cpu: {s}", .{&f.brand_string});
     std.log.info("amd64/cpu: vendor={s} x2apic={} la57={} nx={} pcid={} pge={} smap={} smep={} pdpe1g={} invtsc={} xsave={} fxsave={} tsc-deadline={}", .{

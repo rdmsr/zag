@@ -236,6 +236,13 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
             else => {},
         }
 
+        switch (plat.arch) {
+            .x86_64 => {
+                kernel.root_module.addAssemblyFile(b.path("src/kern/amd64/locore.s"));
+            },
+            else => {},
+        }
+
         kernel.linker_script = b.path(b.fmt("build/linker-scripts/{s}.lds", .{@tagName(plat.arch)}));
     } else {
         kernel.linker_script = b.path("build/linker-scripts/uml.lds");
