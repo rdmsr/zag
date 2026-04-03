@@ -52,7 +52,7 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, plat: config.Platf
 
         switch (plat.arch) {
             .x86_64 => {
-                qemu.addArgs(&.{ "-serial", "stdio" });
+                qemu.addArgs(&.{ "-serial", "stdio", "-m", "1G", "-smp", "4" });
 
                 if (!debug) qemu.addArgs(&.{ "-enable-kvm", "-cpu", "host" });
             },

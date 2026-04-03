@@ -33,16 +33,24 @@ SECTIONS
     /* Move to the next memory page for .text */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
+    text_start_addr = .;
+
     .text : {
         *(.text .text.*)
     } :text
 
+
     /* Move to the next memory page for .rodata */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
+
+    text_end_addr = .;
+
+    rodata_start_addr = .;
 
     .rodata : {
         *(.rodata .rodata.*)
     } :rodata
+
 
     .percpu_init_array : {
         __init_array_percpu_start = .;
@@ -56,9 +64,12 @@ SECTIONS
         *(.note.gnu.build-id)
     } :rodata
 
+
     /* Move to the next memory page for .data */
     . = ALIGN(CONSTANT(MAXPAGESIZE));
+    rodata_end_addr = .;
 
+    data_start_addr = .;
     .data : {
         *(.data .data.*)
     } :data
@@ -69,6 +80,7 @@ SECTIONS
         __percpu_end = .;
     } :data
 
+
     /* NOTE: .bss needs to be the last thing mapped to :data, otherwise lots of */
     /* unnecessary zeros will be written to the binary. */
     /* If you need, for example, .init_array and .fini_array, those should be placed */
@@ -78,10 +90,14 @@ SECTIONS
         *(COMMON)
     } :data
 
+
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
+
+    data_end_addr = .;
+
     /* Discard .note.* and .eh_frame* since they may cause issues on some hosts. */
     /DISCARD/ : {
         *(.eh_frame*)
         *(.note .note.*)
     }
 }
-
