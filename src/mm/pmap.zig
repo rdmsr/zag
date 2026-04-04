@@ -55,7 +55,7 @@ const AllocatingSource = struct {
     flags: mm.MapFlags,
 
     pub fn next(self: *const AllocatingSource, _: b.VAddr) MapItem {
-        const pa = mi.phys.alloc_page();
+        const pa = mi.phys.alloc();
         return .{
             .pa = pa,
             .len = mm.page_size,
