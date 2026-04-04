@@ -133,7 +133,7 @@ pub fn RadixPmap(comptime Impl: type) type {
                             return error.PageNotMapped;
                         }
 
-                        const new_table_pa = mi.phys.alloc_page();
+                        const new_table_pa = mi.phys.alloc();
                         const table_ptr: [*]Impl.Pte = @ptrFromInt(mm.p2v(new_table_pa));
                         @memset(table_ptr[0..entries_per_table], std.mem.zeroes(Impl.Pte));
 
