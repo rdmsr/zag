@@ -11,8 +11,8 @@ else
     @compileError("unsupported architecture");
 
 /// Early platform-specific initialization, called before anything else.
-pub inline fn early_init() void {
-    return impl.early_init();
+pub inline fn early_init(boot_info: *BootInfo) void {
+    return impl.early_init(boot_info);
 }
 
 /// Late platform init. Memory allocator is available at this point.

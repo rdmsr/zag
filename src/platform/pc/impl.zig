@@ -1,4 +1,5 @@
 const b = @import("base");
+const pl = b.pl;
 const amd64 = b.arch;
 const std = @import("std");
 
@@ -25,7 +26,7 @@ fn com1_write(c: u8) void {
     amd64.outb(com1, c);
 }
 
-pub fn early_init() linksection(b.init) void {
+pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     com1_init();
 
     amd64.detect_cpu_features();
@@ -48,6 +49,7 @@ pub fn early_init() linksection(b.init) void {
         @intFromBool(f.fxsave),
         @intFromBool(f.tsc_deadline),
     });
+    _ = boot_info;
 }
 
 pub fn late_init() void {}
