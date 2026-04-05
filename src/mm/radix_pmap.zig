@@ -206,12 +206,12 @@ pub fn RadixPmap(comptime Impl: type) type {
                 const old_va = self.va;
                 self.va +%= offset;
 
-                var level: usize = 0;
-                while (level < num_levels - 1) : (level += 1) {
-                    const shift = level_shift(level + 1);
+                var level: usize = num_levels - 1;
+                while (level > 0) : (level -= 1) {
+                    const shift = level_shift(level);
                     if ((old_va >> shift) != (self.va >> shift)) {
-                        self.top_level = level + 1;
-                        break;
+                        self.top_level = level;
+                        return;
                     }
                 }
             }
