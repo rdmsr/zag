@@ -58,7 +58,7 @@ fn push_to_pool(batch: *mm.Page) void {
 
         const new_head = GlobalHead{
             .pfn = mm.struct_page_to_pfn(batch),
-            .tag = old_head.tag + 1,
+            .tag = old_head.tag +% 1,
         };
 
         old_head = batch_pool.cmpxchgWeak(old_head, new_head, .acq_rel, .acquire) orelse break;
