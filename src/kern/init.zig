@@ -1,4 +1,5 @@
 const std = @import("std");
+const rtl = @import("rtl");
 const b = @import("base");
 const pl = b.pl;
 const ke = b.ke;
@@ -10,6 +11,7 @@ var thread0: ke.Thread = undefined;
 var stack: [8192]u8 align(16) = undefined;
 
 pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
+    rtl.init();
     std.log.info("hello, world", .{});
     ki.impl.early_init();
     pl.early_init(boot_info);

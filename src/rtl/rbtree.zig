@@ -68,8 +68,10 @@ pub fn RBTree(comptime cmp: fn (*bst.Node, *bst.Node) std.math.Order) type {
             node.parent.set_ptr(y);
         }
 
-        pub fn init(self: *Self) void {
-            self.tree.init();
+        pub fn init() Self {
+            return Self{
+                .tree = bst.BST(cmp).init(),
+            };
         }
 
         /// Insert the node `elem` into the tree.
@@ -157,7 +159,7 @@ pub fn RBTree(comptime cmp: fn (*bst.Node, *bst.Node) std.math.Order) type {
         /// Delete the node `elem` from the tree.
         pub fn delete(self: *Self, elem: *bst.Node) void {
             var node = elem;
-            var child = &self.tree.nil;
+            var child = &bst.nil;
             var orig_color = get_color(node);
 
             if (self.tree.is_nil(node.left)) {
@@ -304,10 +306,17 @@ fn check_invariants(tree: *RBTree(cmp_test_node)) !void {
     _ = try get_black_height(tree, tree.tree.root);
 }
 
-test "invariants hold after each insertion" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
+fn make_tree() RBTree(cmp_test_node) {
+    bst.init_nil();
+    return .init();
+}
 
+fn insert_all(tree: *RBTree(cmp_test_node), nodes: []TestNode) !void {
+    for (nodes) |*n| try tree.insert(&n.node);
+}
+
+test "invariants hold after each insertion" {
+    var tree = make_tree();
     var nodes = [_]TestNode{
         .{ .value = 10, .node = undefined },
         .{ .value = 5, .node = undefined },
@@ -319,7 +328,6 @@ test "invariants hold after each insertion" {
         .{ .value = 3, .node = undefined },
         .{ .value = 6, .node = undefined },
     };
-
     for (&nodes) |*n| {
         try tree.insert(&n.node);
         try check_invariants(&tree);
@@ -327,33 +335,28 @@ test "invariants hold after each insertion" {
 }
 
 test "ascending insertion stays balanced" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
+    var tree = make_tree();
     var nodes: [10]TestNode = undefined;
     for (&nodes, 0..) |*n, i| {
-        n.value = @intCast(i + 1);
-        n.node = undefined;
+        n.* = .{ .value = @intCast(i + 1), .node = undefined };
         try tree.insert(&n.node);
         try check_invariants(&tree);
     }
 }
 
 test "descending insertion stays balanced" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
+    var tree = make_tree();
     var nodes: [10]TestNode = undefined;
     for (&nodes, 0..) |*n, i| {
-        n.value = @intCast(10 - i);
-        n.node = undefined;
+        n.* = .{ .value = @intCast(10 - i), .node = undefined };
         try tree.insert(&n.node);
         try check_invariants(&tree);
     }
 }
 
 test "single insert and delete" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
-    var n = TestNode{ .value = 69, .node = undefined };
+    var tree = make_tree();
+    var n = TestNode{ .value = 42, .node = undefined };
     try tree.insert(&n.node);
     try check_invariants(&tree);
     tree.delete(&n.node);
@@ -361,37 +364,32 @@ test "single insert and delete" {
 }
 
 test "delete root" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
-
+    var tree = make_tree();
     var nodes = [_]TestNode{
         .{ .value = 5, .node = undefined },
         .{ .value = 3, .node = undefined },
         .{ .value = 7, .node = undefined },
     };
-    for (&nodes) |*n| try tree.insert(&n.node);
+    try insert_all(&tree, &nodes);
     tree.delete(&nodes[0].node);
     try check_invariants(&tree);
     try std.testing.expect(!tree.tree.is_empty());
 }
 
 test "delete leaf" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
+    var tree = make_tree();
     var nodes = [_]TestNode{
         .{ .value = 5, .node = undefined },
         .{ .value = 3, .node = undefined },
         .{ .value = 7, .node = undefined },
     };
-    for (&nodes) |*n| try tree.insert(&n.node);
+    try insert_all(&tree, &nodes);
     tree.delete(&nodes[1].node);
     try check_invariants(&tree);
 }
 
 test "delete node with two children" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
-
+    var tree = make_tree();
     var nodes = [_]TestNode{
         .{ .value = 10, .node = undefined },
         .{ .value = 5, .node = undefined },
@@ -399,15 +397,13 @@ test "delete node with two children" {
         .{ .value = 3, .node = undefined },
         .{ .value = 7, .node = undefined },
     };
-    for (&nodes) |*n| try tree.insert(&n.node);
+    try insert_all(&tree, &nodes);
     tree.delete(&nodes[1].node);
     try check_invariants(&tree);
 }
 
 test "invariants hold after each deletion" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
-
+    var tree = make_tree();
     var nodes = [_]TestNode{
         .{ .value = 5, .node = undefined },
         .{ .value = 3, .node = undefined },
@@ -419,7 +415,7 @@ test "invariants hold after each deletion" {
         .{ .value = 1, .node = undefined },
         .{ .value = 9, .node = undefined },
     };
-    for (&nodes) |*n| try tree.insert(&n.node);
+    try insert_all(&tree, &nodes);
 
     const delete_order = [_]usize{ 3, 0, 7, 1, 5, 2, 6, 4, 8 };
     for (delete_order) |i| {
@@ -430,8 +426,7 @@ test "invariants hold after each deletion" {
 }
 
 test "duplicate insert returns error" {
-    var tree: RBTree(cmp_test_node) = undefined;
-    tree.init();
+    var tree = make_tree();
     var a = TestNode{ .value = 5, .node = undefined };
     var b = TestNode{ .value = 5, .node = undefined };
     try tree.insert(&a.node);

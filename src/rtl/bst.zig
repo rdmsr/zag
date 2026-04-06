@@ -7,26 +7,38 @@ pub const Node = struct {
     parent: TaggedPtr(Node),
 };
 
+pub var nil = Node{
+    .left = undefined,
+    .right = undefined,
+    .parent = undefined,
+};
+
+/// Initialize the sentinel nil node. This should be called before using any BSTs.
+pub fn init_nil() void {
+    nil.left = &nil;
+    nil.right = &nil;
+    nil.parent.set_ptr(&nil);
+    nil.parent.set_tag(0);
+}
+
 /// Base struct for binary search trees.
 /// This should be used as a field in other types that are based on binary search trees, such as red-black trees or AVL trees.
 pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
     return struct {
         const Self = @This();
 
-        root: *Node = undefined,
-        nil: Node = undefined,
+        root: *Node = &nil,
 
-        /// Initialize the BST. This must be called before using the tree.
-        pub fn init(self: *Self) void {
-            self.nil.left = &self.nil;
-            self.nil.right = &self.nil;
-            self.nil.parent = .init(&self.nil, 0);
-            self.root = &self.nil;
+        pub fn init() Self {
+            return Self{
+                .root = &nil,
+            };
         }
 
         /// Return whether or not the given node is the sentinel nil node.
         pub fn is_nil(self: *Self, node: *Node) bool {
-            return node == &self.nil;
+            _ = self;
+            return node == &nil;
         }
 
         /// Search for a node in the BST that matches `elem`, and return a pointer to it if found.
@@ -79,7 +91,7 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
             }
 
             if (parent == self.root) {
-                return &self.nil;
+                return &nil;
             }
 
             return parent;
@@ -105,9 +117,9 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
 
             if (self.is_nil(current)) {
                 self.root = elem;
-                elem.left = &self.nil;
-                elem.right = &self.nil;
-                elem.parent.set_ptr(&self.nil);
+                elem.left = &nil;
+                elem.right = &nil;
+                elem.parent.set_ptr(&nil);
                 return;
             }
 
@@ -132,8 +144,8 @@ pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
                 }
             }
 
-            elem.left = &self.nil;
-            elem.right = &self.nil;
+            elem.left = &nil;
+            elem.right = &nil;
             elem.parent.set_ptr(current);
         }
 
@@ -158,8 +170,9 @@ fn node_cmp(a: *Node, b: *Node) std.math.Order {
 }
 
 test BST {
-    var tree: BST(node_cmp) = undefined;
-    tree.init();
+    init_nil();
+
+    var tree: BST(node_cmp) = .init();
 
     var nodes = [_]MyNode{
         .{ .value = 5, .node = undefined },
