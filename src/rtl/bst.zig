@@ -7,19 +7,11 @@ pub const Node = struct {
     parent: TaggedPtr(Node),
 };
 
-pub var nil = Node{
-    .left = undefined,
-    .right = undefined,
-    .parent = undefined,
+pub var nil: Node = .{
+    .left = &nil,
+    .right = &nil,
+    .parent = .{ .value = 0 },
 };
-
-/// Initialize the sentinel nil node. This should be called before using any BSTs.
-pub fn init_nil() void {
-    nil.left = &nil;
-    nil.right = &nil;
-    nil.parent.set_ptr(&nil);
-    nil.parent.set_tag(0);
-}
 
 /// Base struct for binary search trees.
 /// This should be used as a field in other types that are based on binary search trees, such as red-black trees or AVL trees.
@@ -170,8 +162,6 @@ fn node_cmp(a: *Node, b: *Node) std.math.Order {
 }
 
 test BST {
-    init_nil();
-
     var tree: BST(node_cmp) = .init();
 
     var nodes = [_]MyNode{
