@@ -11,10 +11,6 @@ pub const bst = @import("bst.zig");
 pub const BST = bst.BST;
 pub const RBTree = @import("rbtree.zig").RBTree;
 
-pub fn init() void {
-    bst.init_nil();
-}
-
 test {
     std.testing.refAllDecls(@This());
 }

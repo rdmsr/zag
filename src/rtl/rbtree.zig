@@ -307,7 +307,6 @@ fn check_invariants(tree: *RBTree(cmp_test_node)) !void {
 }
 
 fn make_tree() RBTree(cmp_test_node) {
-    bst.init_nil();
     return .init();
 }
 
