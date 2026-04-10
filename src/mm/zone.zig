@@ -569,7 +569,7 @@ pub const Zone = struct {
         return slab;
     }
 
-    fn slab_create_large(self: *Self) !*Slab {
+    fn slab_create_large(self: *Self) mm.Error!*Slab {
         self.color += self.alignment;
 
         if (self.color > self.max_color) {
