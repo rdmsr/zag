@@ -35,7 +35,7 @@ const DebugWriter = struct {
 // Messages are on average 2^5 = 32 bytes.
 const avg_msg_size_bits = 5;
 
-var ringbuffer = ki.log_ring.RingBuffer(config.CONFIG_LOG_BUFFER_SHIFT, avg_msg_size_bits).init();
+pub var ringbuffer = ki.log_ring.RingBuffer(config.CONFIG_LOG_BUFFER_SHIFT, avg_msg_size_bits).init();
 
 pub fn log(
     comptime level: std.log.Level,
