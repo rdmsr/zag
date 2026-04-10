@@ -78,9 +78,14 @@ fn map_kernel(boot_info: *pl.BootInfo) void {
     }
 }
 
+const std = @import("std");
+
 pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     mi.phys.init(boot_info);
     map_kernel(boot_info);
     mi.kernel_pmap.activate();
     mi.phys.init_pfndb();
+    mi.zone.early_init();
+    mi.vmem.init();
+    mi.heap.init();
 }

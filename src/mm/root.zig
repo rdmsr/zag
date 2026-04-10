@@ -6,6 +6,7 @@ const std = @import("std");
 pub const page_size = 4096;
 
 pub const init = private.init.init;
+pub const vmem = private.vmem;
 
 // 16 TB of maximum physical memory.
 // This should be fine on consumer hardware for at least a decade :^)
@@ -27,6 +28,8 @@ pub const MapFlags = packed struct {
     write_through: bool = false,
     cache_disable: bool = false,
 };
+
+pub const Error = error{OutOfMemory, InvalidAddress, InvalidSize};
 
 pub inline fn page_to_pfn(addr: usize) Pfn {
     return @intCast(addr >> 12);
