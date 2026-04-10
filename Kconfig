@@ -49,8 +49,6 @@ config BALANCE_INTERVAL
 	   default 1000
 	   help
 		  This option sets the rate (in milliseconds) at which thread load balancing is perfomed.
-
-
 config NCPUS
 	   int "Maximal number of CPUs"
 	   default 1024
@@ -62,4 +60,22 @@ config LOG_BUFFER_SHIFT
          default 14
          help
              This option sets the size of the kernel log buffer as a power of two. The actual size is calculated as 2 raised to the power of this value (i.e., 2^LOG_BUFFER_SHIFT bytes).
+
+
+menu "Memory Management"
+menu "Kernel Allocator"
+
+config SLAB_POISON
+	   bool "Poison slab objects on allocation"
+	   default y
+
+config SLAB_POISON_CHECK
+	   bool "Verify poison state on allocation"
+	   default y
+
+
+endmenu
+
+endmenu
+
 endmenu

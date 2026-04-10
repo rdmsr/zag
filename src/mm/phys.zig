@@ -207,7 +207,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     for (0..boot_info.memory_map.entry_count) |i| {
         const entry = boot_info.memory_map.entries[i];
 
-        std.log.info("mm/phys: [{x:0>16} - {x:0>16}] {s}", .{ entry.base, entry.base + entry.size, @tagName(entry.type) });
+        std.log.info("mm/phys: [{x:0>16}-{x:0>16}] {s}", .{ entry.base, entry.base + entry.size, @tagName(entry.type) });
 
         if (entry.type == .Free) {
             total_usable_memory += entry.size;

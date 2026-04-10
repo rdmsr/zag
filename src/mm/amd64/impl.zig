@@ -13,7 +13,9 @@ pub fn virt_to_phys(vaddr: b.VAddr) usize {
     return vaddr - 0xffff800000000000;
 }
 
-pub const pfndb_base = 0xffffea0000000000;
+pub const hhdm_base = 0xffff800000000000;
+pub const kernel_heap_base = 0xffffe00000000000;
+pub const pfndb_base = 0xffffff0000000000;
 
 pub const PagingImpl = struct {
     const Self = @This();
