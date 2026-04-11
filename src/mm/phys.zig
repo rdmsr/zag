@@ -14,6 +14,8 @@ const mm = b.mm;
 const mi = mm.private;
 const ke = b.ke;
 
+const log = std.log.scoped(.@"mm/phys");
+
 // === Early state ===
 var bootstrapped = false;
 var early_alloc_entry_idx: usize = 0;
@@ -202,12 +204,12 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     memory_map = &boot_info.memory_map;
 
     var total_usable_memory: usize = 0;
-    std.log.info("mm/phys: physical memory map:", .{});
+    log.info("physical memory map:", .{});
 
     for (0..boot_info.memory_map.entry_count) |i| {
         const entry = boot_info.memory_map.entries[i];
 
-        std.log.info("mm/phys: [{x:0>16}-{x:0>16}] {s}", .{ entry.base, entry.base + entry.size, @tagName(entry.type) });
+        log.info("[{x:0>16}-{x:0>16}] {s}", .{ entry.base, entry.base + entry.size, @tagName(entry.type) });
 
         if (entry.type == .Free) {
             total_usable_memory += entry.size;
@@ -216,7 +218,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
     const pfndb_size_required = @sizeOf(mm.Page) * (std.math.divCeil(usize, total_usable_memory, mm.page_size) catch unreachable);
 
-    std.log.info("mm: using {} KiB for pfndb", .{pfndb_size_required / 1024});
+    log.info("using {} KiB for pfndb", .{pfndb_size_required / 1024});
 
     // Create the kernel pagemap from the early allocator.
     mi.impl.init_kernel();

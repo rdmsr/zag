@@ -44,10 +44,12 @@ pub fn log(
     args: anytype,
 ) void {
     _ = level;
-    _ = scope;
+
+
+    const scope_str = if (scope == .default) "" else @tagName(scope) ++ ": ";
 
     // Calculate the length required.
-    const required_len = std.fmt.count(fmt ++ "\n", args);
+    const required_len = std.fmt.count(scope_str ++ fmt ++ "\n", args);
 
     // Reserve space in the ring buffer.
     var res = ringbuffer.reserve(required_len) catch return;
@@ -55,8 +57,9 @@ pub fn log(
     res.info.timestamp = ke.time.read_time_nano();
     res.info.length = @truncate(required_len);
 
+
     // Format the log message into the reserved buffer.
-    res.buf = std.fmt.bufPrint(res.buf, fmt ++ "\n", args) catch return;
+    res.buf = std.fmt.bufPrint(res.buf, scope_str ++ fmt ++ "\n", args) catch return;
 
     ringbuffer.publish(res);
 
