@@ -4,6 +4,8 @@ const amd64 = @import("arch");
 const b = @import("base");
 const ke = b.ke;
 
+const log = std.log.scoped(.@"amd64/tsc");
+
 var tsc_timer: ke.TimeCounter = .{
     .name = "TSC",
     .quality = 100,
@@ -18,9 +20,9 @@ pub fn init() linksection(b.init) void {
     const features = amd64.cpu_features;
 
     if (!features.invariant_tsc) {
-        std.log.info("tsc: invariant TSC not supported (get a new PC)", .{});
+        log.info("invariant TSC not supported (get a new PC), using fallback", .{});
         if (ke.time.best()) |best| {
-            std.log.info("pc: using {s} as timecounter source", .{best.name});
+            log.info("using {s} as timecounter source", .{best.name});
         }
         return;
     }
@@ -30,7 +32,7 @@ pub fn init() linksection(b.init) void {
 
     if (cpuid_state.ebx != 0 and cpuid_state.ecx != 0) {
         const tsc_freq = (cpuid_state.ebx / cpuid_state.eax) * cpuid_state.ecx;
-        std.log.info("tsc: TSC frequency determined via CPUID: {} Hz", .{tsc_freq});
+        log.info("TSC frequency determined via CPUID: {} Hz", .{tsc_freq});
         tsc_timer.frequency = tsc_freq;
 
         ke.time.register_source(&tsc_timer);
@@ -75,7 +77,7 @@ pub fn init() linksection(b.init) void {
 
     ke.time.register_source(&tsc_timer);
 
-    std.log.info("pc: TSC frequency calibrated using {s}: {}.{} MHz", .{ best.name, tsc_timer.frequency / 1_000_000, (tsc_timer.frequency % 1_000_000) / 1000 });
+    log.info("frequency calibrated using {s}: {}.{} MHz", .{ best.name, tsc_timer.frequency / 1_000_000, (tsc_timer.frequency % 1_000_000) / 1000 });
 }
 
 fn read_tsc() u64 {

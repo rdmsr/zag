@@ -11,6 +11,8 @@ pub const name = "PC";
 
 const com1 = 0x3F8;
 
+const log = std.log.scoped(.@"amd64/pc");
+
 fn com1_init() linksection(b.init) void {
     amd64.outb(com1 + 0x3, 0x80);
     amd64.outb(com1 + 0x0, 0x0c);
@@ -35,8 +37,8 @@ pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
     const f = amd64.cpu_features;
 
-    std.log.info("amd64/cpu: {s}", .{&f.brand_string});
-    std.log.info("amd64/cpu: vendor={s} features={}{}{}{}{}{}{}{}{}{}{}{}", .{
+    log.info("CPU: {s}", .{&f.brand_string});
+    log.info("vendor={s} features={}{}{}{}{}{}{}{}{}{}{}{}", .{
         &f.vendor_string,
         @intFromBool(f.x2apic),
         @intFromBool(f.five_level_paging),
@@ -53,7 +55,7 @@ pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     });
 
     if (amd64.hypervisor_info) |h| {
-        std.log.info("amd64/cpu: running on hypervisor {s}", .{@tagName(h.vendor)});
+        log.info("running on hypervisor {s}", .{@tagName(h.vendor)});
     }
     _ = boot_info;
 }

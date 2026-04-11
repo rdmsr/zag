@@ -6,6 +6,8 @@ const std = @import("std");
 const timer = @import("timer.zig");
 const hpet = @import("hpet.zig");
 
+const log = std.log.scoped(.acpi);
+
 const rsdp_signature = "RSD PTR ";
 const rsdt_signature = "RSDT";
 const xsdt_signature = "XSDT";
@@ -270,7 +272,7 @@ pub fn find_table(signature: []const u8) ?*SdtHeader {
 }
 
 fn format_table(hdr: *SdtHeader, phys_addr: u64) void {
-    std.log.info("acpi: {s} 0x{x:0>16} {x:0>6} (v{d:0>2} {s} {s} {x:0>8} {s} {x:0>8})", .{
+    log.info("{s} 0x{x:0>16} {x:0>6} (v{d:0>2} {s} {s} {x:0>8} {s} {x:0>8})", .{
         hdr.signature,
         phys_addr,
         hdr.length,
@@ -312,10 +314,10 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
     if (rsdp.revision >= 2 and rsdp.xsdt_address != 0) {
         xsdt = @ptrFromInt(mm.p2v(rsdp.xsdt_address));
-        std.log.info("acpi: XSDT found at {x:0>16}", .{rsdp.xsdt_address});
+        log.info("XSDT found at {x:0>16}", .{rsdp.xsdt_address});
     } else {
         rsdt = @ptrFromInt(mm.p2v(rsdp.rsdt_address));
-        std.log.info("acpi: RSDT found at {x:0>16}", .{rsdp.rsdt_address});
+        log.info("RSDT found at {x:0>16}", .{rsdp.rsdt_address});
     }
 
     enumerate_tables();
