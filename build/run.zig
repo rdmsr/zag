@@ -54,7 +54,7 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, plat: config.Platf
             .x86_64 => {
                 qemu.addArgs(&.{ "-serial", "stdio", "-m", "1G", "-smp", "4" });
 
-                if (!debug) qemu.addArgs(&.{ "-enable-kvm", "-cpu", "host" });
+                if (!debug) qemu.addArgs(&.{ "-enable-kvm", "-cpu", "host,+invtsc" });
             },
             .aarch64 => qemu.addArgs(&.{ "-machine", "virt", "-cpu", "cortex-a57" }),
             .riscv64 => qemu.addArgs(&.{ "-machine", "virt" }),
