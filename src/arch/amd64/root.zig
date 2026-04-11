@@ -18,6 +18,8 @@ pub const Msr = enum(u32) {
     Star = 0xC000_0081,
     /// IA32_LSTAR
     LStar = 0xC000_0082,
+    /// MSR_KVM_SYSTEM_TIME_NEW
+    KvmSystemTimeNew = 0x4B564D01,
 };
 
 pub const IrqFrame = extern struct {
@@ -263,6 +265,7 @@ pub const CpuidRequest = union(enum) {
     extended_features: ExtendedFeaturesSubLeaf,
     brand_string: BrandStringPart,
     power_management_info,
+    hypervisor_id,
 
     pub const ExtendedFeaturesSubLeaf = enum(u32) {
         first = 0,
@@ -285,6 +288,7 @@ pub const CpuidRequest = union(enum) {
             .power_management_info => .{ 0x80000007, 0 },
             .extended_features => |s| .{ 0x7, @intFromEnum(s) },
             .brand_string => |p| .{ @intFromEnum(p), 0 },
+            .hypervisor_id => .{ 0x40000000, 0 },
         };
         return cpuid(leaf, subleaf);
     }
@@ -425,7 +429,49 @@ pub const CpuFeatures = struct {
     brand_string: [48]u8,
 };
 
+pub const HypervisorVendor = enum(u32) {
+    Unknown = 0,
+    KVM = 1,
+};
+
+pub const HypervisorInfo = struct {
+    brand_string: [12]u8,
+    vendor: HypervisorVendor,
+    highest_function: u32,
+};
+
+pub var hypervisor_info: ?HypervisorInfo = null;
 pub var cpu_features: CpuFeatures = undefined;
+
+const known_hypervisors = [_]struct {
+    vendor_string: *const [12:0]u8,
+    vendor: HypervisorVendor,
+}{
+    .{ .vendor_string = "KVMKVMKVM\x00\x00\x00", .vendor = HypervisorVendor.KVM },
+};
+
+fn detect_hypervisor() void {
+    const r = CpuidRequest.execute(.hypervisor_id);
+    var hypervisor_brand: [12]u8 = undefined;
+    std.mem.writeInt(u32, hypervisor_brand[0..4], r.ebx, .little);
+    std.mem.writeInt(u32, hypervisor_brand[4..8], r.ecx, .little);
+    std.mem.writeInt(u32, hypervisor_brand[8..12], r.edx, .little);
+
+    var vendor = HypervisorVendor.Unknown;
+
+    for (known_hypervisors) |h| {
+        if (std.mem.eql(u8, hypervisor_brand[0..], h.vendor_string[0..])) {
+            vendor = h.vendor;
+            break;
+        }
+    }
+
+    hypervisor_info = HypervisorInfo{
+        .brand_string = hypervisor_brand,
+        .vendor = vendor,
+        .highest_function = r.eax,
+    };
+}
 
 pub fn detect_cpu_features() void {
     const vendor_info = CpuidRequest.execute(.vendor_info);
@@ -445,6 +491,7 @@ pub fn detect_cpu_features() void {
     var smap = false;
     var smep = false;
     var pge = false;
+    var hypervisor = false;
 
     var vendor_string: [12]u8 = undefined;
     var brand_string: [48]u8 = undefined;
@@ -464,6 +511,7 @@ pub fn detect_cpu_features() void {
         pcid = ecx.pcid;
         fxsave = edx.fxsave;
         pge = edx.pge;
+        hypervisor = ecx.hypervisor;
     }
 
     if (max_basic >= 0x7) {
@@ -503,6 +551,10 @@ pub fn detect_cpu_features() void {
         const r = CpuidRequest.execute(.power_management_info);
         const edx: PowerManagementInfoEdx = @bitCast(r.edx);
         invtsc = edx.invtsc;
+    }
+
+    if (hypervisor) {
+        detect_hypervisor();
     }
 
     cpu_features = .{
