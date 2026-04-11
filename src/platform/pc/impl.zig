@@ -61,7 +61,18 @@ pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
 pub fn late_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     pl.acpi.init(boot_info);
 
-pub fn devices_init() void {}
+    if (amd64.hypervisor_info) |h| {
+        if (h.vendor == .KVM) {
+            const features = amd64.cpuid(0x40000001, 0);
+
+            if (features.eax & (1 << 3) != 0) {
+                pvclock.init();
+            }
+        }
+    }
+
+    tsc.init();
+}
 
 pub fn debug_write(c: u8) void {
     com1_write(c);
