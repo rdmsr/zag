@@ -37,6 +37,8 @@ pub const dpc = struct {
 pub const time = struct {
     pub const register_source = p.time.register_source;
     pub const read_time_nano = p.time.read_time_nano;
+    pub const best = p.time.best;
+    pub const sleep = p.time.sleep;
 };
 
 pub const sched = struct {
