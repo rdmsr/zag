@@ -137,6 +137,30 @@ pub inline fn hlt() void {
     asm volatile ("hlt");
 }
 
+pub fn pio_read(comptime T: type, port: u16) T {
+    if (@sizeOf(T) == 1) {
+        return inb(port);
+    } else if (@sizeOf(T) == 2) {
+        return inw(port);
+    } else if (@sizeOf(T) == 4) {
+        return inl(port);
+    } else {
+        @compileError("unsupported pio read size");
+    }
+}
+
+pub fn pio_write(comptime T: type, port: u16, value: T) void {
+    if (@sizeOf(T) == 1) {
+        outb(port, @as(u8, value));
+    } else if (@sizeOf(T) == 2) {
+        outw(port, @as(u16, value));
+    } else if (@sizeOf(T) == 4) {
+        outl(port, @as(u32, value));
+    } else {
+        @compileError("unsupported pio write size");
+    }
+}
+
 pub const RFlags = packed struct(u64) {
     carry: bool,
     _reserved0: u1,

@@ -39,6 +39,14 @@ pub fn tib(comptime N: u32) usize {
     return gib(N) * 1024;
 }
 
+pub inline fn mmio_read(comptime T: type, addr: usize) T {
+    return @as(*volatile T, @ptrFromInt(addr)).*;
+}
+
+pub inline fn mmio_write(comptime T: type, addr: usize, value: T) void {
+    @as(*volatile T, @ptrFromInt(addr)).* = value;
+}
+
 pub const std_options = std.Options{
     .logFn = ke.log.log,
 };
