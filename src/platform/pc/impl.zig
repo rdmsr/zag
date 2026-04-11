@@ -34,7 +34,7 @@ pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     const f = amd64.cpu_features;
 
     std.log.info("amd64/cpu: {s}", .{&f.brand_string});
-    std.log.info("amd64/cpu: vendor={s} x2apic={} la57={} nx={} pcid={} pge={} smap={} smep={} pdpe1g={} invtsc={} xsave={} fxsave={} tsc-deadline={}", .{
+    std.log.info("amd64/cpu: vendor={s} features={}{}{}{}{}{}{}{}{}{}{}{}", .{
         &f.vendor_string,
         @intFromBool(f.x2apic),
         @intFromBool(f.five_level_paging),
@@ -49,6 +49,10 @@ pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
         @intFromBool(f.fxsave),
         @intFromBool(f.tsc_deadline),
     });
+
+    if (amd64.hypervisor_info) |h| {
+        std.log.info("amd64/cpu: running on hypervisor {s}", .{@tagName(h.vendor)});
+    }
     _ = boot_info;
 }
 
