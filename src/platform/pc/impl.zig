@@ -2,6 +2,8 @@ const b = @import("base");
 const pl = b.pl;
 const amd64 = b.arch;
 const std = @import("std");
+const tsc = @import("tsc.zig");
+const pvclock = @import("pvclock.zig");
 
 const ki = b.ke.private;
 
@@ -56,7 +58,8 @@ pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     _ = boot_info;
 }
 
-pub fn late_init() void {}
+pub fn late_init(boot_info: *pl.BootInfo) linksection(b.init) void {
+    pl.acpi.init(boot_info);
 
 pub fn devices_init() void {}
 
