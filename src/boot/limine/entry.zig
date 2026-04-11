@@ -85,6 +85,14 @@ export fn kmain() callconv(.c) void {
         .virtual_base = ka_response.virtual_base,
     } else .{ .physical_base = 0, .virtual_base = 0 };
 
+    boot_info.framebuffer = if (framebuffer_request.response) |fb_response| .{
+        .address = @intFromPtr(fb_response.framebuffers[0].address),
+        .width = @intCast(fb_response.framebuffers[0].width),
+        .height = @intCast(fb_response.framebuffers[0].height),
+        .pitch = @intCast(fb_response.framebuffers[0].pitch),
+        .bpp = @intCast(fb_response.framebuffers[0].bpp),
+    } else null;
+
     build_memory_map();
 
     ke.ncpus = 1;
