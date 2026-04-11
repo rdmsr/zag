@@ -135,7 +135,7 @@ pub const FramebufferRequest = extern struct {
 pub const FramebufferResponse = extern struct {
     revision: u64,
     framebuffer_count: u64,
-    framebuffers: ?[*]*Framebuffer,
+    framebuffers: [*]*Framebuffer,
 };
 
 pub const Framebuffer = extern struct {
