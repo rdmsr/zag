@@ -722,3 +722,98 @@ pub fn early_init() linksection(b.init) void {
         zone.init(generic_zone_names[i], @as(usize, 1) << @intCast(i + 3), .{});
     }
 }
+
+// === Global general purpose allocator ===
+pub const gpa: std.mem.Allocator = .{
+    .ptr = undefined,
+    .vtable = &.{
+        .alloc = gpa_alloc,
+        .resize = gpa_resize,
+        .free = gpa_free,
+        .remap = gpa_remap,
+    },
+};
+
+fn gpa_alloc(
+    ctx: *anyopaque,
+    len: usize,
+    ptr_align: std.mem.Alignment,
+    _: usize,
+) ?[*]u8 {
+    _ = ctx;
+
+    if (len > 2048) {
+        if (ptr_align.toByteUnits() > mm.page_size) return null;
+
+        const pages = std.mem.alignForward(usize, len, mm.page_size);
+        const ptr = mi.heap.alloc_pages(pages) catch return null;
+        return @ptrCast(ptr);
+    }
+
+    const zone = zone_for(len, ptr_align.toByteUnits()) orelse return null;
+    const obj = zone.alloc() catch return null;
+    return @ptrCast(obj);
+}
+
+fn gpa_resize(
+    _: *anyopaque,
+    buf: []u8,
+    _: std.mem.Alignment,
+    new_len: usize,
+    _: usize,
+) bool {
+    if (buf.len > 2048) {
+        // Allow shrinking within the same page-rounded allocation.
+        const old_pages = std.mem.alignForward(usize, buf.len, mm.page_size);
+        const new_pages = std.mem.alignForward(usize, new_len, mm.page_size);
+        return new_pages <= old_pages;
+    }
+    // Can't resize in place. Only allow shrinking within the same zone.
+    const old_zone = zone_for(buf.len, 1) orelse return false;
+    const new_zone = zone_for(new_len, 1) orelse return false;
+    return old_zone == new_zone;
+}
+
+fn gpa_remap(
+    _: *anyopaque,
+    buf: []u8,
+    alignment: std.mem.Alignment,
+    new_len: usize,
+    ret_addr: usize,
+) ?[*]u8 {
+    if (gpa_resize(undefined, buf, alignment, new_len, ret_addr)) return buf.ptr;
+
+    const new_ptr = gpa_alloc(undefined, new_len, alignment, ret_addr) orelse return null;
+    const copy_len = @min(buf.len, new_len);
+    @memcpy(new_ptr[0..copy_len], buf[0..copy_len]);
+    gpa_free(undefined, buf, alignment, ret_addr);
+    return new_ptr;
+}
+
+fn gpa_free(
+    _: *anyopaque,
+    buf: []u8,
+    _: std.mem.Alignment,
+    _: usize,
+) void {
+    if (buf.len > 2048) {
+        //const pages = std.mem.alignForward(usize, buf.len, mm.page_size);
+        // TODO
+        //mi.heap.free_pages(@ptrCast(buf.ptr), pages);
+        return;
+    }
+    const zone = zone_for(buf.len, 1) orelse return;
+    zone.free(@ptrCast(buf.ptr));
+}
+
+fn zone_for(size: usize, alignment: usize) ?*Zone {
+    const needed = @max(size, alignment);
+
+    for (&generic_zones) |*zone| {
+        if (zone.obj_size >= needed and zone.chunk_size % @max(alignment, 1) == 0) {
+            return zone;
+        }
+    }
+
+    return null;
+}
