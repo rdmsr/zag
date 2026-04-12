@@ -8,6 +8,7 @@ pub const page_size = 4096;
 pub const init = private.init.init;
 pub const vmem = private.vmem;
 pub const phys = private.phys;
+pub const zone = private.zone;
 
 // 16 TB of maximum physical memory.
 // This should be fine on consumer hardware for at least a decade :^)
