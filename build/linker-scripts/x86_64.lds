@@ -70,14 +70,15 @@ SECTIONS
     rodata_end_addr = .;
 
     data_start_addr = .;
-    .data : {
-        *(.data .data.*)
+
+   .data.percpu : {
+        __percpu_start = .;
+        KEEP(*(.data.percpu .data.percpu.*))
+        __percpu_end = .;
     } :data
 
-    .data.percpu : {
-        __percpu_start = .;
-        *(.data.percpu)
-        __percpu_end = .;
+    .data : {
+        *(.data .data.*)
     } :data
 
 
