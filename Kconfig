@@ -51,7 +51,7 @@ config BALANCE_INTERVAL
 		  This option sets the rate (in milliseconds) at which thread load balancing is perfomed.
 config NCPUS
 	   int "Maximal number of CPUs"
-	   default 1024
+	   default 64
 	   help
 			This option sets the maximum number of CPUs the kernel can support.
 
