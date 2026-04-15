@@ -6,6 +6,7 @@ pub const name = "amd64";
 pub const Msr = enum(u32) {
     /// IA32_APIC_BASE
     LapicBase = 0x1B,
+    X2ApicBase = 0x800,
     /// IA32_FS_BASE
     FsBase = 0xC000_0100,
     /// IA32_GS_BASE
@@ -20,6 +21,7 @@ pub const Msr = enum(u32) {
     LStar = 0xC000_0082,
     /// MSR_KVM_SYSTEM_TIME_NEW
     KvmSystemTimeNew = 0x4B564D01,
+    _,
 };
 
 pub const IrqFrame = extern struct {
@@ -92,24 +94,32 @@ pub inline fn inl(port: u16) u32 {
     );
 }
 
-pub inline fn rdmsr(msr: Msr) u64 {
+pub inline fn rdmsr(msr: u32) u64 {
     var low: u32 = undefined;
     var high: u32 = undefined;
     asm volatile ("rdmsr"
         : [low] "={eax}" (low),
           [high] "={edx}" (high),
-        : [msr] "{ecx}" (@intFromEnum(msr)),
+        : [msr] "{ecx}" (msr),
     );
     return @as(u64, high) << 32 | low;
 }
 
-pub inline fn wrmsr(msr: Msr, value: u64) void {
+pub inline fn wrmsr(msr: u32, value: u64) void {
     asm volatile ("wrmsr"
         :
         : [low] "{eax}" (@as(u32, @truncate(value))),
           [high] "{edx}" (@as(u32, @truncate(value >> 32))),
-          [msr] "{ecx}" (@intFromEnum(msr)),
+          [msr] "{ecx}" (msr),
     );
+}
+
+pub inline fn read_msr(comptime msr: Msr) u64 {
+    return rdmsr(@intFromEnum(msr));
+}
+
+pub inline fn write_msr(comptime msr: Msr, value: u64) void {
+    wrmsr(@intFromEnum(msr), value);
 }
 
 pub inline fn rdgsbase() usize {
@@ -629,6 +639,14 @@ pub const Idtr = extern struct {
     limit: u16 align(1),
     base: usize align(1),
 };
+
+pub fn sidtr() Idtr {
+    var idtr: Idtr = undefined;
+    asm volatile ("sidt %[idtr]"
+        : [idtr] "={memory}" (idtr),
+    );
+    return idtr;
+}
 
 pub const IdtEntry = extern struct {
     offset_low: u16 align(1),
