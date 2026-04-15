@@ -33,7 +33,7 @@ pub fn init() linksection(b.init) void {
     const page = mm.phys.alloc();
     pvclock = @ptrFromInt(mm.p2v(page));
 
-    amd64.wrmsr(.KvmSystemTimeNew, page | 1);
+    amd64.write_msr(.KvmSystemTimeNew, page | 1);
 
     time_at_boot = read_pvclock();
 

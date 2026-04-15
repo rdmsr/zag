@@ -34,5 +34,5 @@ pub fn early_init() linksection(b.init) void {
     int.init();
 
     // Enable Per-CPU data for this CPU
-    amd64.wrmsr(.GsBase, 0);
+    amd64.write_msr(.GsBase, 0);
 }
