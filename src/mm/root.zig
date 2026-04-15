@@ -9,6 +9,7 @@ pub const init = private.init.init;
 pub const vmem = private.vmem;
 pub const phys = private.phys;
 pub const zone = private.zone;
+pub const heap = private.heap;
 
 // 16 TB of maximum physical memory.
 // This should be fine on consumer hardware for at least a decade :^)

@@ -10,7 +10,7 @@ pub fn init() void {
     heap_arena.init("kernel heap", mi.impl.kernel_heap_base, b.tib(16), mm.page_size) catch @panic("failed to initialize kernel heap arena");
 }
 
-pub fn alloc_pages(size: usize) mm.Error!*anyopaque {
+pub fn alloc(size: usize) mm.Error!*anyopaque {
     const ipl = heap_lock.acquire();
     defer heap_lock.release(ipl);
 
