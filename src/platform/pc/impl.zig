@@ -4,6 +4,8 @@ const amd64 = b.arch;
 const std = @import("std");
 const tsc = @import("tsc.zig");
 const pvclock = @import("pvclock.zig");
+const apic = @import("apic.zig");
+const smp = @import("smp.zig");
 
 const ki = b.ke.private;
 
@@ -33,13 +35,12 @@ fn com1_write(c: u8) void {
 pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     com1_init();
 
-    amd64.detect_cpu_features();
-
     const f = amd64.cpu_features;
 
     log.info("CPU: {s}", .{&f.brand_string});
-    log.info("vendor={s} features={}{}{}{}{}{}{}{}{}{}{}{}", .{
-        &f.vendor_string,
+    log.info("vendor={s} family={x} features={}{}{}{}{}{}{}{}{}{}{}{}", .{
+        @tagName(f.vendor),
+        f.family,
         @intFromBool(f.x2apic),
         @intFromBool(f.five_level_paging),
         @intFromBool(f.nx),
@@ -54,26 +55,36 @@ pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
         @intFromBool(f.tsc_deadline),
     });
 
-    if (amd64.hypervisor_info) |h| {
+    if (amd64.hypervisor.info) |h| {
         log.info("running on hypervisor {s}", .{@tagName(h.vendor)});
     }
     _ = boot_info;
 }
 
+fn init_hypervisor(hv: amd64.hypervisor.Info) void {
+    switch (hv.data) {
+        .KVM => |kvm_info| {
+            if (kvm_info.features.clocksource2 == true) {
+                pvclock.init();
+            }
+        },
+        else => {},
+    }
+}
+
 pub fn late_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     pl.acpi.init(boot_info);
 
-    if (amd64.hypervisor_info) |h| {
-        if (h.vendor == .KVM) {
-            const features = amd64.cpuid(0x40000001, 0);
-
-            if (features.eax & (1 << 3) != 0) {
-                pvclock.init();
-            }
-        }
+    if (amd64.hypervisor.info) |hv| {
+        init_hypervisor(hv);
     }
 
     tsc.init();
+    apic.init();
+
+    if (apic.apics.items.len != 0) {
+        smp.init();
+    }
 }
 
 pub fn debug_write(c: u8) void {

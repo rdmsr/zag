@@ -6,6 +6,8 @@ const ke = b.ke;
 const ki = ke.private;
 const config = @import("config");
 
+var out_lock: ke.SpinLock = .init();
+
 const DebugWriter = struct {
     interface: std.Io.Writer,
 
@@ -45,7 +47,6 @@ pub fn log(
 ) void {
     _ = level;
 
-
     const scope_str = if (scope == .default) "" else @tagName(scope) ++ ": ";
 
     // Calculate the length required.
@@ -57,7 +58,6 @@ pub fn log(
     res.info.timestamp = ke.time.read_time_nano();
     res.info.length = @truncate(required_len);
 
-
     // Format the log message into the reserved buffer.
     res.buf = std.fmt.bufPrint(res.buf, scope_str ++ fmt ++ "\n", args) catch return;
 
@@ -67,6 +67,9 @@ pub fn log(
     // In the future, we should instead set an event that would get triggered in Ex,
     // which would consume the ringbuffer from multiple consoles in a separate thread.
     var writer = DebugWriter.init();
+
+    const ipl = out_lock.acquire();
+    defer out_lock.release(ipl);
 
     writer.interface.print("[{:>5}.{:06}] ", .{ res.info.timestamp / std.time.ns_per_s, res.info.timestamp / std.time.ns_per_us }) catch return;
     _ = writer.interface.writeAll(res.buf[0..res.info.length]) catch return;

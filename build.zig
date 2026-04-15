@@ -239,6 +239,7 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
         switch (plat.arch) {
             .x86_64 => {
                 kernel.root_module.addAssemblyFile(b.path("src/kern/amd64/locore.s"));
+                kernel.root_module.addAssemblyFile(b.path("src/platform/pc/ap.s"));
             },
             else => {},
         }

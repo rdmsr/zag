@@ -5,6 +5,7 @@ const arch = @import("arch");
 const std = @import("std");
 const timer = @import("timer.zig");
 const hpet = @import("hpet.zig");
+pub const madt = @import("madt.zig");
 
 const log = std.log.scoped(.acpi);
 
@@ -67,11 +68,25 @@ pub const Xsdt = extern struct {
     entries: [0]u64,
 };
 
+pub const MadtEntryHeader = extern struct {
+    const Type = enum(u8) {
+        LocalApic = 0,
+        IoApic = 1,
+        Iso = 2,
+        NmiSource = 3,
+        LocalApicNmi = 4,
+        X2LocalApic = 9,
+        X2LocalApicNmi = 10,
+    };
+    type: Type align(1),
+    length: u8 align(1),
+};
+
 pub const Madt = extern struct {
     header: SdtHeader,
     lapic_address: u32 align(1),
     flags: u32 align(1),
-    entries: [0]u8 align(1),
+    entries: [0]MadtEntryHeader align(1),
 };
 
 /// Generic address structure.
@@ -333,5 +348,11 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     if (hpet_t) |h| {
         const hpet_struct: *HpetTable = @ptrCast(h);
         hpet.init(hpet_struct);
+    }
+
+    const madt_t = find_table(madt_signature);
+
+    if (madt_t) |m| {
+        madt.madt_ptr = @ptrCast(m);
     }
 }

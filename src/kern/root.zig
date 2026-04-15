@@ -14,6 +14,7 @@ pub const TimeCounter = p.time.TimeCounter;
 pub const Timer = p.timer.Timer;
 pub const Console = p.log.Console;
 pub const CpuLocal = p.cpu.CpuLocal;
+pub const ExportedCpuLocal = p.cpu.ExportedCpuLocal;
 pub const CpuMask = p.cpu.CpuMask;
 
 // === Exported Interfaces ===
