@@ -13,7 +13,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
     std.log.info("hello, world", .{});
     ki.impl.early_init();
     pl.early_init(boot_info);
-    ki.cpu.init_cpu();
+    ki.cpu.init_cpu(0);
 
     thread0.init(@intFromPtr(&stack), 8192, ki.sched.idle, null);
     thread0.priority = 0;

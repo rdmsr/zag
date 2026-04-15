@@ -9,20 +9,15 @@ extern var __init_array_percpu_start: u8;
 extern var __init_array_percpu_end: u8;
 
 const id = CpuLocal(u32, 0);
-var curr_id: std.atomic.Value(u32) = .init(0);
 
 /// Initialize a CPU. Must be called on all CPUs.
-pub fn init_cpu() void {
+pub fn init_cpu(cpu_id: u32) void {
     const start = @intFromPtr(&__init_array_percpu_start);
     const end = @intFromPtr(&__init_array_percpu_end);
     const count = (end - start) / @sizeOf(*const fn () void);
     const funcs: [*]const *const fn () callconv(.c) void = @ptrFromInt(start);
 
-    if (curr_id.load(.monotonic) >= config.CONFIG_NCPUS) {
-        std.debug.panic("cpu: Too many CPUs booted! Maximum supported is {}", .{config.CONFIG_NCPUS});
-    }
-
-    id.local().* = curr_id.fetchAdd(1, .monotonic);
+    id.local().* = cpu_id;
 
     for (0..count) |i| {
         funcs[i]();
@@ -53,6 +48,22 @@ pub fn CpuLocal(comptime T: type, comptime init: T) type {
             return ki.impl.percpu_ptr_other(&storage, cpu);
         }
     };
+}
+
+/// Wraps around CPU-local data with a designated symbol name.
+pub fn ExportedCpuLocal(comptime T: type, comptime init: T, comptime name: []const u8) type {
+    const S = struct {
+        var storage: T linksection(".data.percpu") = init;
+
+        pub fn local() @TypeOf(ki.impl.percpu_ptr(&storage)) {
+            return ki.impl.percpu_ptr(&storage);
+        }
+        pub fn remote(cpu: u32) *T {
+            return ki.impl.percpu_ptr_other(&storage, cpu);
+        }
+    };
+    @export(&S.storage, .{ .name = name, .linkage = .strong });
+    return S;
 }
 
 /// Bitmask of CPUs.

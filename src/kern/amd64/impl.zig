@@ -5,14 +5,11 @@ const amd64 = b.arch;
 
 const std = @import("std");
 
-pub const early_init = @import("init.zig").early_init;
+pub const init = @import("init.zig");
+pub const early_init = init.early_init;
 
-pub const Cpu = struct {
-    self_ptr: *Cpu,
-    percpu_offset: usize,
-};
-
-pub var cpu_self_offset: usize linksection(b.percpu) = 0;
+pub export var cpu_self_offset: usize linksection(b.percpu) = 0;
+pub export var cpu_offsets: [*]usize = undefined;
 
 pub const ThreadContext = struct {
     rdi: u64,
@@ -104,9 +101,7 @@ pub const ThreadContext = struct {
 };
 
 inline fn percpu_ptr_for(variable: anytype, cpu: u32) @TypeOf(variable) {
-    _ = cpu; // TODO
-    @panic("TODO percpu_ptr_for");
-    // return @ptrFromInt(@intFromPtr(variable) +% cpu.impl.percpu_offset);
+    return @ptrFromInt(@intFromPtr(variable) +% cpu_offsets[cpu]);
 }
 
 pub inline fn percpu_ptr_other(variable: anytype, id: u32) @TypeOf(variable) {

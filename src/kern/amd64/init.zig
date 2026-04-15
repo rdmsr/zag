@@ -1,6 +1,10 @@
 const amd64 = @import("arch");
 const int = @import("int.zig");
 const b = @import("base");
+const std = @import("std");
+const impl = @import("impl.zig");
+const ke = b.ke;
+const ki = b.ke.private;
 
 var gdt = extern struct {
     entries: [9]u64 align(1),
@@ -23,13 +27,79 @@ var gdt = extern struct {
 
 extern fn gdt_load(gdtr: *const amd64.Gdtr) callconv(.{ .x86_64_sysv = .{} }) void;
 
-pub fn early_init() linksection(b.init) void {
+fn early_cpu_init() linksection(b.init) void {
     const gdtr: amd64.Gdtr = .{
         .limit = @sizeOf(@TypeOf(gdt)) - 1,
         .base = @intFromPtr(&gdt),
     };
 
     gdt_load(&gdtr);
+
+    var cr0: amd64.Cr0 = @bitCast(amd64.read_cr(0));
+
+    // Disable x87 emulation.
+    cr0.em = false;
+    // Monitor co-processor.
+    cr0.mp = true;
+    // Numeric error.
+    cr0.ne = true;
+    // Write-protection (cannot write to read-only pages).
+    cr0.wp = true;
+
+    amd64.write_cr(0, @bitCast(cr0));
+
+    // Enable CPU features we might want through cr4.
+    const f = amd64.cpu_features;
+    var cr4: amd64.Cr4 = @bitCast(amd64.read_cr(4));
+
+    // Allow userspace to read TSC.
+    cr4.tsd = false;
+    // Enable global pages.
+    cr4.pge = f.pge;
+
+    if (f.fxsave == true) {
+        // Enable FXSAVE/FXRSTOR and SSE.
+        cr4.osfxsr = true;
+        cr4.osxmmexcpt = true;
+    }
+
+    // Enable XSAVE.
+    cr4.osxsave = f.xsave;
+
+    // Enable UMIP.
+    cr4.umip = f.umip;
+
+    amd64.write_cr(4, @bitCast(cr4));
+
+    // Configure the EFER MSR.
+    var efer: amd64.Efer = @bitCast(amd64.read_msr(.Efer));
+
+    // Enable syscall if supported.
+    efer.sce = f.syscall;
+    // Enable NX.
+    efer.nxe = true;
+
+    amd64.write_msr(.Efer, @bitCast(efer));
+}
+
+pub fn ap_entry(cpu_id: u32) noreturn {
+    early_cpu_init();
+    ki.cpu.init_cpu(cpu_id);
+
+    while (true) {
+        std.atomic.spinLoopHint();
+    }
+}
+
+var initial_offsets: [1]usize = undefined;
+extern var __percpu_start: u8;
+
+pub fn early_init() linksection(b.init) void {
+    amd64.detect_cpu_features();
+    early_cpu_init();
+
+    initial_offsets[0] = @intFromPtr(&__percpu_start);
+    impl.cpu_offsets = &initial_offsets;
 
     int.init();
 
