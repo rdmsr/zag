@@ -57,7 +57,7 @@ pub fn CpuLocal(comptime T: type, comptime init: T) type {
 
 /// Bitmask of CPUs.
 pub const CpuMask = struct {
-    const bits_per_word = @sizeOf(usize) * 8;
+    const bits_per_word = @bitSizeOf(usize);
     const num_words = (config.CONFIG_NCPUS + bits_per_word - 1) / bits_per_word;
 
     bits: [num_words]usize,
