@@ -1,6 +1,8 @@
 //! Wrappers over amd64 CPU definitions and CPUID.
 const std = @import("std");
 
+pub const hypervisor = @import("hypervisor.zig");
+
 pub const name = "amd64";
 
 pub const Msr = enum(u32) {
@@ -22,6 +24,24 @@ pub const Msr = enum(u32) {
     /// MSR_KVM_SYSTEM_TIME_NEW
     KvmSystemTimeNew = 0x4B564D01,
     _,
+};
+
+pub const Efer = packed struct(u64) {
+    sce: bool,
+    reserved0: u7,
+    lme: bool,
+    reserved1: u1,
+    lma: bool,
+    nxe: bool,
+    svme: bool,
+    lmsle: bool,
+    ffxsr: bool,
+    tce: bool,
+    reserved2: u1,
+    mcommit: bool,
+    interruptible_wb: bool,
+    uaie: bool,
+    reserved3: u44,
 };
 
 pub const IrqFrame = extern struct {
@@ -173,11 +193,11 @@ pub fn pio_write(comptime T: type, port: u16, value: T) void {
 
 pub const RFlags = packed struct(u64) {
     carry: bool,
-    _reserved0: u1,
+    reserved0: u1,
     parity: bool,
-    _reserved1: u1,
+    reserved1: u1,
     auxiliary: bool,
-    _reserved2: u1,
+    reserved2: u1,
     zero: bool,
     sign: bool,
     trap: bool,
@@ -186,14 +206,14 @@ pub const RFlags = packed struct(u64) {
     overflow: bool,
     iopl: u2,
     nested_task: bool,
-    _reserved3: u1,
+    reserved3: u1,
     resume_: bool,
     virtual_8086_mode: bool,
     alignment_check: bool,
     virtual_interrupt: bool,
     virtual_interrupt_pending: bool,
     id: bool,
-    _reserved4: u42,
+    reserved4: u42,
 };
 
 pub inline fn rflags() RFlags {
@@ -221,16 +241,21 @@ pub const Cr0 = packed struct(u64) {
     ts: bool,
     et: bool,
     ne: bool,
-    reserved: u11,
+    reserved0: u11,
     wp: bool,
-    reserved2: u1,
+    reserved1: u1,
     am: bool,
-    reserved3: u10,
+    reserved2: u10,
     nw: bool,
     cd: bool,
     pg: bool,
-    reserved4: u32,
+    reserved3: u31,
 };
+
+comptime {
+    _ = Cr0;
+    _ = Cr4;
+}
 
 pub const Cr4 = packed struct(u64) {
     vme: bool,
@@ -242,15 +267,15 @@ pub const Cr4 = packed struct(u64) {
     mce: bool,
     pge: bool,
     pce: bool,
-    osfxr: bool,
-    osxmmEex: bool,
+    osfxsr: bool,
+    osxmmexcpt: bool,
     umip: bool,
     la57: bool,
-    reserved: u3,
+    reserved0: u3,
     fsgsbase: bool,
     pcide: bool,
     osxsave: bool,
-    reserve2: u1,
+    reserved1: u1,
     smep: bool,
     smap: bool,
     pke: bool,
@@ -292,37 +317,37 @@ pub inline fn cpuid(leaf: u32, subleaf: u32) CpuidResult {
 }
 
 pub const CpuidRequest = union(enum) {
-    vendor_info,
-    feature_info,
-    extended_info,
-    highest_extended_function,
-    extended_features: ExtendedFeaturesSubLeaf,
-    brand_string: BrandStringPart,
-    power_management_info,
-    hypervisor_id,
+    VendorInfo,
+    FeatureInfo,
+    ExtendedInfo,
+    HighestExtendedFunction,
+    ExtendedFeatures: ExtendedFeaturesSubLeaf,
+    BrandString: BrandStringPart,
+    PowerManagementInfo,
+    HypervisorId,
 
     pub const ExtendedFeaturesSubLeaf = enum(u32) {
-        first = 0,
-        second = 1,
-        third = 3,
+        First = 0,
+        Second = 1,
+        Third = 3,
     };
 
     pub const BrandStringPart = enum(u32) {
-        part0 = 0x80000002,
-        part1 = 0x80000003,
-        part2 = 0x80000004,
+        Part0 = 0x80000002,
+        Part1 = 0x80000003,
+        Part2 = 0x80000004,
     };
 
     pub fn execute(self: CpuidRequest) CpuidResult {
         const leaf, const subleaf = switch (self) {
-            .vendor_info => .{ 0x0, 0 },
-            .feature_info => .{ 0x1, 0 },
-            .highest_extended_function => .{ 0x80000000, 0 },
-            .extended_info => .{ 0x80000001, 0 },
-            .power_management_info => .{ 0x80000007, 0 },
-            .extended_features => |s| .{ 0x7, @intFromEnum(s) },
-            .brand_string => |p| .{ @intFromEnum(p), 0 },
-            .hypervisor_id => .{ 0x40000000, 0 },
+            .VendorInfo => .{ 0x0, 0 },
+            .FeatureInfo => .{ 0x1, 0 },
+            .HighestExtendedFunction => .{ 0x80000000, 0 },
+            .ExtendedInfo => .{ 0x80000001, 0 },
+            .PowerManagementInfo => .{ 0x80000007, 0 },
+            .ExtendedFeatures => |s| .{ 0x7, @intFromEnum(s) },
+            .BrandString => |p| .{ @intFromEnum(p), 0 },
+            .HypervisorId => .{ 0x40000000, 0 },
         };
         return cpuid(leaf, subleaf);
     }
@@ -345,7 +370,7 @@ const FeatureInfoEcx = packed struct(u32) {
     cx16: bool,
     xtpr: bool,
     pdcm: bool,
-    _reserved: u1,
+    reserved0: u1,
     pcid: bool,
     dca: bool,
     sse4_1: bool,
@@ -374,7 +399,7 @@ const FeatureInfoEdx = packed struct(u32) {
     mce: bool,
     cx8: bool,
     apic: bool,
-    _reserved0: u1,
+    reserved0: u1,
     sep: bool,
     mtrr: bool,
     pge: bool,
@@ -384,44 +409,69 @@ const FeatureInfoEdx = packed struct(u32) {
     pse36: bool,
     psn: bool,
     clfsh: bool,
-    _reserved1: u1,
+    reserved1: u1,
     ds: bool,
     acpi: bool,
     mmx: bool,
     fxsave: bool,
     sse: bool,
     sse2: bool,
-    ignore: u5,
+    reserved2: u5,
 };
 
 const ExtendedFeaturesEcx = packed struct(u32) {
-    _reserved0: u16,
+    reserved0: u2,
+    umip: bool,
+    reserved1: u13,
     la57: bool,
-    _reserved1: u5,
+    reserved2: u5,
     rdpid: bool,
-    _reserved2: u9,
+    reserved3: u9,
 };
 
 const ExtendedFeaturesEbx = packed struct(u32) {
-    ignore: u7,
+    reserved0: u7,
     smep: bool,
-    ignore2: u12,
+    reserved1: u12,
     smap: bool,
-    ignore3: u11,
+    reserved2: u11,
 };
 
 const ExtendedProcessorInfoEdx = packed struct(u32) {
-    ignore: u20,
+    fpu: bool,
+    vme: bool,
+    de: bool,
+    pse: bool,
+    tsc: bool,
+    msr: bool,
+    pae: bool,
+    mce: bool,
+    cx8: bool,
+    apic: bool,
+    reserved0: u1,
+    syscall_sysret: bool,
+    mtrr: bool,
+    pge: bool,
+    mca: bool,
+    cmov: bool,
+    pat: bool,
+    pse36: bool,
+    reserved1: u1,
+    mp: bool,
     nx: bool,
-    ignore2: u5,
+    reserved2: u5,
     pdpe1gb: bool,
-    ignore3: u5,
+    rdtscp: bool,
+    reserved3: u1,
+    lm: bool,
+    _3dnowext: bool,
+    _3dnow: bool,
 };
 
 const PowerManagementInfoEdx = packed struct(u32) {
-    ignore: u8,
+    reserved0: u8,
     invtsc: bool,
-    ignore2: u23,
+    reserved1: u23,
 };
 
 fn assert_bit(comptime T: type, comptime field_name: []const u8, comptime expected_bit: u5) void {
@@ -446,6 +496,22 @@ comptime {
     assert_bit(ExtendedFeaturesEbx, "smep", 7);
 }
 
+pub const CpuVendor = enum {
+    Intel,
+    Amd,
+    Hygon,
+    Unknown,
+};
+
+const known_vendors = [_]struct {
+    string: *const [12:0]u8,
+    vendor: CpuVendor,
+}{
+    .{ .string = "GenuineIntel", .vendor = .Intel },
+    .{ .string = "AuthenticAMD", .vendor = .Amd },
+    .{ .string = "HygonGenuine", .vendor = .Hygon },
+};
+
 pub const CpuFeatures = struct {
     x2apic: bool,
     five_level_paging: bool,
@@ -459,7 +525,10 @@ pub const CpuFeatures = struct {
     smap: bool,
     smep: bool,
     pge: bool,
-    vendor_string: [12]u8,
+    syscall: bool,
+    umip: bool,
+    vendor: CpuVendor,
+    family: u8,
     brand_string: [48]u8,
 };
 
@@ -474,42 +543,20 @@ pub const HypervisorInfo = struct {
     highest_function: u32,
 };
 
-pub var hypervisor_info: ?HypervisorInfo = null;
 pub var cpu_features: CpuFeatures = undefined;
 
-const known_hypervisors = [_]struct {
-    vendor_string: *const [12:0]u8,
-    vendor: HypervisorVendor,
-}{
-    .{ .vendor_string = "KVMKVMKVM\x00\x00\x00", .vendor = HypervisorVendor.KVM },
-};
-
-fn detect_hypervisor() void {
-    const r = CpuidRequest.execute(.hypervisor_id);
-    var hypervisor_brand: [12]u8 = undefined;
-    std.mem.writeInt(u32, hypervisor_brand[0..4], r.ebx, .little);
-    std.mem.writeInt(u32, hypervisor_brand[4..8], r.ecx, .little);
-    std.mem.writeInt(u32, hypervisor_brand[8..12], r.edx, .little);
-
-    var vendor = HypervisorVendor.Unknown;
-
-    for (known_hypervisors) |h| {
-        if (std.mem.eql(u8, hypervisor_brand[0..], h.vendor_string[0..])) {
-            vendor = h.vendor;
-            break;
+fn detect_vendor(string: [12]u8) CpuVendor {
+    for (known_vendors) |v| {
+        if (std.mem.eql(u8, string[0..], v.string[0..])) {
+            return v.vendor;
         }
     }
-
-    hypervisor_info = HypervisorInfo{
-        .brand_string = hypervisor_brand,
-        .vendor = vendor,
-        .highest_function = r.eax,
-    };
+    return .Unknown;
 }
 
 pub fn detect_cpu_features() void {
-    const vendor_info = CpuidRequest.execute(.vendor_info);
-    const max_ext = CpuidRequest.execute(.highest_extended_function).eax;
+    const vendor_info = CpuidRequest.execute(.VendorInfo);
+    const max_ext = CpuidRequest.execute(.HighestExtendedFunction).eax;
 
     const max_basic = vendor_info.eax;
 
@@ -525,7 +572,10 @@ pub fn detect_cpu_features() void {
     var smap = false;
     var smep = false;
     var pge = false;
-    var hypervisor = false;
+    var hypervisor_flag = false;
+    var syscall = false;
+    var family: u8 = 0;
+    var umip = false;
 
     var vendor_string: [12]u8 = undefined;
     var brand_string: [48]u8 = undefined;
@@ -534,8 +584,10 @@ pub fn detect_cpu_features() void {
     std.mem.writeInt(u32, vendor_string[4..8], vendor_info.edx, .little);
     std.mem.writeInt(u32, vendor_string[8..12], vendor_info.ecx, .little);
 
+    const vendor = detect_vendor(vendor_string);
+
     if (max_basic >= 0x1) {
-        const r = CpuidRequest.execute(.feature_info);
+        const r = CpuidRequest.execute(.FeatureInfo);
         const ecx: FeatureInfoEcx = @bitCast(r.ecx);
         const edx: FeatureInfoEdx = @bitCast(r.edx);
 
@@ -545,30 +597,38 @@ pub fn detect_cpu_features() void {
         pcid = ecx.pcid;
         fxsave = edx.fxsave;
         pge = edx.pge;
-        hypervisor = ecx.hypervisor;
+        hypervisor_flag = ecx.hypervisor;
+
+        const sig = r.eax;
+        family = @truncate((sig >> 8) & 0xf);
+        if (family == 0xf) {
+            family +%= @truncate((sig >> 20) & 0xff);
+        }
     }
 
     if (max_basic >= 0x7) {
-        const r = CpuidRequest.execute(.{ .extended_features = .first });
+        const r = CpuidRequest.execute(.{ .ExtendedFeatures = .First });
         const ecx: ExtendedFeaturesEcx = @bitCast(r.ecx);
         const ebx: ExtendedFeaturesEbx = @bitCast(r.ebx);
         smap = ebx.smap;
         smep = ebx.smep;
         five_level_paging = ecx.la57;
+        umip = ecx.umip;
     }
 
     if (max_ext >= 0x80000001) {
-        const r = CpuidRequest.execute(.extended_info);
+        const r = CpuidRequest.execute(.ExtendedInfo);
         const edx: ExtendedProcessorInfoEdx = @bitCast(r.edx);
         gib_pages = edx.pdpe1gb;
         nx = edx.nx;
+        syscall = edx.syscall_sysret;
     }
 
     if (max_ext >= 0x80000004) {
         const parts = [_]CpuidResult{
-            CpuidRequest.execute(.{ .brand_string = .part0 }),
-            CpuidRequest.execute(.{ .brand_string = .part1 }),
-            CpuidRequest.execute(.{ .brand_string = .part2 }),
+            CpuidRequest.execute(.{ .BrandString = .Part0 }),
+            CpuidRequest.execute(.{ .BrandString = .Part1 }),
+            CpuidRequest.execute(.{ .BrandString = .Part2 }),
         };
 
         var off: usize = 0;
@@ -582,13 +642,13 @@ pub fn detect_cpu_features() void {
     }
 
     if (max_ext >= 0x80000007) {
-        const r = CpuidRequest.execute(.power_management_info);
+        const r = CpuidRequest.execute(.PowerManagementInfo);
         const edx: PowerManagementInfoEdx = @bitCast(r.edx);
         invtsc = edx.invtsc;
     }
 
-    if (hypervisor) {
-        detect_hypervisor();
+    if (hypervisor_flag) {
+        hypervisor.detect();
     }
 
     cpu_features = .{
@@ -603,9 +663,12 @@ pub fn detect_cpu_features() void {
         .pcid = pcid,
         .smap = smap,
         .smep = smep,
-        .vendor_string = vendor_string,
+        .vendor = vendor,
         .brand_string = brand_string,
         .pge = pge,
+        .family = family,
+        .umip = umip,
+        .syscall = syscall,
     };
 }
 
