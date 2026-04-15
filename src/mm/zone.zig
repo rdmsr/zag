@@ -577,7 +577,7 @@ pub const Zone = struct {
         }
 
         const capacity = (self.slab_size - self.color) / self.chunk_size;
-        const buf = try mi.heap.alloc_pages(self.slab_size);
+        const buf = try mi.heap.alloc(self.slab_size);
 
         var ret: *Slab = try slab_zone.create();
 
@@ -746,7 +746,7 @@ fn gpa_alloc(
         if (ptr_align.toByteUnits() > mm.page_size) return null;
 
         const pages = std.mem.alignForward(usize, len, mm.page_size);
-        const ptr = mi.heap.alloc_pages(pages) catch return null;
+        const ptr = mi.heap.alloc(pages) catch return null;
         return @ptrCast(ptr);
     }
 
