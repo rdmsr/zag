@@ -48,8 +48,8 @@ pub fn debug_write(char: u8) void {
 
 pub const arm_timer = timer.arm_timer;
 
-fn check_function(fn_name: []const u8, ret: usize) void {
-    const real_ret: i64 = @intCast(ret);
+pub fn check_function(fn_name: []const u8, ret: usize) void {
+    const real_ret: isize = @bitCast(ret);
 
     if (real_ret < 0) {
         const errno_val = linux.errno(ret);
@@ -59,14 +59,9 @@ fn check_function(fn_name: []const u8, ret: usize) void {
     }
 }
 
-const bootstrap_offsets = [1]usize{0};
-
 pub var cpu_offsets: []usize = undefined;
 
-pub fn early_init() linksection(b.init) void {
-    // Ensure we can use per-cpu data.
-    cpu_offsets = @constCast(&bootstrap_offsets);
-
+pub fn early_init(_: *pl.BootInfo) linksection(b.init) void {
     percpu.local().pthread = c.pthread_self();
     my_cpu_id = 0;
 
@@ -74,13 +69,13 @@ pub fn early_init() linksection(b.init) void {
 
     check_function("ftruncate", linux.ftruncate(memfd, @intCast(global_state.params.mem_size)));
 
-    const phys_base = linux.mmap(null, global_state.params.mem_size, .{ .READ = true, .WRITE = true }, .{ .ANONYMOUS = true, .TYPE = .SHARED }, memfd, 0);
+    const phys_base = linux.mmap(null, global_state.params.mem_size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, memfd, 0);
 
     check_function("mmap", phys_base);
 
     // Build memory map
     global_state.boot_info.memory_map.entry_count = 1;
-    global_state.boot_info.memory_map.entries[0].base = phys_base;
+    global_state.boot_info.memory_map.entries[0].base = 0;
     global_state.boot_info.memory_map.entries[0].size = global_state.params.mem_size;
     global_state.boot_info.memory_map.entries[0].type = .Free;
 
@@ -123,7 +118,7 @@ fn other_cpu_entry(_: ?*anyopaque) callconv(.c) ?*anyopaque {
 
     percpu.local().pthread = c.pthread_self();
 
-    ki.cpu.init_cpu();
+    ki.cpu.init_cpu(@intCast(my_cpu_id));
 
     timer.init_cpu();
 
@@ -139,7 +134,7 @@ fn idle(_: ?*anyopaque) void {}
 extern var __percpu_start: u8;
 extern var __percpu_end: u8;
 
-pub fn late_init() linksection(b.init) void {
+pub fn late_init(_: *pl.BootInfo) linksection(b.init) void {
     timer.init();
     timer.init_cpu();
 

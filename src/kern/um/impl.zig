@@ -99,6 +99,13 @@ pub const ThreadContext = struct {
     }
 };
 
+const bootstrap_offsets = [1]usize{0};
+
+pub fn early_init() void {
+    // Ensure we can use per-cpu data.
+    b.pl.impl.cpu_offsets = @constCast(&bootstrap_offsets);
+}
+
 pub inline fn percpu_ptr_other(variable: anytype, cpu_id: usize) @TypeOf(variable) {
     return @ptrFromInt(@intFromPtr(variable) +% b.pl.impl.cpu_offsets[cpu_id]);
 }
