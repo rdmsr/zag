@@ -337,21 +337,21 @@ pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
     enumerate_tables();
 
-    const fadt = find_table(fadt_signature);
-
-    if (fadt) |f| {
-        const fadt_struct: *Fadt = @ptrCast(f);
-        timer.init(fadt_struct);
-    }
-
+    // Try getting the HPET first so we don't initialize
+    // the legacy timer if we have a better option.
     const hpet_t = find_table(hpet_signature);
     if (hpet_t) |h| {
         const hpet_struct: *HpetTable = @ptrCast(h);
         hpet.init(hpet_struct);
     }
 
-    const madt_t = find_table(madt_signature);
+    const fadt = find_table(fadt_signature);
+    if (fadt) |f| {
+        const fadt_struct: *Fadt = @ptrCast(f);
+        timer.init(fadt_struct);
+    }
 
+    const madt_t = find_table(madt_signature);
     if (madt_t) |m| {
         madt.madt_ptr = @ptrCast(m);
     }
