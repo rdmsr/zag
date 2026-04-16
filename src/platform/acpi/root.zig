@@ -60,12 +60,12 @@ pub const SdtHeader = extern struct {
 
 pub const Rsdt = extern struct {
     header: SdtHeader,
-    entries: [0]u32,
+    entries: [0]u32 align(1),
 };
 
 pub const Xsdt = extern struct {
     header: SdtHeader,
-    entries: [0]u64,
+    entries: [0]u64 align(1),
 };
 
 pub const MadtEntryHeader = extern struct {
@@ -263,7 +263,7 @@ pub var rsdt: ?*Rsdt = null;
 pub fn find_table(signature: []const u8) ?*SdtHeader {
     if (xsdt) |x| {
         const entry_count = (x.header.length - @sizeOf(SdtHeader)) / @sizeOf(u64);
-        const entries_ptr: [*]u64 = @ptrCast(&x.entries);
+        const entries_ptr: [*]align(1) u64 = @ptrCast(&x.entries);
 
         for (0..entry_count) |i| {
             const hdr: *SdtHeader = @ptrFromInt(mm.p2v(entries_ptr[i]));
@@ -273,7 +273,7 @@ pub fn find_table(signature: []const u8) ?*SdtHeader {
         }
     } else if (rsdt) |r| {
         const entry_count = (r.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
-        const entries_ptr: [*]u32 = @ptrCast(&r.entries);
+        const entries_ptr: [*]align(1) u32 = @ptrCast(&r.entries);
 
         for (0..entry_count) |i| {
             const hdr: *SdtHeader = @ptrFromInt(mm.p2v(entries_ptr[i]));
@@ -303,7 +303,7 @@ fn format_table(hdr: *SdtHeader, phys_addr: u64) void {
 fn enumerate_tables() void {
     if (xsdt) |x| {
         const entry_count = (x.header.length - @sizeOf(SdtHeader)) / @sizeOf(u64);
-        const entries_ptr: [*]u64 = @ptrCast(&x.entries);
+        const entries_ptr: [*]align(1) u64 = @ptrCast(&x.entries);
 
         for (0..entry_count) |i| {
             const phys = entries_ptr[i];
@@ -312,7 +312,7 @@ fn enumerate_tables() void {
         }
     } else if (rsdt) |r| {
         const entry_count = (r.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
-        const entries_ptr: [*]u32 = @ptrCast(&r.entries);
+        const entries_ptr: [*]align(1) u32 = @ptrCast(&r.entries);
 
         for (0..entry_count) |i| {
             const phys: u64 = entries_ptr[i];
