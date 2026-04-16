@@ -3,6 +3,7 @@ const amd64 = @import("arch");
 const b = @import("base");
 const acpi = b.pl.acpi;
 const mm = b.mm;
+const ke = b.ke;
 
 const MadtLapic = extern struct {
     header: acpi.MadtEntryHeader,
@@ -72,7 +73,7 @@ pub const ApicRegisters = enum(u32) {
 pub var apics: std.ArrayList(u32) = .empty;
 var xapic_address: ?usize = null;
 pub var xapic_base_physical: usize = 0;
-pub var in_x2apic_mode: bool = false;
+const in_x2apic_mode = ke.CpuLocal(bool, false);
 
 const log = std.log.scoped(.apic);
 
@@ -95,7 +96,7 @@ fn x2apic_read(register: ApicRegisters) u64 {
 }
 
 pub fn write(register: ApicRegisters, value: u32) void {
-    if (in_x2apic_mode) {
+    if (in_x2apic_mode.local().*) {
         x2apic_write(register, value);
     } else {
         xapic_write(register, value);
@@ -103,7 +104,7 @@ pub fn write(register: ApicRegisters, value: u32) void {
 }
 
 pub fn read(register: ApicRegisters) u64 {
-    if (in_x2apic_mode) {
+    if (in_x2apic_mode.local().*) {
         return x2apic_read(register);
     } else {
         return @intCast(xapic_read(register));
@@ -111,7 +112,7 @@ pub fn read(register: ApicRegisters) u64 {
 }
 
 pub fn get_id() u32 {
-    if (in_x2apic_mode) {
+    if (in_x2apic_mode.local().*) {
         return @truncate(x2apic_read(.Id));
     } else {
         return xapic_read(.Id) >> 24;
@@ -119,7 +120,7 @@ pub fn get_id() u32 {
 }
 
 pub fn send_init(apic_id: u32) void {
-    if (in_x2apic_mode) {
+    if (in_x2apic_mode.local().*) {
         x2apic_write(.Icr, (@as(u64, apic_id) << 32) | 0x0000C500);
     } else {
         xapic_write(.Icr1, @as(u32, apic_id) << 24);
@@ -129,7 +130,7 @@ pub fn send_init(apic_id: u32) void {
 }
 
 pub fn send_sipi(apic_id: u32, startup_page: u8) void {
-    if (in_x2apic_mode) {
+    if (in_x2apic_mode.local().*) {
         x2apic_write(.Icr, (@as(u64, apic_id) << 32) | 0x00004600 | startup_page);
     } else {
         xapic_write(.Icr1, @as(u32, apic_id) << 24);
@@ -140,7 +141,7 @@ pub fn send_sipi(apic_id: u32, startup_page: u8) void {
 
 pub fn send_ipi(apic_id: u32, vector: u8, delivery_mode: u8) void {
     const icr_value = (@as(u64, apic_id) << 32) | (@as(u64, delivery_mode) << 8) | vector;
-    if (in_x2apic_mode) {
+    if (in_x2apic_mode.local().*) {
         x2apic_write(.Icr, icr_value);
     } else {
         // Write to ICR1 first, because writing to the low word causes
@@ -198,12 +199,26 @@ pub fn init() linksection(b.init) void {
     if (base & (1 << 10) == 0) {
         xapic_address = mm.p2v(base & 0xFFFFF000);
         xapic_base_physical = base & 0xFFFFF000;
+    } else {
+        in_x2apic_mode.local().* = true;
     }
+
+    init_local();
+}
+
+pub fn init_local() void {
+    write(.Svr, @intCast(read(.Svr) | 0x1FF));
+    write(.Tpr, 0);
+    write(.Eoi, 0);
 }
 
 pub fn enter_x2apic() void {
-    if (in_x2apic_mode) return;
-
     const apic_base = amd64.read_msr(.LapicBase);
-    amd64.wrmsr(.LapicBase, apic_base | (1 << 10) | (1 << 11));
+    in_x2apic_mode.local().* = true;
+    if (apic_base & (1 << 10) != 0) return; // Already in x2apic.
+    if (apic_base & (1 << 11) == 0) {
+        // Ensure xAPIC is enabled first.
+        amd64.write_msr(.LapicBase, apic_base | (1 << 11));
+    }
+    amd64.write_msr(.LapicBase, apic_base | (1 << 10) | (1 << 11));
 }
