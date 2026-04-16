@@ -37,6 +37,10 @@ pub fn init(fadt: *acpi.Fadt) linksection(b.init) void {
         timer_gas = fadt.x_pm_tmr_blk;
     }
 
+    if (timer_gas.access_size == 0) {
+        timer_gas.access_size = 3;
+    }
+
     // Indicates whether the timer is 32-bit
     if (fadt.flags & (1 << 8) != 0) {
         pm_timer.mask = std.math.maxInt(u32);
