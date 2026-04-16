@@ -72,6 +72,13 @@ fn init_hypervisor(hv: amd64.hypervisor.Info) void {
     }
 }
 
+pub fn init_ap() void {
+    if (amd64.cpu_features.x2apic) {
+        apic.enter_x2apic();
+    }
+    apic.init_local();
+}
+
 pub fn late_init(boot_info: *pl.BootInfo) linksection(b.init) void {
     pl.acpi.init(boot_info);
 
@@ -84,6 +91,10 @@ pub fn late_init(boot_info: *pl.BootInfo) linksection(b.init) void {
 
     if (apic.apics.items.len != 0) {
         smp.init();
+    }
+
+    if (amd64.cpu_features.x2apic) {
+        apic.enter_x2apic();
     }
 }
 

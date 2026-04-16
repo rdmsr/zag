@@ -5,6 +5,7 @@ const std = @import("std");
 const impl = @import("impl.zig");
 const ke = b.ke;
 const ki = b.ke.private;
+const pl = b.pl;
 
 var gdt = extern struct {
     entries: [9]u64 align(1),
@@ -85,6 +86,7 @@ fn early_cpu_init() linksection(b.init) void {
 pub fn ap_entry(cpu_id: u32) noreturn {
     early_cpu_init();
     ki.cpu.init_cpu(cpu_id);
+    pl.impl.init_ap();
 
     while (true) {
         std.atomic.spinLoopHint();
