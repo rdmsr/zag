@@ -113,9 +113,9 @@ const Segment = struct {
         return @fieldParentPtr("linkage", linkage);
     }
 
-    fn cmp(a_node: *rtl.bst.Node, b_node: *rtl.bst.Node) std.math.Order {
-        const a: *Segment = Segment.from_tree_link(a_node);
-        const b: *Segment = Segment.from_tree_link(b_node);
+    fn cmp(a_node: *const rtl.bst.Node, b_node: *const rtl.bst.Node) std.math.Order {
+        const a = Segment.from_tree_link(@constCast(a_node));
+        const b = Segment.from_tree_link(@constCast(b_node));
         return std.math.order(a.base, b.base);
     }
 };
@@ -163,7 +163,7 @@ pub const Arena = struct {
         self.rotor = null;
 
         // Add initial span
-       try self.add(base, size);
+        try self.add(base, size);
     }
 
     pub fn deinit(self: *Self) void {
@@ -418,7 +418,7 @@ pub const Arena = struct {
 
     // Try to fit the given segment to the request with the given options.
     // Returns the fitted address if successful.
-    fn try_to_fit(self: *Self, segment: *Segment, size: usize, options: AllocOptions) ?usize {
+    fn try_to_fit(self: *Self, segment: *const Segment, size: usize, options: AllocOptions) ?usize {
         var start = @max(segment.base, options.min orelse 0);
         const end = @min(segment.base + segment.size, options.max orelse std.math.maxInt(usize));
         const alignment = options.alignment orelse self.quantum;
