@@ -14,7 +14,7 @@ fn set_color(node: *bst.Node, color: u2) void {
     node.parent.set_tag(color);
 }
 
-pub fn RBTree(comptime cmp: fn (*bst.Node, *bst.Node) std.math.Order) type {
+pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order) type {
     return struct {
         tree: bst.BST(cmp),
 
@@ -273,9 +273,9 @@ const TestNode = struct {
     value: i32,
 };
 
-fn cmp_test_node(a: *bst.Node, b: *bst.Node) std.math.Order {
-    const a_node: *TestNode = @fieldParentPtr("node", a);
-    const b_node: *TestNode = @fieldParentPtr("node", b);
+fn cmp_test_node(a: *const bst.Node, b: *const bst.Node) std.math.Order {
+    const a_node: *const TestNode = @fieldParentPtr("node", a);
+    const b_node: *const TestNode = @fieldParentPtr("node", b);
 
     if (a_node.value < b_node.value) return .lt;
     if (a_node.value > b_node.value) return .gt;
