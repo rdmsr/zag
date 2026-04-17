@@ -13,7 +13,7 @@ pub fn TaggedPtr(comptime T: type) type {
         }
 
         /// Return the pointer with the tag bits masked out.
-        pub fn get_ptr(self: *Self) *T {
+        pub fn get_ptr(self: *const Self) *T {
             return @ptrFromInt(self.value & ~mask);
         }
 
@@ -23,7 +23,7 @@ pub fn TaggedPtr(comptime T: type) type {
         }
 
         /// Return the tag bits.
-        pub fn get_tag(self: *Self) u2 {
+        pub fn get_tag(self: *const Self) u2 {
             return @as(u2, @truncate(self.value & mask));
         }
 

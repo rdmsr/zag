@@ -15,7 +15,7 @@ pub var nil: Node = .{
 
 /// Base struct for binary search trees.
 /// This should be used as a field in other types that are based on binary search trees, such as red-black trees or AVL trees.
-pub fn BST(comptime cmp: fn (*Node, *Node) std.math.Order) type {
+pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
     return struct {
         const Self = @This();
 
@@ -153,9 +153,9 @@ const MyNode = struct {
     value: u32,
 };
 
-fn node_cmp(a: *Node, b: *Node) std.math.Order {
-    const a_node: *MyNode = @fieldParentPtr("node", a);
-    const b_node: *MyNode = @fieldParentPtr("node", b);
+fn node_cmp(a: *const Node, b: *const Node) std.math.Order {
+    const a_node: *const MyNode = @fieldParentPtr("node", a);
+    const b_node: *const MyNode = @fieldParentPtr("node", b);
     if (a_node.value < b_node.value) return .lt;
     if (a_node.value > b_node.value) return .gt;
     return .eq;
