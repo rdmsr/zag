@@ -1,11 +1,11 @@
 const amd64 = @import("arch");
 const int = @import("int.zig");
-const b = @import("base");
+const r = @import("root");
 const std = @import("std");
 const impl = @import("impl.zig");
-const ke = b.ke;
-const ki = b.ke.private;
-const pl = b.pl;
+const ke = r.ke;
+const ki = r.ke.private;
+const pl = r.pl;
 
 var gdt = extern struct {
     entries: [9]u64 align(1),
@@ -28,7 +28,7 @@ var gdt = extern struct {
 
 extern fn gdt_load(gdtr: *const amd64.Gdtr) callconv(.{ .x86_64_sysv = .{} }) void;
 
-fn early_cpu_init() linksection(b.init) void {
+fn early_cpu_init() linksection(r.init) void {
     const gdtr: amd64.Gdtr = .{
         .limit = @sizeOf(@TypeOf(gdt)) - 1,
         .base = @intFromPtr(&gdt),
@@ -96,7 +96,7 @@ pub fn ap_entry(cpu_id: u32) noreturn {
 var initial_offsets: [1]usize = undefined;
 extern var __percpu_start: u8;
 
-pub fn early_init() linksection(b.init) void {
+pub fn early_init() linksection(r.init) void {
     amd64.detect_cpu_features();
     early_cpu_init();
 

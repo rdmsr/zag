@@ -1,15 +1,15 @@
 const amd64 = @import("arch");
-const b = @import("base");
-const mm = b.mm;
+const r = @import("root");
+const mm = r.mm;
 const mi = mm.private;
 
-pub const hhdm_minimum_max_address = b.gib(4);
+pub const hhdm_minimum_max_address = r.gib(4);
 
-pub fn phys_to_virt(addr: b.PAddr) b.VAddr {
+pub fn phys_to_virt(addr: r.PAddr) r.VAddr {
     return addr + 0xffff800000000000;
 }
 
-pub fn virt_to_phys(vaddr: b.VAddr) usize {
+pub fn virt_to_phys(vaddr: r.VAddr) usize {
     return vaddr - 0xffff800000000000;
 }
 
@@ -42,12 +42,12 @@ pub const PagingImpl = struct {
         ignored_2: u11,
         nx: bool,
 
-        pub fn address(self: Pte) b.PAddr {
-            return @as(b.PAddr, self.addr) << 12;
+        pub fn address(self: Pte) r.PAddr {
+            return @as(r.PAddr, self.addr) << 12;
         }
     };
 
-    pub inline fn make_table_pte(pa: b.PAddr) Pte {
+    pub inline fn make_table_pte(pa: r.PAddr) Pte {
         return Pte{
             .present = true,
             .writable = true,
@@ -65,7 +65,7 @@ pub const PagingImpl = struct {
         };
     }
 
-    pub inline fn make_leaf_pte(pa: b.PAddr, flags: mm.MapFlags, level: usize) Pte {
+    pub inline fn make_leaf_pte(pa: r.PAddr, flags: mm.MapFlags, level: usize) Pte {
         return Pte{
             .present = true,
             .writable = flags.write,
@@ -83,7 +83,7 @@ pub const PagingImpl = struct {
         };
     }
 
-    pub inline fn activate(root_pa: b.PAddr) void {
+    pub inline fn activate(root_pa: r.PAddr) void {
         amd64.write_cr(3, root_pa);
     }
 

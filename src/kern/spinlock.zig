@@ -1,6 +1,5 @@
 const std = @import("std");
-const b = @import("base");
-const ke = b.ke;
+const ke = @import("root").ke;
 
 /// Simple Spin lock implementation.
 pub const SpinLock = struct {

@@ -7,6 +7,8 @@ pub const ksyms = @import("ksyms");
 pub const arch = @import("arch");
 pub const mm = @import("mm/root.zig");
 
+const config = @import("config");
+
 pub const init = ".text.init";
 pub const percpu_init = ".percpu_init_array";
 pub const percpu = ".data.percpu";
@@ -52,3 +54,10 @@ pub const std_options = std.Options{
 };
 
 pub const panic = std.debug.FullPanic(ke.panic);
+
+pub const main = if (@hasDecl(config, "CONFIG_ARCH_UM")) pl.impl.entry.main else undefined;
+
+comptime {
+    // Ensure the entry point is linked in.
+    _ = @import("boot/limine/entry.zig");
+}

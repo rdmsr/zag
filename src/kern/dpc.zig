@@ -1,8 +1,8 @@
 const std = @import("std");
 const config = @import("config");
 const rtl = @import("rtl");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 const ki = ke.private;
 
 /// Deferred Procedure Call (DPC) structure.
@@ -40,9 +40,9 @@ const pcpu = ke.CpuLocal(PerCpu, .{
     .queue = undefined,
 });
 
-export const dpc_percpu_init linksection(b.percpu_init) = &pcpu_init;
+export const dpc_percpu_init linksection(r.percpu_init) = &pcpu_init;
 
-fn pcpu_init() linksection(b.init) callconv(.c) void {
+fn pcpu_init() linksection(r.init) callconv(.c) void {
     pcpu.local().queue.init();
 }
 

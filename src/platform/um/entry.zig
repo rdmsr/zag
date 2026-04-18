@@ -1,7 +1,7 @@
-const b = @import("base");
+const r = @import("root");
 
-pub const std_options = b.std_options;
-pub const panic = b.panic;
+pub const std_options = r.std_options;
+pub const panic = r.panic;
 
 const c = @cImport({
     @cInclude("SDL.h");
@@ -10,10 +10,10 @@ const c = @cImport({
 });
 
 const std = @import("std");
-const ke = b.ke;
-const pl = b.pl;
+const ke = r.ke;
+const pl = r.pl;
 
-const default_mem_size = b.gib(1);
+const default_mem_size = r.gib(1);
 
 fn parse_mem_size(str: []const u8) !usize {
     if (str.len == 0) return default_mem_size;
@@ -21,9 +21,9 @@ fn parse_mem_size(str: []const u8) !usize {
     const last = str[str.len - 1];
 
     const mul: usize = switch (std.ascii.toLower(last)) {
-        'k' => b.kib(1),
-        'm' => b.mib(1),
-        'g' => b.gib(1),
+        'k' => r.kib(1),
+        'm' => r.mib(1),
+        'g' => r.gib(1),
         else => 1,
     };
 

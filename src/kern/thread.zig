@@ -1,8 +1,8 @@
 const std = @import("std");
-const b = @import("base");
+const r = @import("root");
 const rtl = @import("rtl");
 
-const ke = b.ke;
+const ke = r.ke;
 const ki = ke.private;
 
 /// Structure representing a kernel thread.
@@ -95,7 +95,7 @@ pub const Thread = struct {
     /// - `stack_size`: Size of the stack
     /// - `entry`: Entry point of the thread
     /// - `arg`: Extraneous argument to be passed to `entry`
-    pub fn init(thread: *Thread, stack: b.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) void {
+    pub fn init(thread: *Thread, stack: r.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) void {
         thread.* = .{
             .context = .init(stack, stack_size, entry, arg),
             .lock = .init(),

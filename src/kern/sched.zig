@@ -84,8 +84,8 @@
 const std = @import("std");
 const rtl = @import("rtl");
 const config = @import("config");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 const ki = ke.private;
 
 comptime {
@@ -274,10 +274,10 @@ pub fn unblock(td: *ke.Thread) void {
     td.lock.release(ipl);
 }
 
-export const sched_percpu_init linksection(b.percpu_init) = &init_cpu;
+export const sched_percpu_init linksection(r.percpu_init) = &init_cpu;
 
 /// Initialize a CPU for use by the scheduler.
-fn init_cpu() linksection(b.init) callconv(.c) void {
+fn init_cpu() linksection(r.init) callconv(.c) void {
     var cpu = percpu.local();
 
     cpu.* = .{
@@ -312,7 +312,7 @@ fn init_cpu() linksection(b.init) callconv(.c) void {
 }
 
 /// Called on CPU 0 to initialize load balancing mechanisms.
-pub fn late_init() linksection(b.init) void {
+pub fn late_init() linksection(r.init) void {
     balance_dpc = ke.Dpc.init(balance);
     balance_timer.init();
     ke.timer.set(&balance_timer, balance_interval * std.time.ns_per_ms, &balance_dpc);

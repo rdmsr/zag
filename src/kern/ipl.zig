@@ -1,6 +1,6 @@
 const std = @import("std");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 const ki = ke.private;
 
 /// Interrupt priority level (IPL)

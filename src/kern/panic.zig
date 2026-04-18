@@ -1,8 +1,8 @@
 const std = @import("std");
 const config = @import("config");
-const b = @import("base");
+const r = @import("root");
 const ksyms = @import("ksyms");
-const ke = b.ke;
+const ke = r.ke;
 const ki = ke.private;
 
 extern var text_start_addr: u8;

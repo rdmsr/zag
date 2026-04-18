@@ -20,13 +20,13 @@
 //! cases (contiguous PA range and on-demand allocation); custom sources can
 //! be passed directly to `map_from` for other needs such as file-backed or
 //! scatter-gather mappings.
-const b = @import("base");
-const mm = b.mm;
+const r = @import("root");
+const mm = r.mm;
 const mi = mm.private;
 
 /// Describes a contiguous region of physical memory to be mapped at a given virtual address.
 pub const MapItem = struct {
-    pa: b.PAddr,
+    pa: r.PAddr,
     len: usize,
     flags: mm.MapFlags,
 };
@@ -40,7 +40,7 @@ const ContiguousSource = struct {
     base_va: usize,
     base_pa: usize,
 
-    pub fn next(self: *const ContiguousSource, _: b.VAddr) MapItem {
+    pub fn next(self: *const ContiguousSource, _: r.VAddr) MapItem {
         return .{
             .pa = self.base_pa,
             .len = self.size,
@@ -54,7 +54,7 @@ const ContiguousSource = struct {
 const AllocatingSource = struct {
     flags: mm.MapFlags,
 
-    pub fn next(self: *const AllocatingSource, _: b.VAddr) MapItem {
+    pub fn next(self: *const AllocatingSource, _: r.VAddr) MapItem {
         const pa = mi.phys.alloc();
         return .{
             .pa = pa,
@@ -72,7 +72,7 @@ pub const PMap = struct {
     impl: mi.impl.PMap,
 
     /// Map a virtual address range to physical addresses provided by the source.
-    pub fn map_from(self: *Self, va_start: b.VAddr, size: usize, source: anytype) void {
+    pub fn map_from(self: *Self, va_start: r.VAddr, size: usize, source: anytype) void {
         const Source = @TypeOf(source);
 
         comptime {
@@ -83,7 +83,7 @@ pub const PMap = struct {
     }
 
     /// Map a contiguous virtual address range to a contiguous physical address range.
-    pub fn map_contiguous_range(self: *Self, va: b.VAddr, pa: b.PAddr, size: usize, flags: mm.MapFlags) void {
+    pub fn map_contiguous_range(self: *Self, va: r.VAddr, pa: r.PAddr, size: usize, flags: mm.MapFlags) void {
         const src = ContiguousSource{
             .flags = flags,
             .size = size,
@@ -95,7 +95,7 @@ pub const PMap = struct {
     }
 
     /// Map a virtual address range to physical addresses allocated on demand.
-    pub fn map_range_allocating(self: *Self, va: b.VAddr, size: usize, flags: mm.MapFlags) void {
+    pub fn map_range_allocating(self: *Self, va: r.VAddr, size: usize, flags: mm.MapFlags) void {
         const src = AllocatingSource{
             .flags = flags,
         };
@@ -104,7 +104,7 @@ pub const PMap = struct {
     }
 
     /// Map a single page. Convenience wrapper around map_contiguous_range.
-    pub fn map_page(self: *Self, va: b.VAddr, pa: b.PAddr, flags: mm.MapFlags) void {
+    pub fn map_page(self: *Self, va: r.VAddr, pa: r.PAddr, flags: mm.MapFlags) void {
         self.map_contiguous_range(va, pa, mm.page_size, flags);
     }
 

@@ -1,4 +1,4 @@
-const b = @import("base");
+const r = @import("root");
 const std = @import("std");
 const linux = std.os.linux;
 
@@ -9,39 +9,39 @@ pub const hhdm_minimum_max_address: usize = 0;
 pub fn init_kernel() void {
     kernel_heap_base = linux.mmap(
         null,
-        b.gib(8),
+        r.gib(8),
         .{ .READ = true, .WRITE = true },
         .{ .ANONYMOUS = true, .TYPE = .PRIVATE },
         -1,
         0,
     );
 
-    b.pl.impl.check_function("mmap", kernel_heap_base);
+    r.pl.impl.check_function("mmap", kernel_heap_base);
 
     pfndb_base = linux.mmap(
         null,
-        b.gib(1),
+        r.gib(1),
         .{ .READ = true, .WRITE = true },
         .{ .ANONYMOUS = true, .TYPE = .PRIVATE },
         -1,
         0,
     );
 
-    b.pl.impl.check_function("mmap", pfndb_base);
+    r.pl.impl.check_function("mmap", pfndb_base);
 }
 
 pub fn phys_to_virt(pa: usize) usize {
-    return b.pl.impl.global_state.phys_base + pa;
+    return r.pl.impl.global_state.phys_base + pa;
 }
 
 pub fn virt_to_phys(va: usize) usize {
-    return va - b.pl.impl.global_state.phys_base;
+    return va - r.pl.impl.global_state.phys_base;
 }
 
 pub const PMap = struct {
     const Self = @This();
 
-    pub fn map_from(_: *Self, va: b.VAddr, size: usize, source: anytype) void {
+    pub fn map_from(_: *Self, va: r.VAddr, size: usize, source: anytype) void {
         var remain = size;
 
         while (remain > 0) {
@@ -58,7 +58,7 @@ pub const PMap = struct {
                 size,
                 posix_flags,
                 .{ .FIXED = true, .TYPE = .PRIVATE },
-                b.pl.impl.global_state.phys_memory_memfd,
+                r.pl.impl.global_state.phys_memory_memfd,
                 @bitCast(item.pa),
             );
 

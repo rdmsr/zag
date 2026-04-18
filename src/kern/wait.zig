@@ -3,8 +3,8 @@
 //! See more here: https://youtu.be/OAAiOEQhsK0
 const rtl = @import("rtl");
 const std = @import("std");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 
 /// Header for waitable objects.
 /// This must be added to any structured which is considered waitable.
@@ -73,7 +73,7 @@ pub const Status = enum(u8) {
 };
 
 /// Wait for the provided object to be signaled.
-pub fn wait_one(object: *DispatchHeader, timeout: ?b.Nanoseconds) !usize {
+pub fn wait_one(object: *DispatchHeader, timeout: ?r.Nanoseconds) !usize {
     var objects = [_]*DispatchHeader{object};
     return wait_any(&objects, timeout, null);
 }
@@ -83,7 +83,7 @@ pub fn wait_one(object: *DispatchHeader, timeout: ?b.Nanoseconds) !usize {
 /// If `timeout` is not provided, it will wait indefinitely.
 /// If `waitblocks` is specified, then the wait will use those waitblocks for the operation.
 /// Note that if `timeout` is provided, then one additional waitblock must be allocated.
-pub fn wait_any(objects: []*DispatchHeader, timeout: ?b.Nanoseconds, waitblocks: ?[*]WaitBlock) !usize {
+pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks: ?[*]WaitBlock) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
     const curtd = ke.curcpu().current_thread.?;

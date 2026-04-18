@@ -1,8 +1,8 @@
 // Not sure if this should be in platform/pc or in kern/
 const std = @import("std");
 const amd64 = @import("arch");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 
 const log = std.log.scoped(.@"amd64/tsc");
 
@@ -16,7 +16,7 @@ var tsc_timer: ke.TimeCounter = .{
     .n = 0,
 };
 
-pub fn init() linksection(b.init) void {
+pub fn init() linksection(r.init) void {
     const features = amd64.cpu_features;
 
     if (!features.invariant_tsc) {

@@ -1,9 +1,9 @@
 const std = @import("std");
 const amd64 = @import("arch");
-const b = @import("base");
-const acpi = b.pl.acpi;
-const mm = b.mm;
-const ke = b.ke;
+const r = @import("root");
+const acpi = r.pl.acpi;
+const mm = r.mm;
+const ke = r.ke;
 
 const MadtLapic = extern struct {
     header: acpi.MadtEntryHeader,
@@ -79,12 +79,12 @@ const log = std.log.scoped(.apic);
 
 fn xapic_write(register: ApicRegisters, value: u32) void {
     const lapic_base = xapic_address orelse return;
-    b.mmio_write(u32, lapic_base + @intFromEnum(register), value);
+    r.mmio_write(u32, lapic_base + @intFromEnum(register), value);
 }
 
 fn xapic_read(register: ApicRegisters) u32 {
     const lapic_base = xapic_address orelse return 0;
-    return b.mmio_read(u32, lapic_base + @intFromEnum(register));
+    return r.mmio_read(u32, lapic_base + @intFromEnum(register));
 }
 
 fn x2apic_write(register: ApicRegisters, value: u64) void {
@@ -154,7 +154,7 @@ pub fn send_ipi(apic_id: u32, vector: u8, delivery_mode: u8) void {
     }
 }
 
-pub fn init() linksection(b.init) void {
+pub fn init() linksection(r.init) void {
     var iter = acpi.madt.iterator();
 
     const cur_cpu_id = get_id();

@@ -58,9 +58,9 @@
 //! the next generation and a stub (containing only the descriptor ID) is left at
 //! the original position so the data ring can be walked linearly during eviction.
 const std = @import("std");
-const base = @import("base");
+const r = @import("root");
 const rtl = @import("rtl");
-const ke = base.ke;
+const ke = r.ke;
 const ki = ke.private;
 
 const BlkPos = struct {

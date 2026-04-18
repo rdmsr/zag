@@ -1,9 +1,9 @@
 const std = @import("std");
 const rtl = @import("rtl");
-const b = @import("base");
+const r = @import("root");
 const config = @import("config");
-const ke = b.ke;
-const ki = b.ke.private;
+const ke = r.ke;
+const ki = r.ke.private;
 
 extern var __init_array_percpu_start: u8;
 extern var __init_array_percpu_end: u8;

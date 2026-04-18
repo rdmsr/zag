@@ -24,8 +24,8 @@
 //!   - `activate(root_pa: PAddr) void`: install the root page table into
 //!     the CPU (e.g. write CR3 or satp).
 
-const b = @import("base");
-const mm = b.mm;
+const r = @import("root");
+const mm = r.mm;
 const mi = mm.private;
 const std = @import("std");
 
@@ -42,7 +42,7 @@ pub fn RadixPmap(comptime Impl: type) type {
         const entries_per_table = 512;
         const index_mask = entries_per_table - 1;
 
-        root_pa: b.PAddr,
+        root_pa: r.PAddr,
 
         fn level_shift(level: usize) u6 {
             return Impl.levels[level].shift;
@@ -79,7 +79,7 @@ pub fn RadixPmap(comptime Impl: type) type {
             Impl.activate(self.root_pa);
         }
 
-        pub fn map_from(self: *Self, va: b.VAddr, size: usize, source: anytype) void {
+        pub fn map_from(self: *Self, va: r.VAddr, size: usize, source: anytype) void {
             var c = self.cursor(va);
             var remain = size;
 
@@ -94,7 +94,7 @@ pub fn RadixPmap(comptime Impl: type) type {
         /// the given virtual address range, allocating them as needed. Useful for
         /// pre-populating a shared region (e.g. the kernel half of a user pmap)
         /// before any leaf mappings are installed.
-        pub fn preallocate(self: *Self, va: b.VAddr, size: usize, target_level: usize) void {
+        pub fn preallocate(self: *Self, va: r.VAddr, size: usize, target_level: usize) void {
             var c = self.cursor(va);
             var remain = size;
 
@@ -112,7 +112,7 @@ pub fn RadixPmap(comptime Impl: type) type {
 
         pub const Cursor = struct {
             pmap: *Self,
-            va: b.VAddr,
+            va: r.VAddr,
             /// Cached pointers to each level's page table, filled as the cursor
             /// descends. Only indices in `[0, top_level]` are valid.
             tables: [num_levels][*]Impl.Pte,
@@ -176,7 +176,7 @@ pub fn RadixPmap(comptime Impl: type) type {
                 @panic("no leaf level can map current alignment/size");
             }
 
-            pub fn map_range(self: *Cursor, pa: b.PAddr, size: usize, flags: mm.MapFlags) void {
+            pub fn map_range(self: *Cursor, pa: r.PAddr, size: usize, flags: mm.MapFlags) void {
                 var remain = size;
                 var current_pa = pa;
 

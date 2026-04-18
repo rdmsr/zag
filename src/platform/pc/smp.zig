@@ -1,10 +1,10 @@
 const apic = @import("apic.zig");
-const b = @import("base");
+const r = @import("root");
 const std = @import("std");
 const rtl = @import("rtl");
 const config = @import("config");
-const mm = b.mm;
-const ke = b.ke;
+const mm = r.mm;
+const ke = r.ke;
 const ki = ke.private;
 const amd64 = @import("arch");
 
@@ -36,7 +36,7 @@ fn ap_entry(cpu_id: u32) callconv(.c) noreturn {
     ki.impl.init.ap_entry(cpu_id);
 }
 
-pub fn init() linksection(b.init) void {
+pub fn init() linksection(r.init) void {
     const trampoline_start = @intFromPtr(&AP_TRAMPOLINE_START);
     const trampoline_size = @intFromPtr(&AP_TRAMPOLINE_END) - trampoline_start;
 
@@ -91,7 +91,7 @@ pub fn init() linksection(b.init) void {
 
         ki.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -% @intFromPtr(&__percpu_start);
 
-        const stack_top = @intFromPtr(mm.heap.alloc(b.kib(16)) catch @panic("Failed to allocate AP stack")) + b.kib(16);
+        const stack_top = @intFromPtr(mm.heap.alloc(r.kib(16)) catch @panic("Failed to allocate AP stack")) + r.kib(16);
 
         start_stack.remote(@intCast(cpu_id)).* = stack_top & ~@as(usize, 15);
 

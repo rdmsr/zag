@@ -1,6 +1,6 @@
 //! Fireworks test ported from the Boron operating system.
 const std = @import("std");
-const base = @import("base");
+const base = @import("root");
 const ke = base.ke;
 const sintab = @import("sintab.zig");
 
