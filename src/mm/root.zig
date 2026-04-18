@@ -5,6 +5,7 @@ const std = @import("std");
 pub const page_size = 4096;
 
 pub const init = private.init.init;
+pub const late_init = private.init.late_init;
 pub const vmem = private.vmem;
 pub const phys = private.phys;
 pub const zone = private.zone;
