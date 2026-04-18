@@ -945,7 +945,7 @@ pub fn idle(_: ?*anyopaque) noreturn {
     }
 }
 
-/// Called every secondto balance work between CPUs on CPU0.
+/// Called every second to balance work between CPUs on CPU0.
 /// Takes a thread from the most loaded CPU and puts it on the least loaded one.
 fn balance(_: ?*anyopaque) void {
     var high_mask = ke.CpuMask.empty();
