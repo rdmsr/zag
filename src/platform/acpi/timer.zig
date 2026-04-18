@@ -4,7 +4,7 @@ const acpi = b.pl.acpi;
 const ke = b.ke;
 const arch = @import("arch");
 
-var pm_timer: ke.TimeCounter = .{
+var pm_timer: ke.ClockSource = .{
     .name = "ACPI",
     .quality = 25,
     .frequency = 3579545, // 3.579545 MHz
@@ -27,6 +27,8 @@ pub fn init(fadt: *acpi.Fadt) linksection(b.init) void {
         return;
     }
 
+    if (ke.clock.is_better_than(&pm_timer)) return;
+
     timer_gas.address_space_id = .SystemIo;
     timer_gas.address = fadt.pm_tmr_blk;
     timer_gas.access_size = 3;
@@ -46,7 +48,7 @@ pub fn init(fadt: *acpi.Fadt) linksection(b.init) void {
         pm_timer.mask = std.math.maxInt(u32);
     }
 
-    ke.time.register_source(&pm_timer);
+    ke.clock.register_source(&pm_timer);
 }
 
 fn read_timer() u64 {

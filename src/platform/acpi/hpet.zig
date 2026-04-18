@@ -4,7 +4,7 @@ const acpi = b.pl.acpi;
 const mm = b.mm;
 const ke = b.ke;
 
-var hpet_timer: ke.TimeCounter = .{
+var hpet_cs: ke.ClockSource = .{
     .name = "HPET",
     .quality = 50,
     .frequency = 0, // Filled at runtime
@@ -19,9 +19,10 @@ var hpet_regs: *volatile acpi.HpetRegs = undefined;
 const femtos_per_s = 1_000_000_000_000_000;
 
 pub fn init(hpet: *acpi.HpetTable) linksection(b.init) void {
-    hpet_regs = @ptrFromInt(mm.p2v(hpet.base_address.address));
+    if (ke.clock.is_better_than(&hpet_cs)) return;
 
-    hpet_timer.frequency = femtos_per_s / (b.mmio_read(u64, @intFromPtr(&hpet_regs.general_capabilities)) >> 32);
+    hpet_regs = @ptrFromInt(mm.p2v(hpet.base_address.address));
+    hpet_cs.frequency = femtos_per_s / (b.mmio_read(u64, @intFromPtr(&hpet_regs.general_capabilities)) >> 32);
 
     // Disable timer.
     b.mmio_write(u64, @intFromPtr(&hpet_regs.general_configuration), 0);
@@ -32,7 +33,7 @@ pub fn init(hpet: *acpi.HpetTable) linksection(b.init) void {
     // Enable timer.
     b.mmio_write(u64, @intFromPtr(&hpet_regs.general_configuration), 1);
 
-    ke.time.register_source(&hpet_timer);
+    ke.clock.register_source(&hpet_cs);
 }
 
 fn read_hpet() u64 {

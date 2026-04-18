@@ -10,7 +10,7 @@ pub const Ipl = p.ipl.Ipl;
 pub const SpinLock = p.spinlock.SpinLock;
 pub const Thread = p.thread.Thread;
 pub const Dpc = p.dpc.Dpc;
-pub const TimeCounter = p.time.TimeCounter;
+pub const ClockSource = p.clock.ClockSource;
 pub const Timer = p.timer.Timer;
 pub const Console = p.log.Console;
 pub const CpuLocal = p.cpu.CpuLocal;
@@ -35,11 +35,12 @@ pub const dpc = struct {
     pub const enqueue = p.dpc.enqueue;
 };
 
-pub const time = struct {
-    pub const register_source = p.time.register_source;
-    pub const read_time_nano = p.time.read_time_nano;
-    pub const best = p.time.best;
-    pub const sleep = p.time.sleep;
+pub const clock = struct {
+    pub const register_source = p.clock.register_source;
+    pub const read_time = p.clock.read_time;
+    pub const best = p.clock.best;
+    pub const sleep = p.clock.sleep;
+    pub const is_better_than = p.clock.is_better_than;
 };
 
 pub const sched = struct {
