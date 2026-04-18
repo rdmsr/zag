@@ -45,14 +45,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const ksyms_module = b.createModule(.{
+        .root_source_file = b.path("src/ksyms.zig"), // Use the static wrapper
+        .optimize = optimize,
+    });
+
     // first pass
     const empty_cmd = b.addSystemCommand(&.{ "python3", "build/ksyms.py", "--empty" });
     empty_cmd.addArg("--output");
-    const empty_zig = empty_cmd.addOutputFileArg("ksyms_empty.gen.zig");
-    const empty_ksyms_module = b.createModule(.{
-        .root_source_file = empty_zig,
-        .optimize = optimize,
-    });
+    const empty_ksyms_s = empty_cmd.addOutputFileArg("ksyms_empty.s");
 
     const rtl_module = b.createModule(.{
         .root_source_file = b.path("src/rtl/root.zig"),
@@ -60,17 +61,6 @@ pub fn build(b: *std.Build) void {
     });
 
     rtl_module.addImport("rtl", rtl_module);
-
-    const base_module = b.createModule(.{
-        .root_source_file = b.path("src/root.zig"),
-        .imports = &.{
-            .{ .name = "config", .module = config_module },
-            .{ .name = "rtl", .module = rtl_module },
-        },
-        .optimize = optimize,
-    });
-
-    base_module.addImport("base", base_module);
 
     const arch = if (plat.os == .freestanding) switch (plat.arch) {
         .x86_64 => "amd64",
@@ -86,7 +76,10 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const kernel_nosym = addKernel(b, plat, optimize, config_module, empty_ksyms_module, rtl_module, base_module, arch_module);
+    const base_nosym = makeBaseModule(b, optimize, config_module, rtl_module, ksyms_module);
+    const kernel_nosym = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, base_nosym, arch_module);
+
+    kernel_nosym.root_module.addAssemblyFile(empty_ksyms_s);
 
     b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
 
@@ -96,14 +89,13 @@ pub fn build(b: *std.Build) void {
     ksyms.step.dependOn(&kernel_nosym.step);
     ksyms.addFileArg(kernel_nosym.getEmittedBin());
     ksyms.addArg("--output");
-    const ksyms_zig = ksyms.addOutputFileArg("ksyms.gen.zig");
-    const ksyms_module = b.createModule(.{
-        .root_source_file = ksyms_zig,
-        .optimize = optimize,
-    });
+    const ksyms_s = ksyms.addOutputFileArg("ksyms.s");
+
+    const base_module = makeBaseModule(b, optimize, config_module, rtl_module, ksyms_module);
 
     // second pass
     const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, base_module, arch_module);
+    kernel.root_module.addAssemblyFile(ksyms_s);
 
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
 
@@ -181,6 +173,26 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
     return q;
 }
 
+fn makeBaseModule(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    config_module: *std.Build.Module,
+    rtl_module: *std.Build.Module,
+    ksyms_module: *std.Build.Module,
+) *std.Build.Module {
+    const base = b.createModule(.{
+        .root_source_file = b.path("src/root.zig"),
+        .imports = &.{
+            .{ .name = "config", .module = config_module },
+            .{ .name = "rtl", .module = rtl_module },
+            .{ .name = "ksyms", .module = ksyms_module },
+        },
+        .optimize = optimize,
+    });
+    base.addImport("base", base);
+    return base;
+}
+
 fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module, base: *std.Build.Module, arch: *std.Build.Module) *std.Build.Step.Compile {
     const target = b.resolveTargetQuery(targetQueryForPlatform(plat));
 
@@ -205,6 +217,7 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
         }),
     });
 
+    base.addImport("ksyms", ksyms_module);
     kernel.root_module.addImport("config", config_module);
     kernel.root_module.addImport("ksyms", ksyms_module);
     kernel.root_module.addImport("base", base);
@@ -212,6 +225,8 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     kernel.use_llvm = true;
     kernel.use_lld = true;
+
+    kernel.root_module.omit_frame_pointer = false;
 
     if (plat.os == .freestanding) {
         kernel.linkage = .static;
