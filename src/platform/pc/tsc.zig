@@ -6,7 +6,7 @@ const ke = r.ke;
 
 const log = std.log.scoped(.@"amd64/tsc");
 
-pub var tsc_timer: ke.TimeCounter = .{
+pub var tsc: ke.ClockSource = .{
     .name = "TSC",
     .quality = 100,
     .frequency = 0,
@@ -21,7 +21,7 @@ pub fn init() linksection(r.init) void {
 
     if (!features.invariant_tsc) {
         log.info("invariant TSC not supported (get a new PC), using fallback", .{});
-        if (ke.time.best()) |best| {
+        if (ke.clock.best()) |best| {
             log.info("using {s} as timecounter source", .{best.name});
         }
         return;
@@ -33,14 +33,14 @@ pub fn init() linksection(r.init) void {
     if (cpuid_state.ebx != 0 and cpuid_state.ecx != 0 and cpuid_state.eax != 0) {
         const tsc_freq = (cpuid_state.ebx / cpuid_state.eax) * cpuid_state.ecx;
         log.info("TSC frequency determined via CPUID: {} Hz", .{tsc_freq});
-        tsc_timer.frequency = tsc_freq;
+        tsc.frequency = tsc_freq;
 
-        ke.time.register_source(&tsc_timer);
+        ke.clock.register_source(&tsc);
         return;
     }
 
     // Fallback to the other best time source to calibrate.
-    const best = ke.time.best() orelse return;
+    const best = ke.clock.best() orelse return;
 
     const calib_cost_runs = 5;
     var calib_cost: u64 = 0;
@@ -48,7 +48,7 @@ pub fn init() linksection(r.init) void {
     // Calculate how many ticks it costs to call tc_sleep.
     for (0..calib_cost_runs) |_| {
         const start = amd64.rdtsc();
-        ke.time.sleep(0);
+        ke.clock.sleep(0);
         const end = amd64.rdtsc();
         calib_cost += (end - start);
     }
@@ -63,7 +63,7 @@ pub fn init() linksection(r.init) void {
 
     for (0..runs) |i| {
         const start = amd64.rdtsc();
-        ke.time.sleep(calib_time);
+        ke.clock.sleep(calib_time);
         const end = amd64.rdtsc();
         freqs[i] = (end - start - calib_cost) * (std.time.ns_per_s / calib_time);
     }
@@ -73,11 +73,11 @@ pub fn init() linksection(r.init) void {
     var sum: u64 = 0;
     for (freqs[1 .. runs - 1]) |f| sum += f;
 
-    tsc_timer.frequency = sum / (runs - 2);
+    tsc.frequency = sum / (runs - 2);
 
-    ke.time.register_source(&tsc_timer);
+    ke.clock.register_source(&tsc);
 
-    log.info("frequency calibrated using {s}: {}.{} MHz", .{ best.name, tsc_timer.frequency / 1_000_000, (tsc_timer.frequency % 1_000_000) / 1000 });
+    log.info("frequency calibrated using {s}: {}.{} MHz", .{ best.name, tsc.frequency / 1_000_000, (tsc.frequency % 1_000_000) / 1000 });
 }
 
 fn read_tsc() u64 {
