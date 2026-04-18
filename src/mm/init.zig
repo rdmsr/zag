@@ -96,3 +96,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     mi.vmem.init();
     mi.heap.init();
 }
+
+pub fn late_init() linksection(r.init) void {
+    mi.zone.late_init();
+}

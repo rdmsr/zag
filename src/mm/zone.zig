@@ -9,8 +9,6 @@ const ke = r.ke;
 const mm = r.mm;
 const mi = mm.private;
 
-// TODO: when SMP is setup, do proper magazine initialization.
-
 /// A bufctl is a control structure for a single object in a slab.
 /// It is used to track free objects and link them together in the slab's free list.
 const BufCtl = struct {
@@ -38,8 +36,10 @@ const Slab = struct {
 const Magazine = struct {
     /// Next magazine in the list.
     next: ?*Magazine,
-    /// One or more rounds.
-    rounds: [*]*anyopaque,
+    /// Rounds follow in memory after the struct.
+    pub fn rounds_ptr(self: *Magazine) [*]*anyopaque {
+        return @ptrFromInt(@intFromPtr(self) + @sizeOf(Magazine));
+    }
 };
 
 const MagazineType = struct {
@@ -48,7 +48,7 @@ const MagazineType = struct {
     minbuf: usize,
     maxbuf: usize,
     /// Magazine zone.
-    zone: *Zone,
+    zone: Zone,
 };
 
 /// Per-CPU state for a zone.
@@ -103,9 +103,10 @@ var slab_zone: TypedZone(Slab) = undefined;
 /// Generic zones for power-of-two sizes from 8 to 2048.
 var generic_zones: [generic_zones_num]Zone = undefined;
 
-var magazines_enabled = false;
+var magazines_initialized = false;
+var all_zones: ?*Zone = null;
 
-const magtypes = [_]MagazineType{
+var magtypes = [_]MagazineType{
     .{ .rounds = 1, .alignment = 8, .minbuf = 3200, .maxbuf = 65536, .zone = undefined },
     .{ .rounds = 3, .alignment = 16, .minbuf = 256, .maxbuf = 32768, .zone = undefined },
     .{ .rounds = 7, .alignment = 32, .minbuf = 64, .maxbuf = 16384, .zone = undefined },
@@ -189,7 +190,7 @@ pub const Zone = struct {
     full_slabs: rtl.List,
     /// List of partial slabs in this zone.
     partial_slabs: rtl.List,
-    /// Linkage into the global static zone free list.
+    /// Linkage into the global zone list.
     next: ?*Zone,
     /// Buffer-to-bufctl hash map.
     bufmap: [*]?*BufCtl,
@@ -201,14 +202,15 @@ pub const Zone = struct {
 
     empty_mags: ?*Magazine,
     full_mags: ?*Magazine,
-    magtype: ?MagazineType,
+    magtype: ?*MagazineType,
     /// Per-CPU state.
-    cpus: [*]Cpu,
+    cpus: []Cpu,
 
     ctor: ?*const fn (obj: *anyopaque) void,
     dtor: ?*const fn (obj: *anyopaque) void,
 
     hash0: [initial_hash]?*BufCtl,
+    use_magazines: bool,
 
     const Self = @This();
 
@@ -216,6 +218,7 @@ pub const Zone = struct {
         alignment: usize = 0,
         ctor: ?*const fn (*anyopaque) void = null,
         dtor: ?*const fn (*anyopaque) void = null,
+        magazines: bool = true,
     };
 
     /// Initialize a zone.
@@ -261,13 +264,33 @@ pub const Zone = struct {
         self.hash_shift = std.math.log2_int_ceil(usize, chunk_size);
         self.lock = .init();
         self.bufmap = &self.hash0;
+        self.use_magazines = options.magazines;
+
+        const prev = all_zones;
+        all_zones = self;
+        self.next = prev;
 
         self.magtype = null;
         for (&magtypes) |*mtype| {
-            if (mtype.maxbuf >= chunk_size) {
-                self.magtype = mtype.*;
+            if (chunk_size > mtype.minbuf) {
+                self.magtype = mtype;
                 break;
             }
+        }
+
+        if (!magazines_initialized) {
+            return;
+        }
+
+        self.cpus = gpa.alloc(Cpu, ke.ncpus) catch @panic("Failed to allocate per-CPU magazine state");
+
+        for (0..ke.ncpus) |i| {
+            self.cpus[i].lock = .init();
+            self.cpus[i].alloc = null;
+            self.cpus[i].free = null;
+            self.cpus[i].alloc_rounds = 0;
+            self.cpus[i].free_rounds = 0;
+            self.cpus[i].magazine_size = self.magtype.?.rounds;
         }
     }
 
@@ -278,7 +301,8 @@ pub const Zone = struct {
         var buf: *anyopaque = undefined;
 
         // Try grabbing an object from the magazine layer.
-        if (magazines_enabled) {
+        if (magazines_initialized and self.use_magazines) {
+            @branchHint(.likely);
             const cpu = &self.cpus[ke.cpu.current()];
 
             cpu.lock.acquire_no_ipl();
@@ -288,7 +312,7 @@ pub const Zone = struct {
                 if (cpu.alloc_rounds > 0) {
                     // Fast path: just pop from the alloc magazine.
                     cpu.alloc_rounds -= 1;
-                    buf = cpu.alloc.?.rounds[cpu.alloc_rounds];
+                    buf = cpu.alloc.?.rounds_ptr()[cpu.alloc_rounds];
 
                     if (is_poison_enabled) {
                         if (!check_poison(buf, self.obj_size, free_poison)) {
@@ -386,14 +410,16 @@ pub const Zone = struct {
         const ipl = ke.ipl.raise(.Dispatch);
         defer ke.ipl.lower(ipl);
 
-        if (magazines_enabled) {
+        if (magazines_initialized and self.use_magazines) {
+            @branchHint(.likely);
+
             const cpu = &self.cpus[ke.cpu.current()];
 
             cpu.lock.acquire_no_ipl();
             defer cpu.lock.release_no_ipl();
 
             while (true) {
-                if (cpu.free_rounds < cpu.magazine_size) {
+                if (cpu.free != null and cpu.free_rounds < cpu.magazine_size) {
                     // Fast path: push directly to free magazine.
                     if (is_poison_enabled) {
                         if (self.dtor) |dtor| {
@@ -403,7 +429,7 @@ pub const Zone = struct {
                         fill_with_poison(obj, self.obj_size, free_poison);
                     }
 
-                    cpu.free.?.rounds[cpu.free_rounds] = obj;
+                    cpu.free.?.rounds_ptr()[cpu.free_rounds] = obj;
                     cpu.free_rounds += 1;
                     return;
                 }
@@ -721,6 +747,37 @@ pub fn early_init() linksection(r.init) void {
     for (0..generic_zones.len, &generic_zones) |i, *zone| {
         zone.init(generic_zone_names[i], @as(usize, 1) << @intCast(i + 3), .{});
     }
+
+    for (&magtypes) |*mtype| {
+        mtype.zone.init("magazine", @sizeOf(Magazine) + mtype.rounds * @sizeOf(*anyopaque), .{
+            .alignment = mtype.alignment,
+            .magazines = false,
+        });
+    }
+}
+
+/// Post-SMP initialization.
+pub fn late_init() linksection(r.init) void {
+    // Go through all caches with magazines enabled and initialize their per-CPU magazines.
+    var zone = all_zones;
+
+    while (zone) |z| {
+        if (z.use_magazines) {
+            z.cpus = gpa.alloc(Cpu, ke.ncpus) catch @panic("Failed to allocate per-CPU magazine state");
+
+            for (0..ke.ncpus) |i| {
+                z.cpus[i].lock = .init();
+                z.cpus[i].alloc = null;
+                z.cpus[i].free = null;
+                z.cpus[i].alloc_rounds = 0;
+                z.cpus[i].free_rounds = 0;
+                z.cpus[i].magazine_size = z.magtype.?.rounds;
+            }
+        }
+        zone = z.next;
+    }
+
+    magazines_initialized = true;
 }
 
 // === Global general purpose allocator ===

@@ -13,6 +13,7 @@ pub fn init(boot_info: *pl.BootInfo) void {
     mm.init(boot_info);
 
     pl.late_init(boot_info);
+    mm.late_init();
     ke.sched.late_init();
 
     var timer: ke.Timer = undefined;
