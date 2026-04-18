@@ -32,8 +32,7 @@ const ApData = extern struct {
 };
 
 fn ap_entry(cpu_id: u32) callconv(.c) noreturn {
-    _ = aps_booted.fetchAdd(1, .monotonic);
-    ki.impl.init.ap_entry(cpu_id);
+    ki.impl.init.ap_entry(cpu_id, &aps_booted);
 }
 
 pub fn init() linksection(r.init) void {
@@ -70,7 +69,7 @@ pub fn init() linksection(r.init) void {
     ki.impl.cpu_offsets = @ptrCast(mm.zone.gpa.alloc(usize, apic.apics.items.len + 1) catch @panic("Failed to allocate AP local data offsets"));
     const percpu_size = @intFromPtr(&__percpu_end) - @intFromPtr(&__percpu_start);
 
-    ki.impl.cpu_offsets[0] = @intFromPtr(&__percpu_start);
+    ki.impl.cpu_offsets[0] = 0;
 
     cpu_id_to_apic_id[0] = apic.get_id();
 
@@ -89,7 +88,11 @@ pub fn init() linksection(r.init) void {
         const cpu_data = mm.zone.gpa.alloc(u8, percpu_size) catch @panic("Failed to allocate per-cpu data");
         @memcpy(cpu_data, @as([*]u8, @ptrCast(&__percpu_start))[0..percpu_size]);
 
+        const self_offset_offset = @intFromPtr(&ki.impl.cpu_self_offset) - @intFromPtr(&__percpu_start);
         ki.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -% @intFromPtr(&__percpu_start);
+
+        // copy the offset into the AP's self_offset variable
+        @as(*usize, @ptrCast(@alignCast(&cpu_data[self_offset_offset]))).* = ki.impl.cpu_offsets[cpu_id];
 
         const stack_top = @intFromPtr(mm.heap.alloc(r.kib(16)) catch @panic("Failed to allocate AP stack")) + r.kib(16);
 

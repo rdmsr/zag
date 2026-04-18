@@ -4,7 +4,7 @@ const amd64 = r.arch;
 const std = @import("std");
 const tsc = @import("tsc.zig");
 const pvclock = @import("pvclock.zig");
-const apic = @import("apic.zig");
+pub const apic = @import("apic.zig");
 const smp = @import("smp.zig");
 
 const ki = r.ke.private;
@@ -80,11 +80,11 @@ pub fn init_ap() void {
 }
 
 pub fn late_init(boot_info: *pl.BootInfo) linksection(r.init) void {
-    pl.acpi.init(boot_info);
-
     if (amd64.hypervisor.info) |hv| {
         init_hypervisor(hv);
     }
+
+    pl.acpi.init(boot_info);
 
     tsc.init();
     apic.init();
@@ -102,4 +102,6 @@ pub fn debug_write(c: u8) void {
     com1_write(c);
 }
 
-pub fn arm_timer(_: u64) void {}
+pub fn arm_timer(deadline: r.Nanoseconds) void {
+    apic.arm_timer(deadline);
+}

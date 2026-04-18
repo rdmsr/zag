@@ -100,7 +100,7 @@ const balance_interval = @as(u64, config.CONFIG_BALANCE_INTERVAL);
 const steal_threshold = 1;
 
 var balance_timer: ke.Timer = undefined;
-var balance_dpc: ke.Dpc = undefined;
+var balance_dpc: ke.Dpc = .init(balance);
 
 // LCG values taken from FreeBSD.
 var lcg = std.Random.lcg.Wrapping(u32).init(0, 69069, 5);
@@ -313,7 +313,6 @@ fn init_cpu() linksection(r.init) callconv(.c) void {
 
 /// Called on CPU 0 to initialize load balancing mechanisms.
 pub fn late_init() linksection(r.init) void {
-    balance_dpc = ke.Dpc.init(balance);
     balance_timer.init();
     ke.timer.set(&balance_timer, balance_interval * std.time.ns_per_ms, &balance_dpc);
 }

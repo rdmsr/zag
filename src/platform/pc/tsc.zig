@@ -6,7 +6,7 @@ const ke = r.ke;
 
 const log = std.log.scoped(.@"amd64/tsc");
 
-var tsc_timer: ke.TimeCounter = .{
+pub var tsc_timer: ke.TimeCounter = .{
     .name = "TSC",
     .quality = 100,
     .frequency = 0,
@@ -30,7 +30,7 @@ pub fn init() linksection(r.init) void {
     // Try using cpuid leaf 0x15 to get the TSC frequency.
     const cpuid_state = amd64.cpuid(0x15, 0);
 
-    if (cpuid_state.ebx != 0 and cpuid_state.ecx != 0) {
+    if (cpuid_state.ebx != 0 and cpuid_state.ecx != 0 and cpuid_state.eax != 0) {
         const tsc_freq = (cpuid_state.ebx / cpuid_state.eax) * cpuid_state.ecx;
         log.info("TSC frequency determined via CPUID: {} Hz", .{tsc_freq});
         tsc_timer.frequency = tsc_freq;

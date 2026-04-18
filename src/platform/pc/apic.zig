@@ -1,6 +1,7 @@
 const std = @import("std");
 const amd64 = @import("arch");
 const r = @import("root");
+const tsc = @import("tsc.zig");
 const acpi = r.pl.acpi;
 const mm = r.mm;
 const ke = r.ke;
@@ -74,6 +75,7 @@ pub var apics: std.ArrayList(u32) = .empty;
 var xapic_address: ?usize = null;
 pub var xapic_base_physical: usize = 0;
 const in_x2apic_mode = ke.CpuLocal(bool, false);
+const timer_ticks_per_us = ke.CpuLocal(u64, 0);
 
 const log = std.log.scoped(.apic);
 
@@ -154,6 +156,82 @@ pub fn send_ipi(apic_id: u32, vector: u8, delivery_mode: u8) void {
     }
 }
 
+fn lapic_calibrate(ms: u64) u64 {
+    write(.LvtTimer, (1 << 16));
+    write(.TimerInitialCount, std.math.maxInt(u32));
+
+    ke.time.sleep(std.time.ns_per_ms * ms);
+
+    const ticks = std.math.maxInt(u32) - read(.TimerCurrentCount);
+
+    write(.LvtTimer, (1 << 16));
+    write(.TimerInitialCount, 0);
+
+    return ticks;
+}
+
+fn timer_init() linksection(r.init) void {
+    if (amd64.cpu_features.tsc_deadline) {
+        // TSC-deadline mode.
+        write(.LvtTimer, 32 | (2 << 17));
+        asm volatile ("mfence" ::: .{ .memory = true });
+        return;
+    }
+
+    // Divide by 16.
+    write(.TimerDivideConfig, 0x3);
+
+    const runs = 5;
+    const calib_ms = 10;
+    var total_ticks: u64 = 0;
+
+    for (0..runs) |_| {
+        total_ticks += lapic_calibrate(calib_ms);
+    }
+
+    const avg_ticks = total_ticks / runs;
+    const calib_us = calib_ms * std.time.us_per_ms;
+
+    timer_ticks_per_us.local().* = (avg_ticks / calib_us);
+}
+
+pub fn arm_timer(ns: r.Nanoseconds) void {
+    if (amd64.cpu_features.tsc_deadline) {
+        const now = amd64.rdtsc();
+        const deadline = now + (ns * tsc.tsc_timer.frequency / std.time.ns_per_s);
+        amd64.write_msr(.TscDeadline, deadline);
+        return;
+    }
+
+    // Masked.
+    write(.LvtTimer, 1 << 16);
+    write(.TimerInitialCount, 0);
+
+    const us = ns / std.time.ns_per_us;
+    const ticks: u32 = @truncate(@max(us * timer_ticks_per_us.local().*, 1));
+
+    // Setup IRQ.
+    write(.LvtTimer, 32);
+
+    // Divide by 16
+    write(.TimerDivideConfig, 0x3);
+    write(.TimerInitialCount, @as(u32, ticks));
+}
+
+pub fn stop_timer() void {
+    if (amd64.cpu_features.tsc_deadline) {
+        amd64.write_msr(.TscDeadline, 0);
+        return;
+    }
+
+    write(.LvtTimer, (1 << 16));
+    write(.TimerInitialCount, 0);
+}
+
+pub fn eoi() void {
+    write(.Eoi, 0);
+}
+
 pub fn init() linksection(r.init) void {
     var iter = acpi.madt.iterator();
 
@@ -210,6 +288,7 @@ pub fn init_local() void {
     write(.Svr, @intCast(read(.Svr) | 0x1FF));
     write(.Tpr, 0);
     write(.Eoi, 0);
+    timer_init();
 }
 
 pub fn enter_x2apic() void {

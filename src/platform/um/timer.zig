@@ -50,10 +50,12 @@ var tc: ke.TimeCounter = .{
 };
 
 pub fn init() void {
-    var act: posix.Sigaction = undefined;
+    var act = std.mem.zeroes(posix.Sigaction);
 
     act.handler.sigaction = timer_handler;
     act.flags = posix.SA.RESTART | posix.SA.SIGINFO;
+
+    act.mask = posix.sigfillset();
 
     posix.sigaction(posix.SIG.ALRM, &act, null);
 

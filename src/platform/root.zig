@@ -29,12 +29,11 @@ pub inline fn debug_write(c: u8) void {
 }
 
 /// Arm a one-shot timer to fire in `ns` nanoseconds.
-/// The timer must call `ki_timer_expiry()` when it fires.
 pub inline fn arm_timer(ns: u64) void {
     return impl.arm_timer(ns);
 }
 
-/// Pretty name for the platform
+/// Pretty name for the platform.
 pub const name = impl.name;
 
 /// A generic struct representing information passed from the bootloader.
