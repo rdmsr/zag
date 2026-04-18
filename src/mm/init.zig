@@ -1,6 +1,6 @@
-const b = @import("base");
-const pl = b.pl;
-const mm = b.mm;
+const r = @import("root");
+const pl = r.pl;
+const mm = r.mm;
 const mi = mm.private;
 const config = @import("config");
 
@@ -87,7 +87,7 @@ else
         pub fn call(_: *pl.BootInfo) void {}
     }.call;
 
-pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
+pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     mi.phys.init(boot_info);
     map_kernel(boot_info);
     mi.kernel_pmap.activate();

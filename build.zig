@@ -76,8 +76,7 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const base_nosym = makeBaseModule(b, optimize, config_module, rtl_module, ksyms_module);
-    const kernel_nosym = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, base_nosym, arch_module);
+    const kernel_nosym = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
 
     kernel_nosym.root_module.addAssemblyFile(empty_ksyms_s);
 
@@ -91,10 +90,8 @@ pub fn build(b: *std.Build) void {
     ksyms.addArg("--output");
     const ksyms_s = ksyms.addOutputFileArg("ksyms.s");
 
-    const base_module = makeBaseModule(b, optimize, config_module, rtl_module, ksyms_module);
-
     // second pass
-    const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, base_module, arch_module);
+    const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
     kernel.root_module.addAssemblyFile(ksyms_s);
 
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
@@ -108,7 +105,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "rtl", .module = rtl_module },
         },
     });
-    docs_module.addImport("base", docs_module);
 
     const docs_obj = b.addObject(.{
         .name = "kernel_docs",
@@ -173,54 +169,23 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
     return q;
 }
 
-fn makeBaseModule(
-    b: *std.Build,
-    optimize: std.builtin.OptimizeMode,
-    config_module: *std.Build.Module,
-    rtl_module: *std.Build.Module,
-    ksyms_module: *std.Build.Module,
-) *std.Build.Module {
-    const base = b.createModule(.{
-        .root_source_file = b.path("src/root.zig"),
-        .imports = &.{
-            .{ .name = "config", .module = config_module },
-            .{ .name = "rtl", .module = rtl_module },
-            .{ .name = "ksyms", .module = ksyms_module },
-        },
-        .optimize = optimize,
-    });
-    base.addImport("base", base);
-    return base;
-}
-
-fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module, base: *std.Build.Module, arch: *std.Build.Module) *std.Build.Step.Compile {
+fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module, arch: *std.Build.Module) *std.Build.Step.Compile {
     const target = b.resolveTargetQuery(targetQueryForPlatform(plat));
 
     const name = b.fmt("kernel-{s}", .{@tagName(plat.arch)});
 
-    const platform_name = if (plat.bootloader) |bl|
-        switch (bl) {
-            .Limine => "boot/limine",
-        }
-    else if (plat.os == .linux) "platform/um" else @tagName(plat.arch);
-
-    base.addImport("arch", arch);
-
-    const root_source_file = b.fmt("src/{s}/entry.zig", .{platform_name});
-
     const kernel = b.addExecutable(.{
         .name = name,
         .root_module = b.createModule(.{
-            .root_source_file = b.path(root_source_file),
+            .root_source_file = b.path("src/root.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    base.addImport("ksyms", ksyms_module);
+    kernel.root_module.addImport("arch", arch);
     kernel.root_module.addImport("config", config_module);
     kernel.root_module.addImport("ksyms", ksyms_module);
-    kernel.root_module.addImport("base", base);
     kernel.root_module.addImport("rtl", rtl);
 
     kernel.use_llvm = true;

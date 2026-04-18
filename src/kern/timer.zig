@@ -2,10 +2,10 @@
 //! Timer objects are useful when one wants to wait a fixed amount of time for an event to occur.
 const std = @import("std");
 const rtl = @import("rtl");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 const ki = ke.private;
-const pl = b.pl;
+const pl = r.pl;
 
 const PerCpu = struct {
     /// Heap of pending timers on this CPU.
@@ -30,7 +30,7 @@ pub const Timer = struct {
     /// Timer state.
     state: std.atomic.Value(State),
     /// When the timer is bound to expire.
-    deadline: b.Nanoseconds,
+    deadline: r.Nanoseconds,
     /// Attached DPC.
     dpc: ?*ke.Dpc,
     /// Intrusive pairing heap node.
@@ -60,7 +60,7 @@ const percpu = ke.CpuLocal(PerCpu, .{
 
 /// Start a timer with an expiration time.
 /// A DPC that will be enqueued upon expiration can be passed.
-pub fn set(timer: *Timer, time: b.Nanoseconds, dpc: ?*ke.Dpc) void {
+pub fn set(timer: *Timer, time: r.Nanoseconds, dpc: ?*ke.Dpc) void {
     const ipl = timer.hdr.lock.acquire();
     defer timer.hdr.lock.release(ipl);
 

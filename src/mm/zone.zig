@@ -2,11 +2,11 @@
 //! As described in Bonwick's "The Slab Allocator: An Object-Caching Kernel Memory Allocator"
 //! and "Magazines and Vmem: Extending the Slab Allocator to Many CPUs and Arbitrary Resources".
 const rtl = @import("rtl");
-const b = @import("base");
+const r = @import("root");
 const config = @import("config");
 const std = @import("std");
-const ke = b.ke;
-const mm = b.mm;
+const ke = r.ke;
+const mm = r.mm;
 const mi = mm.private;
 
 // TODO: when SMP is setup, do proper magazine initialization.
@@ -714,7 +714,7 @@ pub fn TypedZone(comptime T: type) type {
     };
 }
 
-pub fn early_init() linksection(b.init) void {
+pub fn early_init() linksection(r.init) void {
     bufctl_zone.init("bufctl", .{});
     slab_zone.init("slab", .{});
 

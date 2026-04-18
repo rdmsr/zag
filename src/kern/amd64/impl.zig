@@ -1,14 +1,14 @@
-const b = @import("base");
-const ke = b.ke;
-const pl = b.pl;
-const amd64 = b.arch;
+const r = @import("root");
+const ke = r.ke;
+const pl = r.pl;
+const amd64 = r.arch;
 
 const std = @import("std");
 
 pub const init = @import("init.zig");
 pub const early_init = init.early_init;
 
-pub export var cpu_self_offset: usize linksection(b.percpu) = 0;
+pub export var cpu_self_offset: usize linksection(r.percpu) = 0;
 pub export var cpu_offsets: [*]usize = undefined;
 
 pub const ThreadContext = struct {
@@ -28,7 +28,7 @@ pub const ThreadContext = struct {
         // TODO: This shouldn't be reached!!!
     }
 
-    pub fn init(stack: b.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) @This() {
+    pub fn init(stack: r.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) @This() {
         var ctx: @This() = undefined;
         ctx.rdi = @intFromPtr(entry);
         ctx.rsi = @intFromPtr(arg);

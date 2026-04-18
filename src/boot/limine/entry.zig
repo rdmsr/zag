@@ -1,4 +1,4 @@
-const b = @import("base");
+const b = @import("root");
 const ksyms = @import("ksyms");
 const limine = @import("limine.zig");
 

@@ -1,4 +1,4 @@
-const b = @import("base");
+const b = @import("root");
 const std = @import("std");
 const acpi = b.pl.acpi;
 const mm = b.mm;

@@ -1,7 +1,7 @@
 const std = @import("std");
 const rtl = @import("rtl");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 const ki = ke.private;
 
 /// TimeCounter structure.
@@ -88,7 +88,7 @@ pub fn register_source(tc: *TimeCounter) void {
 }
 
 /// Return the time elapsed since boot in nanoseconds.
-pub fn read_time_nano() b.Nanoseconds {
+pub fn read_time_nano() r.Nanoseconds {
     const tc = best_tc orelse return 0;
 
     const s = state.load();
@@ -103,7 +103,7 @@ pub fn best() ?*TimeCounter {
 }
 
 /// Do a busy sleep of `ns` nanoseconds using TimeCounter.
-pub fn sleep(ns: b.Nanoseconds) void {
+pub fn sleep(ns: r.Nanoseconds) void {
     const start = read_time_nano();
 
     while (true) {

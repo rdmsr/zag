@@ -1,9 +1,9 @@
-const b = @import("base");
+const r = @import("root");
 const std = @import("std");
 const posix = std.posix;
 const linux = std.os.linux;
-const c = b.pl.impl.c;
-const ke = b.ke;
+const c = r.pl.impl.c;
+const ke = r.ke;
 const ki = ke.private;
 
 threadlocal var timerid: c.timer_t = undefined;
@@ -20,7 +20,7 @@ fn timer_handler(_: posix.SIG, _: *const posix.siginfo_t, _: ?*anyopaque) callco
     }
 }
 
-pub fn arm_timer(ns: b.Nanoseconds) void {
+pub fn arm_timer(ns: r.Nanoseconds) void {
     const value: c.struct_itimerspec = .{ .it_value = .{
         .tv_sec = @intCast(ns / std.time.ns_per_s),
         .tv_nsec = @intCast(ns % std.time.ns_per_s),

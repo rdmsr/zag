@@ -1,10 +1,6 @@
 const std = @import("std");
 const config = @import("config");
 
-const b = @import("base");
-const ke = b.ke;
-const pl = b.pl;
-
 const init_mod = @import("init.zig");
 
 pub const impl = if (@hasDecl(config, "CONFIG_ARCH_AMD64"))

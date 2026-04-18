@@ -57,7 +57,7 @@
 //!     complexity.
 const std = @import("std");
 const rtl = @import("rtl");
-const mm = @import("base").mm;
+const mm = @import("root").mm;
 const mi = mm.private;
 
 pub const Policy = enum {

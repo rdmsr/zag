@@ -1,6 +1,5 @@
 pub const private = @import("private.zig");
 
-const b = @import("base");
 const std = @import("std");
 
 pub const page_size = 4096;

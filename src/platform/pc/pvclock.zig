@@ -1,9 +1,9 @@
 const amd64 = @import("arch");
 const kvm = amd64.hypervisor.kvm;
-const b = @import("base");
+const r = @import("root");
 const std = @import("std");
-const mm = b.mm;
-const ke = b.ke;
+const mm = r.mm;
+const ke = r.ke;
 
 var pvclock_src: kvm.PVClockSource = undefined;
 var pvclock_tc: ke.TimeCounter = .{
@@ -16,7 +16,7 @@ var pvclock_tc: ke.TimeCounter = .{
     .n = 0,
 };
 
-pub fn init() linksection(b.init) void {
+pub fn init() linksection(r.init) void {
     const page = mm.phys.alloc();
     pvclock_src = kvm.PVClockSource.init(page, mm.p2v(page));
     ke.time.register_source(&pvclock_tc);

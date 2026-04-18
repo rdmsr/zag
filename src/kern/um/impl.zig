@@ -1,7 +1,7 @@
 const std = @import("std");
-const b = @import("base");
-const c = b.pl.impl.c;
-const ke = b.ke;
+const r = @import("root");
+const c = r.pl.impl.c;
+const ke = r.ke;
 const ki = ke.private;
 
 fn set_signals(enabled: bool) bool {
@@ -45,7 +45,7 @@ pub fn restore_interrupts(val: bool) void {
 }
 
 pub fn send_resched_ipi(cpu: u32) void {
-    _ = c.pthread_kill(b.pl.impl.percpu.remote(cpu).pthread, c.SIGUSR1);
+    _ = c.pthread_kill(r.pl.impl.percpu.remote(cpu).pthread, c.SIGUSR1);
 }
 
 pub const ThreadContext = struct {
@@ -58,7 +58,7 @@ pub const ThreadContext = struct {
         entry(arg);
     }
 
-    pub fn init(stack: b.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) ThreadContext {
+    pub fn init(stack: r.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) ThreadContext {
         var new: ThreadContext = .{ .ucontext = undefined };
 
         if (c.getcontext(&new.ucontext) == -1) {
@@ -103,13 +103,13 @@ const bootstrap_offsets = [1]usize{0};
 
 pub fn early_init() void {
     // Ensure we can use per-cpu data.
-    b.pl.impl.cpu_offsets = @constCast(&bootstrap_offsets);
+    r.pl.impl.cpu_offsets = @constCast(&bootstrap_offsets);
 }
 
 pub inline fn percpu_ptr_other(variable: anytype, cpu_id: usize) @TypeOf(variable) {
-    return @ptrFromInt(@intFromPtr(variable) +% b.pl.impl.cpu_offsets[cpu_id]);
+    return @ptrFromInt(@intFromPtr(variable) +% r.pl.impl.cpu_offsets[cpu_id]);
 }
 
 pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
-    return @ptrFromInt(@intFromPtr(variable) +% b.pl.impl.cpu_offsets[b.pl.impl.my_cpu_id]);
+    return @ptrFromInt(@intFromPtr(variable) +% r.pl.impl.cpu_offsets[r.pl.impl.my_cpu_id]);
 }

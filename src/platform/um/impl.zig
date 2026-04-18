@@ -1,10 +1,12 @@
 const std = @import("std");
 const linux = std.os.linux;
-const b = @import("base");
-const pl = b.pl;
-const ke = b.ke;
-const ki = b.ke.private;
+const r = @import("root");
+const pl = r.pl;
+const ke = r.ke;
+const ki = r.ke.private;
 const posix = std.posix;
+
+pub const entry = @import("entry.zig");
 
 const timer = @import("timer.zig");
 
@@ -61,7 +63,7 @@ pub fn check_function(fn_name: []const u8, ret: usize) void {
 
 pub var cpu_offsets: []usize = undefined;
 
-pub fn early_init(_: *pl.BootInfo) linksection(b.init) void {
+pub fn early_init(_: *pl.BootInfo) linksection(r.init) void {
     percpu.local().pthread = c.pthread_self();
     my_cpu_id = 0;
 
@@ -82,16 +84,16 @@ pub fn early_init(_: *pl.BootInfo) linksection(b.init) void {
     global_state.phys_memory_memfd = memfd;
     global_state.phys_base = phys_base;
 
-    const pfndb_base = linux.mmap(null, b.tib(1), .{}, .{ .ANONYMOUS = true, .TYPE = .PRIVATE }, -1, 0);
+    const pfndb_base = linux.mmap(null, r.tib(1), .{}, .{ .ANONYMOUS = true, .TYPE = .PRIVATE }, -1, 0);
 
     check_function("mmap", pfndb_base);
 
-    const heap_base = linux.mmap(null, b.gib(8), .{}, .{ .ANONYMOUS = true, .TYPE = .PRIVATE }, -1, 0);
+    const heap_base = linux.mmap(null, r.gib(8), .{}, .{ .ANONYMOUS = true, .TYPE = .PRIVATE }, -1, 0);
 
     check_function("mmap", heap_base);
 
-    b.kernel_pfndb_base = pfndb_base;
-    b.kernel_heap_base = heap_base;
+    r.kernel_pfndb_base = pfndb_base;
+    r.kernel_heap_base = heap_base;
 
     std.log.info("um: kernel heap lives at {X}", .{heap_base});
 }
@@ -102,10 +104,10 @@ fn sigusr1_handler(_: posix.SIG, _: *const posix.siginfo_t, _: ?*anyopaque) call
     }
 }
 
-fn make_thread(entry: *const fn (?*anyopaque) void, td: *ke.Thread) void {
+fn make_thread(entrypoint: *const fn (?*anyopaque) void, td: *ke.Thread) void {
     const stack = std.heap.page_allocator.alloc(u8, 16384) catch @panic("wtf");
 
-    td.init(@intFromPtr(stack.ptr), 16384, entry, null);
+    td.init(@intFromPtr(stack.ptr), 16384, entrypoint, null);
 
     td.priority = 0;
     td.priority_class = .Idle;
@@ -127,14 +129,14 @@ fn other_cpu_entry(_: ?*anyopaque) callconv(.c) ?*anyopaque {
     return null;
 }
 
-var cpu: ke.Cpu linksection(b.percpu) = undefined;
+var cpu: ke.Cpu linksection(r.percpu) = undefined;
 
 fn idle(_: ?*anyopaque) void {}
 
 extern var __percpu_start: u8;
 extern var __percpu_end: u8;
 
-pub fn late_init(_: *pl.BootInfo) linksection(b.init) void {
+pub fn late_init(_: *pl.BootInfo) linksection(r.init) void {
     timer.init();
     timer.init_cpu();
 
@@ -180,14 +182,14 @@ pub fn late_init(_: *pl.BootInfo) linksection(b.init) void {
         cpuset.__bits[i / 64] |= @as(c_ulong, 1) << @intCast(i % 64);
         _ = c.pthread_attr_setaffinity_np(&attr, @sizeOf(c.cpu_set_t), &cpuset);
 
-        const r = c.pthread_create(
+        const ret = c.pthread_create(
             &other_threads[i - 1],
             &attr,
             other_cpu_entry,
             null,
         );
 
-        if (r != 0) {
+        if (ret != 0) {
             @panic("pthread_create() failed");
         }
     }

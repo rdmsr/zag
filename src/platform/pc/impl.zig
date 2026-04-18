@@ -1,13 +1,13 @@
-const b = @import("base");
-const pl = b.pl;
-const amd64 = b.arch;
+const r = @import("root");
+const pl = r.pl;
+const amd64 = r.arch;
 const std = @import("std");
 const tsc = @import("tsc.zig");
 const pvclock = @import("pvclock.zig");
 const apic = @import("apic.zig");
 const smp = @import("smp.zig");
 
-const ki = b.ke.private;
+const ki = r.ke.private;
 
 pub const name = "PC";
 
@@ -15,7 +15,7 @@ const com1 = 0x3F8;
 
 const log = std.log.scoped(.@"amd64/pc");
 
-fn com1_init() linksection(b.init) void {
+fn com1_init() linksection(r.init) void {
     amd64.outb(com1 + 0x3, 0x80);
     amd64.outb(com1 + 0x0, 0x0c);
     amd64.outb(com1 + 0x1, 0x00);
@@ -32,7 +32,7 @@ fn com1_write(c: u8) void {
     amd64.outb(com1, c);
 }
 
-pub fn early_init(boot_info: *pl.BootInfo) linksection(b.init) void {
+pub fn early_init(boot_info: *pl.BootInfo) linksection(r.init) void {
     com1_init();
 
     const f = amd64.cpu_features;
@@ -79,7 +79,7 @@ pub fn init_ap() void {
     apic.init_local();
 }
 
-pub fn late_init(boot_info: *pl.BootInfo) linksection(b.init) void {
+pub fn late_init(boot_info: *pl.BootInfo) linksection(r.init) void {
     pl.acpi.init(boot_info);
 
     if (amd64.hypervisor.info) |hv| {

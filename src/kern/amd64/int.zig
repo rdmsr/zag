@@ -1,7 +1,7 @@
 const amd64 = @import("arch");
 const std = @import("std");
-const b = @import("base");
-const ke = b.ke;
+const r = @import("root");
+const ke = r.ke;
 const ki = ke.private;
 
 extern const __interrupt_vectors: [256]usize;
@@ -79,7 +79,7 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.{ .x86_64_sys
 
 extern fn idt_load(idt_ptr: *const amd64.Idtr) callconv(.{ .x86_64_sysv = .{} }) void;
 
-pub fn init() linksection(b.init) void {
+pub fn init() linksection(r.init) void {
     const idtr: amd64.Idtr = .{
         .limit = @sizeOf(@TypeOf(idt)) - 1,
         .base = @intFromPtr(&idt),

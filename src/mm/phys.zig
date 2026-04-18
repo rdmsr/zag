@@ -6,13 +6,13 @@
 //! When freeing pages, they are added to the active batch until it reaches capacity,
 //!  at which point the full batch is moved to the local depot.
 //!  If the depot is full when trying to add a new batch, one batch is pushed back to the global stack to make room.
-const b = @import("base");
+const r = @import("root");
 const std = @import("std");
 const rtl = @import("rtl");
-const pl = b.pl;
-const mm = b.mm;
+const pl = r.pl;
+const mm = r.mm;
 const mi = mm.private;
-const ke = b.ke;
+const ke = r.ke;
 
 const log = std.log.scoped(.@"mm/phys");
 
@@ -113,7 +113,7 @@ fn early_alloc() usize {
 }
 
 /// Allocate a page of physical memory.
-pub fn alloc() b.PAddr {
+pub fn alloc() r.PAddr {
     if (!bootstrapped) {
         return early_alloc();
     }
@@ -160,7 +160,7 @@ pub fn alloc() b.PAddr {
 }
 
 /// Free a page of physical memory.
-pub fn free(addr: b.PAddr) void {
+pub fn free(addr: r.PAddr) void {
     const ipl = ke.ipl.raise(.High);
     defer ke.ipl.lower(ipl);
 
@@ -200,7 +200,7 @@ pub fn free(addr: b.PAddr) void {
     }
 }
 
-pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
+pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     memory_map = &boot_info.memory_map;
 
     var total_usable_memory: usize = 0;
