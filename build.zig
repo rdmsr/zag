@@ -193,28 +193,35 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     kernel.root_module.omit_frame_pointer = false;
 
+    const modules: []const *std.Build.Module = &.{ config_module, ksyms_module, rtl, arch, kernel.root_module };
+
     if (plat.os == .freestanding) {
         kernel.linkage = .static;
         kernel.pie = false;
 
-        kernel.root_module.pic = false;
-        kernel.root_module.strip = false;
-        kernel.root_module.stack_check = false;
-        kernel.root_module.stack_protector = false;
-        kernel.root_module.unwind_tables = .none;
+        for (modules) |m| {
+            m.pic = false;
+            m.strip = false;
+            m.stack_check = false;
+            m.stack_protector = false;
+            m.unwind_tables = .none;
+            m.omit_frame_pointer = false;
+
+            m.code_model = switch (plat.arch) {
+                .x86_64 => .kernel,
+                .riscv64 => .medium,
+                else => .large,
+            };
+
+            switch (plat.arch) {
+                .x86_64 => {
+                    m.red_zone = false;
+                },
+                else => {},
+            }
+        }
 
         kernel.entry = .{ .symbol_name = "kmain" };
-
-        kernel.root_module.code_model = switch (plat.arch) {
-            .x86_64 => .kernel,
-            .riscv64 => .medium,
-            else => .large,
-        };
-
-        switch (plat.arch) {
-            .x86_64 => kernel.root_module.red_zone = false,
-            else => {},
-        }
 
         switch (plat.arch) {
             .x86_64 => {

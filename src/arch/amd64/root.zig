@@ -21,6 +21,8 @@ pub const Msr = enum(u32) {
     Star = 0xC000_0081,
     /// IA32_LSTAR
     LStar = 0xC000_0082,
+    /// IA32_TSC_DEADLINE
+    TscDeadline = 0x6E0,
     /// MSR_KVM_SYSTEM_TIME_NEW
     KvmSystemTimeNew = 0x4B564D01,
     _,

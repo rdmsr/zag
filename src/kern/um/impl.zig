@@ -8,7 +8,10 @@ fn set_signals(enabled: bool) bool {
     var newmask: c.sigset_t = undefined;
     var oldmask: c.sigset_t = undefined;
 
-    _ = c.sigfillset(&newmask);
+    _ = c.sigemptyset(&newmask);
+    _ = c.sigaddset(&newmask, c.SIGUSR1);
+    _ = c.sigaddset(&newmask, c.SIGUSR2);
+    _ = c.sigaddset(&newmask, c.SIGALRM);
 
     const how = if (enabled) c.SIG_UNBLOCK else c.SIG_BLOCK;
 
@@ -19,12 +22,13 @@ fn set_signals(enabled: bool) bool {
     return c.sigismember(&oldmask, c.SIGUSR1) == 0;
 }
 
-threadlocal var hard_ipl: ke.Ipl = .Passive;
-
 /// Set the hardware IPL.
 pub fn set_hardware_ipl(ipl: ke.Ipl) void {
-    // This is a no-op since we handle this in enable_interrupts().
-    hard_ipl = ipl;
+    if (@intFromEnum(ipl) > @intFromEnum(ke.Ipl.get_max_software())) {
+        _ = disable_interrupts();
+    } else {
+        _ = enable_interrupts();
+    }
 }
 
 /// Disable interrupts and return the previous state.
@@ -34,14 +38,12 @@ pub fn disable_interrupts() bool {
 
 /// Enable interrupts and return the previous state.
 pub fn enable_interrupts() bool {
-    const ipl_allows_ints = @intFromEnum(hard_ipl) <= @intFromEnum(ke.Ipl.get_max_software());
-    return set_signals(ipl_allows_ints);
+    return set_signals(true);
 }
 
 /// Restore an interrupt state.
 pub fn restore_interrupts(val: bool) void {
-    const ipl_allows_ints = @intFromEnum(hard_ipl) <= @intFromEnum(ke.Ipl.get_max_software());
-    _ = set_signals(val and ipl_allows_ints);
+    _ = set_signals(val);
 }
 
 pub fn send_resched_ipi(cpu: u32) void {

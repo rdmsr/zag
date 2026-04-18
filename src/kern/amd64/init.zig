@@ -81,30 +81,33 @@ fn early_cpu_init() linksection(r.init) void {
     efer.nxe = true;
 
     amd64.write_msr(.Efer, @bitCast(efer));
+
+    amd64.sti();
 }
 
-pub fn ap_entry(cpu_id: u32) noreturn {
+pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
     early_cpu_init();
     ki.cpu.init_cpu(cpu_id);
     pl.impl.init_ap();
+
+    _ = booted.fetchAdd(1, .monotonic);
 
     while (true) {
         std.atomic.spinLoopHint();
     }
 }
 
-var initial_offsets: [1]usize = undefined;
+var initial_offsets: [1]usize = .{0};
 extern var __percpu_start: u8;
 
 pub fn early_init() linksection(r.init) void {
     amd64.detect_cpu_features();
     early_cpu_init();
 
-    initial_offsets[0] = @intFromPtr(&__percpu_start);
     impl.cpu_offsets = &initial_offsets;
-
-    int.init();
 
     // Enable Per-CPU data for this CPU
     amd64.write_msr(.GsBase, 0);
+
+    int.init();
 }
