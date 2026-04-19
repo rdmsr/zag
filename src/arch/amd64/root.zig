@@ -243,7 +243,7 @@ pub const Cr0 = packed struct(u64) {
     ts: bool,
     et: bool,
     ne: bool,
-    reserved0: u11,
+    reserved0: u10,
     wp: bool,
     reserved1: u1,
     am: bool,
@@ -251,7 +251,7 @@ pub const Cr0 = packed struct(u64) {
     nw: bool,
     cd: bool,
     pg: bool,
-    reserved3: u31,
+    reserved3: u32,
 };
 
 comptime {
