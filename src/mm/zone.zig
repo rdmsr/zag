@@ -185,7 +185,7 @@ pub const Zone = struct {
     /// Current color for slab coloring.
     color: usize,
     /// Zone lock.
-    lock: ke.SpinLock,
+    lock: ke.QSpinLock,
     /// List of full slabs in this zone.
     full_slabs: rtl.List,
     /// List of partial slabs in this zone.
@@ -198,7 +198,7 @@ pub const Zone = struct {
     hash_mask: usize,
     hash_shift: usize,
 
-    depot_lock: ke.SpinLock,
+    depot_lock: ke.QSpinLock,
 
     empty_mags: ?*Magazine,
     full_mags: ?*Magazine,
