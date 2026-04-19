@@ -3,7 +3,7 @@ const ke = r.ke;
 const mm = r.mm;
 const mi = mm.private;
 
-var heap_lock: ke.SpinLock = .init();
+var heap_lock: ke.QSpinLock = .init();
 var heap_arena: mm.vmem.Arena = undefined;
 
 pub fn init() void {

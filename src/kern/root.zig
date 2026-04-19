@@ -8,6 +8,7 @@ const p = private;
 // === Exported types ===
 pub const Ipl = p.ipl.Ipl;
 pub const SpinLock = p.spinlock.SpinLock;
+pub const QSpinLock = p.spinlock.QSpinLock;
 pub const Thread = p.thread.Thread;
 pub const Dpc = p.dpc.Dpc;
 pub const TimeCounter = p.time.TimeCounter;

@@ -58,7 +58,7 @@ pub const ThreadContext = extern struct {
 
     pub fn switch_to(self: *ThreadContext, new: *ThreadContext) callconv(.c) void {
         const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", self));
-        do_context_switch(self, new, &thread.lock.locked);
+        do_context_switch(self, new, &thread.lock.inner.locked);
     }
 };
 
