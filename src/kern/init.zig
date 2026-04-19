@@ -11,7 +11,7 @@ var stack: [r.kib(16)]u8 align(16) = undefined;
 
 pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     ki.impl.early_init();
-    std.log.info("hello, world", .{});
+    std.log.info("Welcome to the machine", .{});
     pl.early_init(boot_info);
     ki.cpu.init_cpu(0);
 
