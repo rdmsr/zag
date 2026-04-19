@@ -22,28 +22,37 @@ fn set_signals(enabled: bool) bool {
     return c.sigismember(&oldmask, c.SIGUSR1) == 0;
 }
 
-/// Set the hardware IPL.
+threadlocal var hardware_ipl: ke.Ipl = .Passive;
+threadlocal var interrupts_enabled: bool = true;
+
 pub fn set_hardware_ipl(ipl: ke.Ipl) void {
-    if (@intFromEnum(ipl) > @intFromEnum(ke.Ipl.get_max_software())) {
-        _ = disable_interrupts();
-    } else {
-        _ = enable_interrupts();
-    }
+    hardware_ipl = ipl;
+    update_signals();
 }
 
-/// Disable interrupts and return the previous state.
 pub fn disable_interrupts() bool {
-    return set_signals(false);
+    const old = interrupts_enabled;
+    interrupts_enabled = false;
+    update_signals();
+    return old;
 }
 
-/// Enable interrupts and return the previous state.
 pub fn enable_interrupts() bool {
-    return set_signals(true);
+    const old = interrupts_enabled;
+    interrupts_enabled = true;
+    update_signals();
+    return old;
 }
 
-/// Restore an interrupt state.
 pub fn restore_interrupts(val: bool) void {
-    _ = set_signals(val);
+    interrupts_enabled = val;
+    update_signals();
+}
+
+fn update_signals() void {
+    const should_enable = interrupts_enabled and
+        @intFromEnum(hardware_ipl) <= @intFromEnum(ke.Ipl.get_max_software());
+    _ = set_signals(should_enable);
 }
 
 pub fn send_resched_ipi(cpu: u32) void {
