@@ -17,9 +17,11 @@ extern var AP_TRAMPOLINE_DATA: u8;
 extern var __percpu_start: u8;
 extern var __percpu_end: u8;
 
-export var cpu_id_to_apic_id: [config.CONFIG_NCPUS]u32 = undefined;
+pub export var cpu_id_to_apic_id: [config.CONFIG_NCPUS]u32 = undefined;
 
 const start_stack = ke.ExportedCpuLocal(usize, 0, "ap_start_stack");
+
+pub const start_thread = ke.CpuLocal(*ke.Thread, undefined);
 
 var aps_booted: std.atomic.Value(usize) = .init(0);
 
@@ -33,6 +35,16 @@ const ApData = extern struct {
 
 fn ap_entry(cpu_id: u32) callconv(.c) noreturn {
     ki.impl.init.ap_entry(cpu_id, &aps_booted);
+}
+
+fn make_thread(entrypoint: *const fn (?*anyopaque) void, stack: usize) *ke.Thread {
+    const td = mm.zone.gpa.create(ke.Thread) catch @panic("Failed to allocate thread for AP");
+
+    td.init(stack, r.kib(32), entrypoint, null);
+
+    td.priority = 0;
+    td.priority_class = .Idle;
+    return td;
 }
 
 pub fn init() linksection(r.init) void {
@@ -94,9 +106,11 @@ pub fn init() linksection(r.init) void {
         // copy the offset into the AP's self_offset variable
         @as(*usize, @ptrCast(@alignCast(&cpu_data[self_offset_offset]))).* = ki.impl.cpu_offsets[cpu_id];
 
-        const stack_top = @intFromPtr(mm.heap.alloc(r.kib(16)) catch @panic("Failed to allocate AP stack")) + r.kib(16);
+        const stack_top = @intFromPtr(mm.heap.alloc(r.kib(32)) catch @panic("Failed to allocate AP stack")) + r.kib(32);
 
         start_stack.remote(@intCast(cpu_id)).* = stack_top & ~@as(usize, 15);
+
+        start_thread.remote(@intCast(cpu_id)).* = make_thread(@ptrCast(&ap_entry), stack_top - r.kib(32));
 
         rtl.barrier.wmb();
 
@@ -108,6 +122,8 @@ pub fn init() linksection(r.init) void {
         ke.clock.sleep(sipi_delay);
         apic.send_sipi(apic_id, 0x08);
     }
+
+    log.info("Waiting for APs...", .{});
 
     while (aps_booted.load(.acquire) < apic.apics.items.len) {
         std.atomic.spinLoopHint();

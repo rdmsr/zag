@@ -172,13 +172,16 @@ fn handle_expiry(_: ?*anyopaque) void {
             return;
         }
 
+        if (timer.state.cmpxchgStrong(.Pending, .Running, .acquire, .monotonic) != null) {
+            // Timer must've been canceled.
+            cpu.lock.release_no_ipl();
+            continue;
+        }
+
         _ = cpu.timers.pop();
         cpu.lock.release_no_ipl();
 
-        if (timer.state.cmpxchgStrong(.Pending, .Running, .acquire, .monotonic) != null) {
-            // Timer must've been canceled.
-            continue;
-        }
+        const maybe_dpc = timer.dpc;
 
         timer.hdr.lock.acquire_no_ipl();
 
@@ -186,12 +189,12 @@ fn handle_expiry(_: ?*anyopaque) void {
         timer.hdr.signaled = 1;
         timer.cpu = null;
 
-        // Wake whomever was waiting on the timer.
-        ki.wait.satisfy_wait(&timer.hdr);
-
         timer.state.store(.Stopped, .release);
 
-        if (timer.dpc) |dpc| ke.dpc.enqueue(dpc, null);
+        // Wake whomever was waiting on the timer.
+        ki.wait.satisfy_wait(&timer.hdr);
         timer.hdr.lock.release_no_ipl();
+
+        if (maybe_dpc) |dpc| ke.dpc.enqueue(dpc, null);
     }
 }

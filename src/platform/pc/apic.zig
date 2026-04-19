@@ -142,10 +142,11 @@ pub fn send_sipi(apic_id: u32, startup_page: u8) void {
 }
 
 pub fn send_ipi(apic_id: u32, vector: u8, delivery_mode: u8) void {
-    const icr_value = (@as(u64, apic_id) << 32) | (@as(u64, delivery_mode) << 8) | vector;
     if (in_x2apic_mode.local().*) {
+        const icr_value = (@as(u64, apic_id) << 32) | (@as(u64, delivery_mode) << 8) | vector;
         x2apic_write(.Icr, icr_value);
     } else {
+        const icr_value = (@as(u32, delivery_mode) << 8) | vector;
         // Write to ICR1 first, because writing to the low word causes
         // the IPI to be sent.
         xapic_write(.Icr1, @as(u32, apic_id) << 24);

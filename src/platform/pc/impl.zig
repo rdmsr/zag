@@ -5,7 +5,7 @@ const std = @import("std");
 const tsc = @import("tsc.zig");
 const pvclock = @import("pvclock.zig");
 pub const apic = @import("apic.zig");
-const smp = @import("smp.zig");
+pub const smp = @import("smp.zig");
 
 const ki = r.ke.private;
 
@@ -104,4 +104,8 @@ pub fn debug_write(c: u8) void {
 
 pub fn arm_timer(deadline: r.Nanoseconds) void {
     apic.arm_timer(deadline);
+}
+
+pub fn send_resched_ipi(target_cpu: u32) void {
+    apic.send_ipi(smp.cpu_id_to_apic_id[target_cpu], 240, 0);
 }

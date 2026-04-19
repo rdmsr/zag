@@ -7,7 +7,7 @@ const ki = ke.private;
 const ex = r.ex;
 
 var thread0: ke.Thread = undefined;
-var stack: [8192]u8 align(16) = undefined;
+var stack: [r.kib(16)]u8 align(16) = undefined;
 
 pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     ki.impl.early_init();
@@ -15,9 +15,11 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     pl.early_init(boot_info);
     ki.cpu.init_cpu(0);
 
-    thread0.init(@intFromPtr(&stack), 8192, ki.sched.idle, null);
+    thread0.init(@intFromPtr(&stack), r.kib(16), ki.sched.idle, null);
     thread0.priority = 0;
     thread0.priority_class = .Idle;
+
+    ki.sched.percpu.local().current_thread = &thread0;
 
     std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{ pl.name, arch.name, boot_info.cmdline });
 

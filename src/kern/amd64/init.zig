@@ -86,11 +86,16 @@ fn early_cpu_init() linksection(r.init) void {
 }
 
 pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
+    amd64.write_msr(.GsBase, ki.impl.cpu_offsets[cpu_id]);
+
     early_cpu_init();
     ki.cpu.init_cpu(cpu_id);
     pl.impl.init_ap();
 
+    ki.sched.percpu.local().current_thread = pl.impl.smp.start_thread.local().*;
+
     _ = booted.fetchAdd(1, .monotonic);
+    ke.ipl.lower(.Passive);
 
     while (true) {
         std.atomic.spinLoopHint();

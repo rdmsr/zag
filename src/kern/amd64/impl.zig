@@ -11,92 +11,54 @@ pub const early_init = init.early_init;
 pub export var cpu_self_offset: usize linksection(r.percpu) = 0;
 pub export var cpu_offsets: [*]usize = undefined;
 
-pub const ThreadContext = struct {
-    rdi: u64,
-    rsi: u64,
-    rbx: u64,
-    rsp: u64,
-    rbp: u64,
-    r12: u64,
-    r13: u64,
-    r14: u64,
-    r15: u64,
+const ThreadFrame = extern struct {
+    rbp: u64 align(1),
+    rbx: u64 align(1),
+    r12: u64 align(1),
+    r13: u64 align(1),
+    r14: u64 align(1),
+    r15: u64 align(1),
+    rip: u64 align(1),
+};
 
-    fn thread_trampoline(entry: usize, arg: usize) callconv(.c) void {
+extern fn asm_thread_entry() void;
+
+extern fn do_context_switch(old: *ThreadContext, new: *ThreadContext, lock: *u8) callconv(.c) void;
+
+pub const ThreadContext = extern struct {
+    rsp: u64 align(1),
+    frame: ThreadFrame,
+
+    export fn thread_entry(entry: usize, arg: usize) callconv(.c) void {
         const entry_fn: *const fn (?*anyopaque) void = @ptrFromInt(entry);
+        ke.ipl.lower(.Passive);
         entry_fn(@ptrFromInt(arg));
         // TODO: This shouldn't be reached!!!
     }
 
     pub fn init(stack: r.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) @This() {
         var ctx: @This() = undefined;
-        ctx.rdi = @intFromPtr(entry);
-        ctx.rsi = @intFromPtr(arg);
+        var sp: usize = stack + stack_size;
 
-        var sp = stack + stack_size;
-        {
-            sp -= @sizeOf(usize);
-            @as(*usize, @ptrFromInt(sp)).* = 0;
-
-            sp -= @sizeOf(usize);
-            @as(*usize, @ptrFromInt(sp)).* = @intFromPtr(&thread_trampoline);
+        if (sp % 16 != 0) {
+            sp -= (sp % 16);
         }
-        ctx.rsp = sp;
+
+        const frame: *ThreadFrame = @ptrFromInt(sp - @sizeOf(ThreadFrame));
+
+        frame.* = std.mem.zeroes(ThreadFrame);
+
+        ctx.rsp = @intFromPtr(frame);
+        frame.rip = @intFromPtr(&asm_thread_entry);
+        frame.r12 = @intFromPtr(entry);
+        frame.r13 = @intFromPtr(arg);
 
         return ctx;
     }
 
-    export fn do_switch_to() callconv(.naked) void {
-        const asm_template = std.fmt.comptimePrint(
-            \\movq %%rbx, {d}(%%rdi)
-            \\movq %%rsp, {d}(%%rdi)
-            \\movq %%rbp, {d}(%%rdi)
-            \\movq %%r12, {d}(%%rdi)
-            \\movq %%r13, {d}(%%rdi)
-            \\movq %%r14, {d}(%%rdi)
-            \\movq %%r15, {d}(%%rdi)
-            \\
-            \\movq {d}(%%rsi), %%rbx
-            \\movq {d}(%%rsi), %%rsp
-            \\movq {d}(%%rsi), %%rbp
-            \\movq {d}(%%rsi), %%r12
-            \\movq {d}(%%rsi), %%r13
-            \\movq {d}(%%rsi), %%r14
-            \\movq {d}(%%rsi), %%r15
-            \\movq {d}(%%rsi), %%rdi
-            \\movq {d}(%%rsi), %%rsi
-            \\
-            \\ret
-        , .{
-            @offsetOf(ThreadContext, "rbx"),
-            @offsetOf(ThreadContext, "rsp"),
-            @offsetOf(ThreadContext, "rbp"),
-            @offsetOf(ThreadContext, "r12"),
-            @offsetOf(ThreadContext, "r13"),
-            @offsetOf(ThreadContext, "r14"),
-            @offsetOf(ThreadContext, "r15"),
-
-            @offsetOf(ThreadContext, "rbx"),
-            @offsetOf(ThreadContext, "rsp"),
-            @offsetOf(ThreadContext, "rbp"),
-            @offsetOf(ThreadContext, "r12"),
-            @offsetOf(ThreadContext, "r13"),
-            @offsetOf(ThreadContext, "r14"),
-            @offsetOf(ThreadContext, "r15"),
-            @offsetOf(ThreadContext, "rdi"),
-            @offsetOf(ThreadContext, "rsi"),
-        });
-
-        asm volatile (asm_template);
-    }
-
     pub fn switch_to(self: *ThreadContext, new: *ThreadContext) callconv(.c) void {
-        asm volatile (
-            \\call do_switch_to
-            :
-            : [_] "{rdi}" (self),
-              [_] "{rsi}" (new),
-        );
+        const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", self));
+        do_context_switch(self, new, &thread.lock.locked);
     }
 };
 
@@ -118,9 +80,14 @@ pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
 }
 
 pub inline fn set_hardware_ipl(ipl: ke.Ipl) void {
+    const cr8_value: u64 = switch (ipl) {
+        .Passive, .Dispatch => 0,
+        .Device => 13,
+        .High => 15,
+    };
     asm volatile ("mov %[ipl], %%cr8"
         :
-        : [ipl] "r" (@as(u64, @intFromEnum(ipl))),
+        : [ipl] "r" (cr8_value),
     );
 }
 
@@ -144,6 +111,6 @@ pub inline fn restore_interrupts(state: bool) void {
     }
 }
 
-pub inline fn send_resched_ipi(_: u32) void {
-    @panic("TODO send_resched_ipi");
+pub inline fn send_resched_ipi(target: u32) void {
+    pl.impl.send_resched_ipi(target);
 }

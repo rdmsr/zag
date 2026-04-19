@@ -795,26 +795,26 @@ fn yield(cpu: u32) void {
 
     sched_cpu.queues_lock.acquire_no_ipl();
 
-    const cur = cpu.current_thread;
-    var next = cpu.next_thread;
+    const cur = sched_cpu.current_thread;
+    var next = sched_cpu.next_thread;
 
     if (next != null) {
-        cpu.next_thread = null;
+        sched_cpu.next_thread = null;
     } else {
         // Pick a new thread to run.
-        next = select_thread(null, cpu, false);
+        next = select_thread(null, sched_cpu, false);
     }
 
     if (next == null) {
         // Nothing to run, go idle.
-        next = cpu.idle_thread;
+        next = sched_cpu.idle_thread;
         sched_cpu.steal_work = true;
     }
 
     sched_cpu.queues_lock.release_no_ipl();
 
     // Switch into the thread.
-    do_switch(cpu, cur.?, next.?);
+    do_switch(sched_cpu, cur.?, next.?);
 
     // cur lock dropped
 }
