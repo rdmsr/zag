@@ -6,7 +6,7 @@ const mm = r.mm;
 const ke = r.ke;
 
 var pvclock_src: kvm.PVClockSource = undefined;
-var pvclock: ke.ClockSource = .{
+var pvclock_tc: ke.TimeCounter = .{
     .name = "pvclock",
     .quality = 75,
     .frequency = std.time.ns_per_s,
@@ -17,10 +17,9 @@ var pvclock: ke.ClockSource = .{
 };
 
 pub fn init() linksection(r.init) void {
-    if (ke.clock.is_better_than(&pvclock)) return;
     const page = mm.phys.alloc();
     pvclock_src = kvm.PVClockSource.init(page, mm.p2v(page));
-    ke.clock.register_source(&pvclock);
+    ke.time.register_source(&pvclock_tc);
 }
 
 fn read_pvclock() u64 {

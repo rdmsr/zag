@@ -161,7 +161,7 @@ fn lapic_calibrate(ms: u64) u64 {
     write(.LvtTimer, (1 << 16));
     write(.TimerInitialCount, std.math.maxInt(u32));
 
-    ke.clock.sleep(std.time.ns_per_ms * ms);
+    ke.time.sleep(std.time.ns_per_ms * ms);
 
     const ticks = std.math.maxInt(u32) - read(.TimerCurrentCount);
 
@@ -199,7 +199,7 @@ fn timer_init() linksection(r.init) void {
 pub fn arm_timer(ns: r.Nanoseconds) void {
     if (amd64.cpu_features.tsc_deadline) {
         const now = amd64.rdtsc();
-        const deadline = now + (ns * tsc.tsc.frequency / std.time.ns_per_s);
+        const deadline = now + (ns * tsc.tsc_timer.frequency / std.time.ns_per_s);
         amd64.write_msr(.TscDeadline, deadline);
         return;
     }
