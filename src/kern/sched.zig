@@ -246,7 +246,7 @@ pub fn block() void {
     td.lock.acquire_no_ipl();
 
     td.state = .Blocked;
-    td.sleep_start = ke.time.read_time_nano();
+    td.sleep_start = ke.time.read_time();
     td.runq = null;
 
     yield(ke.cpu.current());
@@ -259,7 +259,7 @@ pub fn block() void {
 pub fn unblock(td: *ke.Thread) void {
     const ipl = td.lock.acquire();
 
-    td.sleep_time = (ke.time.read_time_nano() - td.sleep_start) / std.time.ns_per_ms;
+    td.sleep_time = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
 
     if (td.sleep_time >= config.CONFIG_SCHED_TIMESLICE and td.priority_class == .Batch) {
         // If we have slept for more than a tick, update interactivity.

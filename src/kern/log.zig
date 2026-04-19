@@ -55,7 +55,7 @@ pub fn log(
     // Reserve space in the ring buffer.
     var res = ringbuffer.reserve(required_len) catch return;
 
-    res.info.timestamp = ke.time.read_time_nano();
+    res.info.timestamp = ke.time.read_time();
     res.info.length = @truncate(required_len);
 
     // Format the log message into the reserved buffer.
