@@ -117,9 +117,9 @@ pub fn init() linksection(r.init) void {
         // Send the INIT-SIPI-SIPI sequence to start the AP.
         apic.send_init(apic_id);
 
-        ke.clock.sleep(init_delay);
+        ke.time.sleep(init_delay);
         apic.send_sipi(apic_id, 0x08);
-        ke.clock.sleep(sipi_delay);
+        ke.time.sleep(sipi_delay);
         apic.send_sipi(apic_id, 0x08);
     }
 

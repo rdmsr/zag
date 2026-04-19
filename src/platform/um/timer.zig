@@ -39,7 +39,7 @@ fn tc_read() u64 {
     return @intCast(ts.sec * std.time.ns_per_s + ts.nsec);
 }
 
-var tc: ke.ClockSource = .{
+var tc: ke.TimeCounter = .{
     .read_count = tc_read,
     .frequency = std.time.ns_per_s,
     .name = "CLOCK_MONOTONIC",
@@ -59,7 +59,7 @@ pub fn init() void {
 
     posix.sigaction(posix.SIG.ALRM, &act, null);
 
-    ke.clock.register_source(&tc);
+    ke.time.register_source(&tc);
 }
 
 pub fn init_cpu() void {
