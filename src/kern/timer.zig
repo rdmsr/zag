@@ -75,7 +75,7 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, dpc: ?*ke.Dpc) void {
     defer cpu.lock.release_no_ipl();
 
     // Initialize the timer.
-    timer.deadline = ke.time.read_time_nano() + time;
+    timer.deadline = ke.time.read_time() + time;
 
     timer.cpu = cpu;
     timer.dpc = dpc;
@@ -143,7 +143,7 @@ fn handle_expiry(_: ?*anyopaque) void {
     const cpu = percpu.local();
 
     while (true) {
-        const curtime = ke.time.read_time_nano();
+        const curtime = ke.time.read_time();
 
         cpu.lock.acquire_no_ipl();
 
@@ -162,7 +162,7 @@ fn handle_expiry(_: ?*anyopaque) void {
             cpu.lock.release_no_ipl();
 
             // Re-check in case the timer expired while we were here.
-            const now = ke.time.read_time_nano();
+            const now = ke.time.read_time();
             if (next.deadline <= now or next.deadline - now <= std.time.ns_per_ms) {
                 continue; // expired in the meantime, loop again
             }
