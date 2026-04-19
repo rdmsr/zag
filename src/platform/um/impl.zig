@@ -38,6 +38,7 @@ pub const GlobalState = struct {
 
 pub const CpuState = struct {
     pthread: c.pthread_t,
+    td: *ke.Thread,
 };
 
 pub var global_state: GlobalState = undefined;
@@ -122,6 +123,8 @@ fn other_cpu_entry(_: ?*anyopaque) callconv(.c) ?*anyopaque {
 
     ki.cpu.init_cpu(@intCast(my_cpu_id));
 
+    ki.sched.percpu.local().current_thread = percpu.local().td;
+
     timer.init_cpu();
 
     while (true) {}
@@ -173,6 +176,10 @@ pub fn late_init(_: *pl.BootInfo) linksection(r.init) void {
         cpu_offsets[i] = @intFromPtr(block.ptr) -% @intFromPtr(&__percpu_start);
 
         @memcpy(block, @as([*]u8, @ptrCast(&__percpu_start))[0..size]);
+
+        const td = allocator.create(ke.Thread) catch @panic("oom");
+        make_thread(idle, td);
+        percpu.remote(@intCast(i)).td = td;
 
         var attr: c.pthread_attr_t = undefined;
 

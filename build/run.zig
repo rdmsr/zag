@@ -44,9 +44,12 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, plat: config.Platf
 
         if (debug) {
             qemu.addArgs(&.{
-                "-d",         "int",
-                "-D",         "qemu.log",
-                "-no-reboot", "-no-shutdown",
+                "-d",
+                "int",
+                "-D",
+                "qemu.log",
+                "-no-reboot",
+                "-no-shutdown",
             });
         }
 

@@ -28,6 +28,15 @@ pub const map_kernel = if (!is_um)
             const rodata_size = rodata_end - rodata_start;
             const data_size = data_end - data_start;
 
+            const start_phys = kaddr.physical_base;
+            const start_virt = kaddr.virtual_base;
+            const until_size = text_start - start_virt;
+            mi.kernel_pmap.map_contiguous_range(start_virt, start_phys, until_size, .{
+                .read = true,
+                .write = true,
+                .global = true,
+            });
+
             mi.kernel_pmap.map_contiguous_range(text_start, kaddr.physical_base + (text_start - kaddr.virtual_base), text_size, .{
                 .read = true,
                 .execute = true,

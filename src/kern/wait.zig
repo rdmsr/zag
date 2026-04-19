@@ -5,6 +5,7 @@ const rtl = @import("rtl");
 const std = @import("std");
 const r = @import("root");
 const ke = r.ke;
+const ki = ke.private;
 
 /// Header for waitable objects.
 /// This must be added to any structured which is considered waitable.
@@ -86,7 +87,7 @@ pub fn wait_one(object: *DispatchHeader, timeout: ?r.Nanoseconds) !usize {
 pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks: ?[*]WaitBlock) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
-    const curtd = ke.curcpu().current_thread.?;
+    const curtd = ki.sched.percpu.local().current_thread.?;
     const obj_count = objects.len;
     const has_timeout = timeout != null;
     const blocks = waitblocks orelse blk: {

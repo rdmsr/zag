@@ -766,12 +766,14 @@ pub fn late_init() linksection(r.init) void {
             z.cpus = gpa.alloc(Cpu, ke.ncpus) catch @panic("Failed to allocate per-CPU magazine state");
 
             for (0..ke.ncpus) |i| {
-                z.cpus[i].lock = .init();
-                z.cpus[i].alloc = null;
-                z.cpus[i].free = null;
-                z.cpus[i].alloc_rounds = 0;
-                z.cpus[i].free_rounds = 0;
-                z.cpus[i].magazine_size = z.magtype.?.rounds;
+                z.cpus[i] = .{
+                    .lock = .init(),
+                    .alloc = null,
+                    .free = null,
+                    .alloc_rounds = 0,
+                    .free_rounds = 0,
+                    .magazine_size = z.magtype.?.rounds,
+                };
             }
         }
         zone = z.next;

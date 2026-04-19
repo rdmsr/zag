@@ -51,6 +51,15 @@ var batch_pool: std.atomic.Value(GlobalHead) = .init(.{
     .tag = 0,
 });
 
+export const phys_percpu_init linksection(r.percpu_init) = &init_cpu;
+
+fn init_cpu() callconv(.c) void {
+    const cpu = percpu.local();
+    cpu.active_batch = null;
+    cpu.active_count = 0;
+    cpu.depot_count = 0;
+}
+
 /// Push a batch of free pages to the global pool.
 fn push_to_pool(batch: *mm.Page) void {
     var old_head = batch_pool.load(.acquire);

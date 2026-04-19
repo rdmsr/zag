@@ -1,12 +1,9 @@
 //! Fireworks test ported from the Boron operating system.
 const std = @import("std");
-const base = @import("root");
-const ke = base.ke;
+const r = @import("root");
+const ke = r.ke;
+const mm = r.mm;
 const sintab = @import("sintab.zig");
-
-const c = @cImport({
-    @cInclude("stdlib.h");
-});
 
 var pixel_buffer: [*]u8 = undefined;
 var fb_width: usize = 0;
@@ -130,8 +127,6 @@ fn particle(param: ?*anyopaque) void {
     data.act_y = parent_data.act_y;
     const explosion_range = parent_data.explosion_range;
 
-    c.free(param);
-
     const angle = @rem(rand(), 65536);
     data.vel_x = mul_fp_fp(cos(angle), rand_fp_sign()) * explosion_range;
     data.vel_y = mul_fp_fp(sin(angle), rand_fp_sign()) * explosion_range;
@@ -169,10 +164,10 @@ fn particle(param: ?*anyopaque) void {
 }
 
 fn make_thread(entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) *ke.Thread {
-    var ret: *ke.Thread = @ptrCast(@alignCast(c.malloc(@sizeOf(ke.Thread))));
-    const stack = std.heap.page_allocator.alloc(u8, 16384) catch @panic("wtf");
+    var ret: *ke.Thread = mm.zone.gpa.create(ke.Thread) catch @panic("oom");
+    const stack = mm.heap.alloc(r.kib(16)) catch @panic("wtf");
 
-    ret.init(@intFromPtr(stack.ptr), 16384, entry, arg);
+    ret.init(@intFromPtr(stack), r.kib(16), entry, arg);
 
     ret.priority = ke.Thread.Priority.default;
     ret.priority_class = .Batch;
@@ -235,7 +230,7 @@ fn explodeable(_: ?*anyopaque) void {
     const part_count: usize = @intCast(@rem(rand(), 100) + 100);
 
     for (0..part_count) |_| {
-        const param: *FireworkData = @ptrCast(@alignCast(c.malloc(@sizeOf(FireworkData))));
+        const param: *FireworkData = mm.zone.gpa.create(FireworkData) catch @panic("oom");
         param.* = data;
         spawn_particle(param);
     }
@@ -244,7 +239,7 @@ fn explodeable(_: ?*anyopaque) void {
 }
 
 pub fn start(param: ?*anyopaque) void {
-    const boot_info: *base.pl.BootInfo = @ptrCast(@alignCast(param));
+    const boot_info: *r.pl.BootInfo = @ptrCast(@alignCast(param));
 
     rand_gen ^= rand_tsc_based();
 
