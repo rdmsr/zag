@@ -15,9 +15,11 @@ pub fn init(boot_info: *pl.BootInfo) void {
     mm.late_init();
     ke.sched.late_init();
 
-    const sp = mm.heap.alloc(r.kib(16)) catch @panic("oom");
-    thread0.init(@intFromPtr(sp), r.kib(16), ex.fireworks.start, boot_info);
-    ke.sched.enqueue(&thread0);
+    if (boot_info.framebuffer != null) {
+        const sp = mm.heap.alloc(r.kib(16)) catch @panic("oom");
+        thread0.init(@intFromPtr(sp), r.kib(16), ex.fireworks.start, boot_info);
+        ke.sched.enqueue(&thread0);
+    }
 
     while (true) {
         std.atomic.spinLoopHint();
