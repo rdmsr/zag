@@ -77,12 +77,11 @@ fn early_cpu_init() linksection(r.init) void {
 
     // Enable syscall if supported.
     efer.sce = f.syscall;
+
     // Enable NX.
     efer.nxe = true;
 
     amd64.write_msr(.Efer, @bitCast(efer));
-
-    amd64.sti();
 }
 
 pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
@@ -93,6 +92,8 @@ pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
     pl.impl.init_ap();
 
     ki.sched.percpu.local().current_thread = pl.impl.smp.start_thread.local().*;
+
+    amd64.sti();
 
     _ = booted.fetchAdd(1, .monotonic);
     ke.ipl.lower(.Passive);
@@ -115,4 +116,5 @@ pub fn early_init() linksection(r.init) void {
     amd64.write_msr(.GsBase, 0);
 
     int.init();
+    amd64.sti();
 }
