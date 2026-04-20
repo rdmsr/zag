@@ -126,7 +126,7 @@ const pcpu = ke.CpuLocal(PerCpu, undefined);
 
 export const qspinlock_percpu_init linksection(r.percpu_init) = &init_cpu;
 
-/// Initialize a CPU for use by the scheduler.
+/// Initialize a CPU's MCS nodes.
 fn init_cpu() linksection(r.init) callconv(.c) void {
     var cpu = pcpu.local();
     cpu.curr_idx = 0;
@@ -268,7 +268,7 @@ pub const QSpinLock = LockTemplate(struct {
 
         if (old.cpu != 0) {
             // Someone else is already waiting, link ourselves to their node.
-            const prev = &pcpu.remote(@intCast(old.cpu)).nodes[old.idx];
+            const prev = &pcpu.remote(@intCast(old.cpu - 1)).nodes[old.idx];
 
             prev.next.store(node, .release);
 
