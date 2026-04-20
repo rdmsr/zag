@@ -68,7 +68,7 @@ pub fn log(
     // which would consume the ringbuffer from multiple consoles in a separate thread.
     var writer = DebugWriter.init();
 
-    const ipl = out_lock.acquire();
+    const ipl = out_lock.acquire_at(.High);
     defer out_lock.release(ipl);
 
     writer.interface.print("[{:>5}.{:06}] ", .{ res.info.timestamp / std.time.ns_per_s, res.info.timestamp / std.time.ns_per_us }) catch return;
