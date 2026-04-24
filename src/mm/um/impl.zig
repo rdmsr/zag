@@ -6,6 +6,8 @@ pub var kernel_heap_base: usize = 0;
 pub var pfndb_base: usize = 0;
 pub const hhdm_minimum_max_address: usize = 0;
 
+var page_table: std.AutoHashMap(usize, usize) = .init(std.heap.page_allocator);
+
 pub fn init_kernel() void {
     kernel_heap_base = linux.mmap(
         null,
@@ -62,8 +64,16 @@ pub const PMap = struct {
                 @bitCast(item.pa),
             );
 
+            page_table.put(va & ~@as(usize, 0xFFF), item.pa) catch unreachable;
+
             remain -|= item.len;
         }
+    }
+
+    pub fn query(_: *Self, va: r.VAddr) ?r.PAddr {
+        const page = va & ~@as(usize, 0xFFF);
+        const pa = page_table.get(page) orelse return null;
+        return pa;
     }
 
     pub fn activate(_: *Self) void {}

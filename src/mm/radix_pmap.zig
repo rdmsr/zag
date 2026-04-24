@@ -90,6 +90,25 @@ pub fn RadixPmap(comptime Impl: type) type {
             }
         }
 
+        pub fn query(self: *Self, va: r.VAddr) ?r.PAddr {
+            var c = self.cursor(va);
+
+            var level: usize = num_levels - 1;
+            while (true) {
+                const idx = index_for_level(va, level);
+                const pte = c.tables[level][idx];
+
+                if (!pte.present) return null;
+
+                if (level == 0 or leaf_level_enabled(level)) {
+                    return pte.address() + (va & (page_size(level) - 1));
+                }
+
+                if (!c.walk_down_resolve(level - 1)) return null;
+                level -= 1;
+            }
+        }
+
         /// Ensure all intermediate page tables down to `target_level` exist for
         /// the given virtual address range, allocating them as needed. Useful for
         /// pre-populating a shared region (e.g. the kernel half of a user pmap)
@@ -148,7 +167,7 @@ pub fn RadixPmap(comptime Impl: type) type {
                 }
             }
 
-            fn walk_down_resolve(self: *Cursor, target_level: usize) bool {
+            pub fn walk_down_resolve(self: *Cursor, target_level: usize) bool {
                 self.walk_down(target_level, false) catch return false;
                 return true;
             }
