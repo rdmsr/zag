@@ -3,30 +3,19 @@ const builtin = @import("builtin");
 const config = @import("build/config.zig");
 const image = @import("build/image.zig");
 const run = @import("build/run.zig");
+const zonfig = @import("zonfig");
 
 pub fn build(b: *std.Build) void {
-    const config_step = b.step("config", "Show the config menu");
-    config_step.dependOn(config.configStep(b));
+    const zonfig_dep = b.dependency("zonfig", .{});
 
-    // Parse the config
+    zonfig.addConfigStep(b, zonfig_dep, "config.zig.zon", ".config.zig.zon");
+
+    // Parse the config or fail if file is not present
     const cfg = config.parseConfig(b) catch |err| {
-        if (err == error.FileNotFound) {
-            b.default_step.dependOn(
-                &b.addFail("No .config found, run `zig build config` first").step,
-            );
-        } else {
-            b.default_step.dependOn(
-                &b.addFail("Failed to parse .config").step,
-            );
-        }
-        return;
-    };
-
-    // Generate the zig config file we can import in the code
-    const config_wf = config.generateConfig(b, cfg) catch {
         b.default_step.dependOn(
-            &b.addFail("Failed to generate config.gen.zig").step,
+            &b.addFail(b.fmt("Failed to parse config, have you run `zig build config`? (Error: {any})", .{err})).step,
         );
+
         return;
     };
 
@@ -40,10 +29,7 @@ pub fn build(b: *std.Build) void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const config_module = b.createModule(.{
-        .root_source_file = config_wf.getDirectory().path(b, "config.gen.zig"),
-        .optimize = optimize,
-    });
+    const config_module = zonfig.createConfigModule(b, zonfig_dep, "config.zig.zon", ".config.zig.zon");
 
     const ksyms_module = b.createModule(.{
         .root_source_file = b.path("src/ksyms.zig"), // Use the static wrapper
@@ -233,6 +219,13 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
         kernel.linker_script = b.path(b.fmt("build/linker-scripts/{s}.lds", .{@tagName(plat.arch)}));
     } else {
+        const translate_c = b.addTranslateC(.{
+            .root_source_file = b.path("src/platform/um/c.h"),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        kernel.root_module.addImport("c", translate_c.createModule());
         kernel.linker_script = b.path("build/linker-scripts/uml.lds");
         kernel.root_module.link_libc = true;
         kernel.linker_allow_shlib_undefined = true;

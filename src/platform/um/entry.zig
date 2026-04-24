@@ -3,12 +3,7 @@ const r = @import("root");
 pub const std_options = r.std_options;
 pub const panic = r.panic;
 
-const c = @cImport({
-    @cInclude("SDL.h");
-    @cInclude("signal.h");
-    @cInclude("pthread.h");
-});
-
+const c = @import("c");
 const std = @import("std");
 const ke = r.ke;
 const pl = r.pl;

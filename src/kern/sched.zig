@@ -96,7 +96,7 @@ const runqueues_n = 64;
 const interactivity_threshold = 30;
 const scaling_factor = 50;
 const preempt_threshold = ke.Thread.Priority.realtime;
-const balance_interval = @as(u64, config.CONFIG_BALANCE_INTERVAL);
+const balance_interval = @as(u64, config.sched_balance_interval);
 const steal_threshold = 1;
 
 var balance_timer: ke.Timer = undefined;
@@ -211,7 +211,7 @@ pub fn clock(_: ?*anyopaque) void {
 
     if (curtd.priority_class == .Batch) {
         // Update interactivity metrics.
-        curtd.run_time += config.CONFIG_SCHED_TIMESLICE;
+        curtd.run_time += config.sched_timeslice;
 
         clamp_time(curtd);
         recompute_priority(curtd);
@@ -261,7 +261,7 @@ pub fn unblock(td: *ke.Thread) void {
 
     td.sleep_time = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
 
-    if (td.sleep_time >= config.CONFIG_SCHED_TIMESLICE and td.priority_class == .Batch) {
+    if (td.sleep_time >= config.sched_timeslice and td.priority_class == .Batch) {
         // If we have slept for more than a tick, update interactivity.
         clamp_time(td);
         recompute_priority(td);

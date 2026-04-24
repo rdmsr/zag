@@ -8,11 +8,10 @@ pub const heap = @import("heap.zig");
 pub const zone = @import("zone.zig");
 pub const PMap = pmap.PMap;
 
-pub const impl = if (@hasDecl(config, "CONFIG_ARCH_AMD64"))
-    @import("amd64/impl.zig")
-else if (@hasDecl(config, "CONFIG_ARCH_UM"))
-    @import("um/impl.zig")
-else
-    @compileError("unsupported architecture");
+pub const impl = switch (config.arch) {
+    .amd64 => @import("amd64/impl.zig"),
+    .um => @import("um/impl.zig"),
+    else => @compileError("unsupported architecture"),
+};
 
 pub var kernel_pmap: PMap = undefined;

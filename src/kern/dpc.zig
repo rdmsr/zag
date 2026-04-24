@@ -110,13 +110,13 @@ fn dispatch_queue(cpu: u32) void {
     }
 
     if (sched_cpu.start_timer) {
-        ke.timer.set(&sched_cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &sched_cpu.resched_dpc);
+        ke.timer.set(&sched_cpu.resched_timer, std.time.ns_per_ms * config.sched_timeslice, &sched_cpu.resched_dpc);
     }
 
     if (sched_cpu.preemption_reason == .HigherPriority) {
         // Reload the quantum for the new thread.
         ke.timer.cancel(&sched_cpu.resched_timer);
-        ke.timer.set(&sched_cpu.resched_timer, std.time.ns_per_ms * config.CONFIG_SCHED_TIMESLICE, &sched_cpu.resched_dpc);
+        ke.timer.set(&sched_cpu.resched_timer, std.time.ns_per_ms * config.sched_timeslice, &sched_cpu.resched_dpc);
     }
 
     sched_cpu.start_timer = false;
