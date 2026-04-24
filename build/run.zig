@@ -1,6 +1,7 @@
 const std = @import("std");
 const config = @import("config.zig");
 const image = @import("image.zig");
+const builtin = @import("builtin");
 
 const QemuArgs = struct {
     suffix: []u8,
@@ -57,7 +58,7 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, plat: config.Platf
             .x86_64 => {
                 qemu.addArgs(&.{ "-serial", "stdio", "-m", "1G", "-smp", "4" });
 
-                if (!debug) qemu.addArgs(&.{ "-enable-kvm", "-cpu", "host,+invtsc" });
+                if (!debug and builtin.target.os.tag == .linux and builtin.cpu.arch == .x86_64) qemu.addArgs(&.{ "-enable-kvm", "-cpu", "host,+invtsc" });
             },
             .aarch64 => qemu.addArgs(&.{ "-machine", "virt", "-cpu", "cortex-a57" }),
             .riscv64 => qemu.addArgs(&.{ "-machine", "virt" }),

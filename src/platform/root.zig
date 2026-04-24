@@ -3,12 +3,11 @@
 
 const config = @import("config");
 
-pub const impl = if (@hasDecl(config, "CONFIG_ARCH_AMD64"))
-    @import("pc/impl.zig")
-else if (@hasDecl(config, "CONFIG_ARCH_UM"))
-    @import("um/impl.zig")
-else
-    @compileError("unsupported architecture");
+pub const impl = switch (config.arch) {
+    .amd64 => @import("pc/impl.zig"),
+    .um => @import("um/impl.zig"),
+    else => @compileError("unsupported architecture"),
+};
 
 pub const acpi = @import("acpi/root.zig");
 

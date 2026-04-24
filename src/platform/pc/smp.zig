@@ -17,7 +17,7 @@ extern var AP_TRAMPOLINE_DATA: u8;
 extern var __percpu_start: u8;
 extern var __percpu_end: u8;
 
-pub export var cpu_id_to_apic_id: [config.CONFIG_NCPUS]u32 = undefined;
+pub export var cpu_id_to_apic_id: [config.ncpus]u32 = undefined;
 
 const start_stack = ke.ExportedCpuLocal(usize, 0, "ap_start_stack");
 

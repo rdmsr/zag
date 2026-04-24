@@ -10,16 +10,7 @@ pub const entry = @import("entry.zig");
 
 const timer = @import("timer.zig");
 
-pub const c = @cImport({
-    @cDefine("_GNU_SOURCE", "1");
-    @cInclude("pthread.h");
-    @cInclude("sys/mman.h");
-    @cInclude("ucontext.h");
-    @cInclude("signal.h");
-    @cInclude("unistd.h");
-    @cInclude("sys/time.h");
-    @cInclude("sched.h");
-});
+pub const c = @import("c");
 
 pub const name = "User-Mode";
 
