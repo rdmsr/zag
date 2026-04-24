@@ -85,7 +85,7 @@ pub fn panic(
     msg: []const u8,
     first_trace_addr: ?usize,
 ) noreturn {
-    if (@hasDecl(config, "CONFIG_ARCH_UM")) {
+    if (config.arch == .um) {
         std.debug.defaultPanic(msg, first_trace_addr);
     }
     panic_with_frame(msg, @frameAddress());
