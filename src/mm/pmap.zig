@@ -112,4 +112,9 @@ pub const PMap = struct {
     pub fn activate(self: *Self) void {
         self.impl.activate();
     }
+
+    /// Given a virtual page, return its physical page, if present.
+    pub fn query(self: *Self, va: r.VAddr) ?r.PAddr {
+        return self.impl.query(va);
+    }
 };
