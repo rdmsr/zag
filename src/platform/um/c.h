@@ -1,5 +1,5 @@
 #define _GNU_SOURCE 1
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>

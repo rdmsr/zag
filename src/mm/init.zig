@@ -91,7 +91,7 @@ fn map_kernel(boot_info: *pl.BootInfo) void {
 
 pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     mi.phys.init(boot_info);
-    if (!@hasDecl(config, "CONFIG_ARCH_UM")) {
+    if (config.arch != .um) {
         map_kernel(boot_info);
     }
     mi.kernel_pmap.activate();

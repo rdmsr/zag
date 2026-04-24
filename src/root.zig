@@ -55,7 +55,7 @@ pub const std_options = std.Options{
 
 pub const panic = std.debug.FullPanic(ke.panic);
 
-pub const main = if (@hasDecl(config, "CONFIG_ARCH_UM")) pl.impl.entry.main else undefined;
+pub const main = if (config.arch == .um) pl.impl.entry.main else undefined;
 
 comptime {
     // Ensure the entry point is linked in.
