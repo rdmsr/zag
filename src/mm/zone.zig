@@ -120,8 +120,8 @@ var magtypes = [_]MagazineType{
 
 const alloc_poison: u32 = 0xBADDC0DE;
 const free_poison: u32 = 0xDEADBEEF;
-const is_poison_enabled = @hasDecl(config, "CONFIG_SLAB_POISON");
-const should_check_poison = @hasDecl(config, "CONFIG_SLAB_POISON_CHECK");
+const is_poison_enabled = config.slab_poison;
+const should_check_poison = config.slab_check_poison;
 
 inline fn fill_with_poison(ptr: *anyopaque, len: usize, pattern: u32) void {
     const bytes: [*]u8 = @ptrCast(ptr);
