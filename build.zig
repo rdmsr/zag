@@ -225,6 +225,8 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
             .optimize = optimize,
         });
 
+        translate_c.addIncludePath(.{ .cwd_relative = "/usr/include" });
+
         kernel.root_module.addImport("c", translate_c.createModule());
         kernel.linker_script = b.path("build/linker-scripts/uml.lds");
         kernel.root_module.link_libc = true;
