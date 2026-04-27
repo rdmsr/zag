@@ -15,11 +15,17 @@ pub const heap = private.heap;
 // This should be fine on consumer hardware for at least a decade :^)
 pub const Pfn = u32;
 
-pub const Page = struct {
-    // Fields used when the page is free.
-    next_pfn: Pfn,
-    batch_next: Pfn,
-    batch_count: u8,
+pub const Page = extern union {
+    free: extern struct {
+        // Fields used when the page is free.
+        next_pfn: Pfn,
+        batch_next: Pfn,
+        batch_count: u8,
+    },
+
+    alloced: extern struct {
+        slab_data: zone.Page,
+    },
 };
 
 pub const MapFlags = packed struct {
