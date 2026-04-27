@@ -65,7 +65,7 @@ fn push_to_pool(batch: *mm.Page) void {
     var old_head = batch_pool.load(.acquire);
 
     while (true) {
-        batch.batch_next = old_head.pfn;
+        batch.free.batch_next = old_head.pfn;
 
         const new_head = GlobalHead{
             .pfn = mm.struct_page_to_pfn(batch),
@@ -90,8 +90,8 @@ fn pop_from_pool() ?*mm.Page {
         const batch = mm.pfn_to_struct_page(batch_pfn);
 
         const new_head = GlobalHead{
-            .pfn = batch.batch_next,
-            .tag = old_head.tag + 1,
+            .pfn = batch.free.batch_next,
+            .tag = old_head.tag +% 1,
         };
 
         old_head = batch_pool.cmpxchgWeak(old_head, new_head, .acq_rel, .acquire) orelse return batch;
@@ -145,7 +145,7 @@ pub fn alloc() r.PAddr {
 
             if (new_batch) |new| {
                 cpu.active_batch = new;
-                cpu.active_count = new.batch_count;
+                cpu.active_count = new.free.batch_count;
             } else {
                 // TODO: call an IPI here for the other CPUs to fill the global pool before giving up.
                 @panic("OOM");
@@ -157,7 +157,7 @@ pub fn alloc() r.PAddr {
 
     if (cpu.active_count > 1) {
         // Pop the next page from the batch and set it as the new head.
-        const next_page = mm.pfn_to_struct_page(batch.next_pfn);
+        const next_page = mm.pfn_to_struct_page(batch.free.next_pfn);
         cpu.active_batch = next_page;
     } else {
         cpu.active_batch = null;
@@ -177,11 +177,15 @@ pub fn free(addr: r.PAddr) void {
 
     const page = mm.pfn_to_struct_page(mm.page_to_pfn(addr));
 
+    page.free.next_pfn = null_pfn;
+    page.free.batch_next = null_pfn;
+    page.free.batch_count = 0;
+
     if (cpu.active_batch) |curr| {
         // Add the page to the current batch.
-        page.next_pfn = mm.struct_page_to_pfn(curr);
+        page.free.next_pfn = mm.struct_page_to_pfn(curr);
     } else {
-        page.next_pfn = null_pfn;
+        page.free.next_pfn = null_pfn;
     }
 
     cpu.active_batch = page;
@@ -189,7 +193,7 @@ pub fn free(addr: r.PAddr) void {
 
     if (cpu.active_count == batch_size) {
         // The batch is full, move it to the depot.
-        page.batch_count = @intCast(cpu.active_count);
+        page.free.batch_count = @intCast(cpu.active_count);
 
         if (cpu.depot_count == cpu.depot.len) {
             // The depot is full, push one batch back to the global pool to make room.
@@ -240,7 +244,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
             continue;
         }
 
-        const npages = entry.size / mm.page_size;
+        const npages = std.math.divCeil(usize, entry.size, mm.page_size) catch unreachable;
 
         // 1. Calculate the exact virtual address range needed for this region's page structs.
         const start_pfn: usize = mm.page_to_pfn(entry.base);

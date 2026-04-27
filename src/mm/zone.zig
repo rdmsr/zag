@@ -1,6 +1,10 @@
 //! Slab allocator implementation with per-CPU object caching.
 //! As described in Bonwick's "The Slab Allocator: An Object-Caching Kernel Memory Allocator"
 //! and "Magazines and Vmem: Extending the Slab Allocator to Many CPUs and Arbitrary Resources".
+//! Additions to the allocator were inspired by FreeBSD:
+//! - A pointer to the slab metadata is stored in the struct page for out-of-line slabs.
+//! - bufctls are omitted and instead a bitmap is used.
+//! - Separate alloc/free magazines.
 const rtl = @import("rtl");
 const r = @import("root");
 const config = @import("config");
@@ -9,27 +13,99 @@ const ke = r.ke;
 const mm = r.mm;
 const mi = mm.private;
 
-/// A bufctl is a control structure for a single object in a slab.
-/// It is used to track free objects and link them together in the slab's free list.
-const BufCtl = struct {
-    /// Next BufCtl in the list.
-    next: ?*BufCtl,
-    /// Pointer to the object this BufCtl manages.
-    buffer: *anyopaque,
-    /// Pointer to the owning Slab.
-    slab: *Slab,
-};
-
 /// A slab is a contiguous memory region that holds multiple objects of the same type.
 const Slab = struct {
     /// Linkage into a zone's list of slabs.
     link: rtl.List.Entry,
     /// Reference count indicating how many objects are in use.
-    refcount: usize,
-    /// Pointer to the first free BufCtl in this slab.
-    buflist: ?*BufCtl,
+    refcount: u16,
+    capacity: u16,
     /// Base address of the slab.
     base: usize,
+
+    pub fn bitmap(self: *Slab) [*]u64 {
+        return @ptrFromInt(@intFromPtr(self) + @sizeOf(Slab));
+    }
+
+    pub fn bitmap_bytes(capacity: usize) usize {
+        return std.mem.alignForward(usize, capacity, 64) / 8;
+    }
+
+    /// Allocates a free bit from the bitmap, returns the allocated bit.
+    pub fn bitmap_alloc(self: *Slab) ?u16 {
+        const bitmaps = std.mem.alignForward(usize, self.capacity, 64) / 64;
+        for (0..bitmaps) |i| {
+            const chunk = self.bitmap()[i];
+            if (chunk == 0) continue;
+            const bit = @ctz(chunk);
+
+            self.bitmap()[i] &= ~(@as(u64, 1) << @intCast(bit));
+            return @intCast((i * 64) + bit);
+        }
+
+        return null;
+    }
+
+    /// Free a bit to the bitmap.
+    pub fn bitmap_free(self: *Slab, idx: usize) void {
+        const bm = self.bitmap();
+        bm[idx / 64] |= @as(u64, 1) << @intCast(idx % 64);
+    }
+
+    /// Check whether or not the slab is completely empty.
+    pub fn bitmap_all_free(self: *Slab) bool {
+        const full_words = self.capacity / 64;
+        const bm = self.bitmap();
+
+        for (0..full_words) |i| {
+            if (bm[i] != std.math.maxInt(u64)) return false;
+        }
+
+        const rem = self.capacity % 64;
+        if (rem > 0) {
+            const mask = (@as(u64, 1) << @intCast(rem)) - 1;
+            if (bm[full_words] & mask != mask) return false;
+        }
+        return true;
+    }
+
+    /// Return the appropriate slab size for a given chunk size.
+    pub fn calc_slab_size(chunk_size: usize) usize {
+        // Try increasing page multiples until waste is under 12.5%.
+        var order: u5 = 0;
+        while (order <= 8) : (order += 1) {
+            const slab_size = @as(usize, mm.page_size) << order;
+            const n_objs = slab_size / chunk_size;
+            if (n_objs == 0) continue;
+            const waste = slab_size - (n_objs * chunk_size);
+            // Accept if waste < 1/8th of slab.
+            if (waste * 8 <= slab_size) return slab_size;
+        }
+        // Fallback: just fit one object, rounded up to page boundary
+        return std.mem.alignForward(usize, chunk_size, mm.page_size);
+    }
+
+    /// Calculates how many objects fit in a small slab page, accounting for the
+    /// fact that the bitmap size grows with capacity (making this circular).
+    /// We resolve the circular dependency by starting with an overestimate and
+    /// shrinking until everything fits.
+    pub fn calc_capacity(chunk_size: usize, color: usize) usize {
+        const usable = mm.page_size - @sizeOf(Slab) - color;
+
+        // Start with the largest possible capacity.
+        var capacity = (usable - 1) / chunk_size;
+
+        // Shrink capacity until both the objects and the bitmap fit.
+        // Each iteration we recalculate the bitmap size for the new capacity,
+        // since a smaller capacity means a smaller bitmap, which may then fit.
+        while (capacity > 0) : (capacity -= 1) {
+            const obj_bytes = capacity * chunk_size;
+            const bytes = Slab.bitmap_bytes(capacity);
+            if (obj_bytes + bytes <= usable) break;
+        }
+
+        return capacity;
+    }
 };
 
 /// A magazine is a per-CPU cache of objects for a zone.
@@ -66,6 +142,10 @@ const Cpu = struct {
     magazine_size: usize,
 };
 
+pub const Page = extern struct {
+    slab: *Slab,
+};
+
 const initial_hash = 32;
 
 const slab_align = 8;
@@ -90,15 +170,6 @@ const generic_zone_names = [_][]const u8{
 
 /// 1/8th of a page.
 const small_slab_size = 512;
-
-/// This is an arbitrary number, ideally this should be determined on zone
-/// creation based on the object size and slab size,
-/// but for simplicity we just use a constant here.
-const objects_per_slab = 16;
-
-/// Zones used to allocate out-of-line bufctls for large slabs.
-var bufctl_zone: TypedZone(BufCtl) = undefined;
-var slab_zone: TypedZone(Slab) = undefined;
 
 /// Generic zones for power-of-two sizes from 8 to 2048.
 var generic_zones: [generic_zones_num]Zone = undefined;
@@ -192,12 +263,6 @@ pub const Zone = struct {
     partial_slabs: rtl.List,
     /// Linkage into the global zone list.
     next: ?*Zone,
-    /// Buffer-to-bufctl hash map.
-    bufmap: [*]?*BufCtl,
-
-    hash_mask: usize,
-    hash_shift: usize,
-
     depot_lock: ke.QSpinLock,
 
     empty_mags: ?*Magazine,
@@ -209,7 +274,6 @@ pub const Zone = struct {
     ctor: ?*const fn (obj: *anyopaque) void,
     dtor: ?*const fn (obj: *anyopaque) void,
 
-    hash0: [initial_hash]?*BufCtl,
     use_magazines: bool,
 
     const Self = @This();
@@ -224,26 +288,13 @@ pub const Zone = struct {
     /// Initialize a zone.
     pub fn init(self: *Self, name: []const u8, size: usize, options: InitOptions) void {
         const obj_align = if (options.alignment == 0) slab_align else options.alignment;
-        var chunk_size = std.mem.alignForward(usize, size, obj_align);
-
-        const offset, chunk_size = if (size <= small_slab_size) blk: {
-            if (chunk_size - size >= @sizeOf(usize)) {
-                // Use padding at end of chunk.
-                break :blk .{ chunk_size - @sizeOf(usize), chunk_size };
-            } else {
-                // No space, extend the chunk.
-                break :blk .{ chunk_size, chunk_size + slab_align };
-            }
-        } else blk: {
-            // Out-of-line bufctl
-            break :blk .{ 0, chunk_size };
-        };
+        const chunk_size = std.mem.alignForward(usize, size, obj_align);
 
         const slab_size, const max_color = if (size <= small_slab_size) blk: {
             const ss = mm.page_size;
             break :blk .{ ss, @rem(ss - @sizeOf(Slab), chunk_size) };
         } else blk: {
-            const ss = calc_slab_size(chunk_size);
+            const ss = Slab.calc_slab_size(chunk_size);
             break :blk .{ ss, @rem(ss, chunk_size) };
         };
 
@@ -257,13 +308,9 @@ pub const Zone = struct {
         self.chunk_size = chunk_size;
         self.max_color = max_color;
         self.color = 0;
-        self.offset = offset;
         self.ctor = options.ctor;
         self.dtor = options.dtor;
-        self.hash_mask = initial_hash - 1;
-        self.hash_shift = std.math.log2_int_ceil(usize, chunk_size);
         self.lock = .init();
-        self.bufmap = &self.hash0;
         self.use_magazines = options.magazines;
 
         const prev = all_zones;
@@ -370,24 +417,14 @@ pub const Zone = struct {
             slab = @fieldParentPtr("link", self.partial_slabs.first());
         }
 
-        var bufctl = slab.buflist orelse return error.OutOfMemory;
+        const idx = slab.bitmap_alloc() orelse return error.OutOfMemory;
+        buf = @ptrFromInt(slab.base + idx * self.chunk_size);
 
-        if (bufctl.next == null) {
-            slab.link.remove();
-            self.full_slabs.insert_tail(&slab.link);
-        }
-
-        slab.buflist = bufctl.next;
         slab.refcount += 1;
 
-        if (self.obj_size > small_slab_size) {
-            const bucket = self.bufctl_from_obj(bufctl.buffer);
-
-            buf = bufctl.buffer;
-            bufctl.next = bucket.*;
-            bucket.* = bufctl;
-        } else {
-            buf = @ptrFromInt(@intFromPtr(bufctl) - self.offset);
+        if (slab.refcount == slab.capacity) {
+            slab.link.remove();
+            self.full_slabs.insert_tail(&slab.link);
         }
 
         if (is_poison_enabled) {
@@ -464,8 +501,6 @@ pub const Zone = struct {
 
                 if (new_mag) |m| {
                     self.free_to_depot(m, &self.empty_mags);
-                    cpu.free = m;
-                    cpu.free_rounds = 0;
                     continue;
                 }
 
@@ -484,76 +519,49 @@ pub const Zone = struct {
         self.lock.acquire_no_ipl();
         defer self.lock.release_no_ipl();
 
-        // Find the bufctl for the buffer.
-        var bufctl: ?*BufCtl = null;
-        var slab: ?*Slab = null;
+        // Find the slab for the buffer.
+        const slab: *Slab = if (self.obj_size > small_slab_size) blk: {
+            const page_va = std.mem.alignBackward(usize, @intFromPtr(obj), mm.page_size);
+            const phys = mi.kernel_pmap.query(page_va).?;
+            const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys));
+            break :blk page.alloced.slab_data.slab;
+        } else blk: {
+            break :blk @ptrFromInt(std.mem.alignBackward(usize, @intFromPtr(obj), mm.page_size));
+        };
 
-        if (self.obj_size > small_slab_size) {
-            // Search through the hash map and remove it.
-            var prev = self.bufctl_from_obj(@ptrCast(obj));
+        const was_full = slab.refcount == slab.capacity;
+        const idx = (@intFromPtr(obj) - slab.base) / self.chunk_size;
+        slab.bitmap_free(idx);
+        slab.refcount -= 1;
 
-            while (prev.* != null) {
-                const bc = prev.*;
-
-                if (@intFromPtr(bc.?.buffer) == @intFromPtr(obj)) {
-                    prev.* = bc.?.next;
-                    slab = bc.?.slab;
-                    bufctl = bc.?;
-                    break;
-                }
-
-                prev = &bc.?.next;
-            }
-        } else {
-            bufctl = @ptrFromInt(@intFromPtr(obj) + self.offset);
-            slab = @ptrFromInt(std.mem.alignBackward(usize, @intFromPtr(obj), mm.page_size) + mm.page_size - @sizeOf(Slab));
-        }
-
-        if (slab == null or bufctl == null) {
-            return;
-        }
-
-        const s = slab.?;
-        const bufc = bufctl.?;
-
-        if (s.buflist == null) {
+        if (was_full) {
             // There were no buffers in the slab, so it wasn't in the freelist.
             // Now that there is a buffer, add it back to the freelist.
-            s.link.remove();
-            self.partial_slabs.insert_head(&s.link);
+            slab.link.remove();
+            self.partial_slabs.insert_head(&slab.link);
         }
 
-        // Insert bufctl into the slab freelist.
-        bufc.next = s.buflist;
-        s.buflist = bufc;
-
-        s.refcount -= 1;
-
-        if (s.refcount == 0) {
+        if (slab.refcount == 0) {
             // No more outstanding allocations, it is safe to reclaim the slab.
-            s.link.remove();
-            self.slab_destroy(s);
+            slab.link.remove();
+            self.slab_destroy(slab);
             return;
         }
-    }
-
-    inline fn bufctl_from_obj(self: *Self, buffer: *anyopaque) *?*BufCtl {
-        return &self.bufmap[(@intFromPtr(buffer) >> @intCast(self.hash_shift)) & self.hash_mask];
     }
 
     fn alloc_page() !*anyopaque {
         const alloc_ret = mi.phys.alloc();
-
         return @ptrFromInt(mm.p2v(alloc_ret));
     }
 
     fn free_page(p: *anyopaque) void {
         const phys = mm.v2p(@intFromPtr(p));
+
         mi.phys.free(phys);
     }
 
     fn slab_create_small(self: *Self) mm.Error!*Slab {
-        var buf = try alloc_page();
+        const buf = try alloc_page();
 
         // We employ a simple coloring scheme; every time a slab is created,
         // the color is shifted by the alignment. This is done until we reach the
@@ -565,26 +573,25 @@ pub const Zone = struct {
             self.color = 0;
         }
 
-        // Slab info is located at the end of the page.
-        var slab: *Slab = @ptrFromInt(@intFromPtr(buf) + mm.page_size - @sizeOf(Slab));
+        const capacity = Slab.calc_capacity(self.chunk_size, self.color);
 
-        const capacity = (mm.page_size - @sizeOf(Slab) - self.color) / self.chunk_size;
+        // Slab info is located at the beginning of the page.
+        var slab: *Slab = @ptrCast(@alignCast(buf));
 
-        slab.buflist = null;
         slab.refcount = 0;
-        slab.base = @intFromPtr(buf);
+        slab.capacity = @intCast(capacity);
+        slab.base = @intFromPtr(slab) + @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity) + self.color;
 
-        buf = @ptrFromInt(@intFromPtr(buf) + self.color);
+        const bm = slab.bitmap();
+        const full_words = capacity / 64;
+        for (0..full_words) |i| bm[i] = std.math.maxInt(u64);
+        const rem = capacity % 64;
+        if (rem > 0) {
+            bm[full_words] = (@as(u64, 1) << @intCast(rem)) - 1;
+        }
 
         for (0..capacity) |i| {
-            var bufctl: *BufCtl = @ptrFromInt(@intFromPtr(buf) + (i * self.chunk_size) + self.offset);
-            const obj: *anyopaque = @ptrFromInt(@intFromPtr(buf) + (i * self.chunk_size));
-
-            // Add bufctl to the freelist
-            // NOTE: a bufctl field other than next must not be modified.
-            bufctl.next = slab.buflist;
-            slab.buflist = bufctl;
-
+            const obj: *anyopaque = @ptrFromInt(slab.base + i * self.chunk_size);
             if (is_poison_enabled) {
                 fill_with_poison(obj, self.obj_size, free_poison);
             } else {
@@ -605,24 +612,33 @@ pub const Zone = struct {
         const capacity = (self.slab_size - self.color) / self.chunk_size;
         const buf = try mi.heap.alloc(self.slab_size);
 
-        var ret: *Slab = try slab_zone.create();
+        var ret: *Slab = @ptrCast(@alignCast(try gpa.alloc(u8, @sizeOf(Slab) + Slab.bitmap_bytes(capacity))));
 
-        ret.buflist = null;
-        ret.base = @intFromPtr(buf);
+        // Mark the bitmap as all free
+        const bm = ret.bitmap();
+        const full_words = capacity / 64;
+
+        for (0..full_words) |i| bm[i] = std.math.maxInt(u64);
+        const rem = capacity % 64;
+        if (rem > 0) bm[full_words] = (@as(u64, 1) << @intCast(rem)) - 1;
+
+        ret.base = @intFromPtr(buf) + self.color;
+        ret.capacity = @intCast(capacity);
+        ret.refcount = 0;
+
+        for (0..self.slab_size / mm.page_size) |i| {
+            const phys_page = mi.kernel_pmap.query(@intFromPtr(buf) + i * mm.page_size) orelse @panic("Could not query page");
+            const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys_page));
+            page.alloced.slab_data.slab = ret;
+        }
 
         for (0..capacity) |i| {
-            var bufctl: *BufCtl = try bufctl_zone.create();
-
-            bufctl.buffer = @ptrFromInt(@intFromPtr(buf) + self.color + i * self.chunk_size);
-            bufctl.slab = ret;
-
-            bufctl.next = ret.buflist;
-            ret.buflist = bufctl;
+            const obj: *anyopaque = @ptrFromInt(ret.base + i * self.chunk_size);
 
             if (is_poison_enabled) {
-                fill_with_poison(bufctl.buffer, self.obj_size, free_poison);
+                fill_with_poison(obj, self.obj_size, free_poison);
             } else {
-                if (self.ctor) |ctor| ctor(bufctl.buffer);
+                if (self.ctor) |ctor| ctor(obj);
             }
         }
 
@@ -640,27 +656,16 @@ pub const Zone = struct {
     fn slab_destroy(self: *Self, slab: *Slab) void {
         if (!is_poison_enabled) {
             if (self.dtor) |dtor| {
-                var bufctl = slab.buflist;
-                while (bufctl) |bc| : (bufctl = bc.next) {
-                    const obj = if (self.obj_size > small_slab_size)
-                        bc.buffer
-                    else
-                        @as(*anyopaque, @ptrFromInt(@intFromPtr(bc) - self.offset));
+                for (0..slab.capacity) |i| {
+                    const obj: *anyopaque = @ptrFromInt(slab.base + i * self.chunk_size);
                     dtor(obj);
                 }
             }
         }
 
         if (self.obj_size > small_slab_size) {
-            var bufctl = slab.buflist;
-
-            while (bufctl != null) {
-                const next = bufctl.?.next;
-                bufctl_zone.destroy(bufctl.?);
-                bufctl = next;
-            }
-
-            slab_zone.destroy(slab);
+            const alloc_size = @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity);
+            gpa.free(@as([*]u8, @ptrCast(slab))[0..alloc_size]);
 
             // FIXME: call free_pages on slab.base here!
         } else {
@@ -691,21 +696,6 @@ pub const Zone = struct {
         self.depot_lock.acquire_no_ipl();
         maglist_free(maglist, mag);
         self.depot_lock.release_no_ipl();
-    }
-
-    fn calc_slab_size(chunk_size: usize) usize {
-        // Try increasing page multiples until waste is under 12.5%.
-        var order: u5 = 0;
-        while (order <= 8) : (order += 1) {
-            const slab_size = @as(usize, mm.page_size) << order;
-            const n_objs = slab_size / chunk_size;
-            if (n_objs == 0) continue;
-            const waste = slab_size - (n_objs * chunk_size);
-            // Accept if waste < 1/8th of slab.
-            if (waste * 8 <= slab_size) return slab_size;
-        }
-        // Fallback: just fit one object, rounded up to page boundary
-        return std.mem.alignForward(usize, chunk_size, mm.page_size);
     }
 };
 
@@ -741,9 +731,6 @@ pub fn TypedZone(comptime T: type) type {
 }
 
 pub fn early_init() linksection(r.init) void {
-    bufctl_zone.init("bufctl", .{});
-    slab_zone.init("slab", .{});
-
     for (0..generic_zones.len, &generic_zones) |i, *zone| {
         zone.init(generic_zone_names[i], @as(usize, 1) << @intCast(i + 3), .{});
     }
@@ -803,7 +790,6 @@ fn gpa_alloc(
 
     if (len > 2048) {
         if (ptr_align.toByteUnits() > mm.page_size) return null;
-
         const pages = std.mem.alignForward(usize, len, mm.page_size);
         const ptr = mi.heap.alloc(pages) catch return null;
         return @ptrCast(ptr);
@@ -861,6 +847,7 @@ fn gpa_free(
         //mi.heap.free_pages(@ptrCast(buf.ptr), pages);
         return;
     }
+
     const zone = zone_for(buf.len, 1) orelse return;
     zone.free(@ptrCast(buf.ptr));
 }

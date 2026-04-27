@@ -100,7 +100,7 @@ pub fn RadixPmap(comptime Impl: type) type {
 
                 if (!pte.present) return null;
 
-                if (level == 0 or leaf_level_enabled(level)) {
+                if (level == 0 or (leaf_level_enabled(level) and pte.huge_page)) {
                     return pte.address() + (va & (page_size(level) - 1));
                 }
 
