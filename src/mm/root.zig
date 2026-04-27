@@ -39,7 +39,7 @@ pub inline fn page_to_pfn(addr: usize) Pfn {
 }
 
 pub inline fn pfn_to_page(pfn: Pfn) usize {
-    return @intCast(pfn << 12);
+    return @as(usize, pfn) << 12;
 }
 
 pub inline fn struct_page_to_pfn(page: *Page) Pfn {
