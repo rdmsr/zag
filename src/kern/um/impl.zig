@@ -61,8 +61,13 @@ pub fn send_resched_ipi(cpu: u32) void {
 
 pub const ThreadContext = struct {
     ucontext: c.ucontext_t,
+    old_lock: ?*ke.SpinLock,
 
     fn real_entry(entry_int: c_ulong, arg_int: c_ulong) callconv(.c) void {
+        if (ki.sched.percpu.local().current_thread.?.context.old_lock) |lock| {
+            lock.release_no_ipl();
+            ki.sched.percpu.local().current_thread.?.context.old_lock = null;
+        }
         const entry: *const fn (?*anyopaque) void = @ptrFromInt(entry_int);
         const arg: ?*anyopaque = @ptrFromInt(arg_int);
         ke.ipl.lower(.Passive);
@@ -70,7 +75,7 @@ pub const ThreadContext = struct {
     }
 
     pub fn init(stack: r.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) ThreadContext {
-        var new: ThreadContext = .{ .ucontext = undefined };
+        var new: ThreadContext = .{ .ucontext = undefined, .old_lock = null };
 
         if (c.getcontext(&new.ucontext) == -1) {
             @panic("getcontext() failed");
@@ -101,11 +106,15 @@ pub const ThreadContext = struct {
 
     pub fn switch_to(self: *ThreadContext, new: *ThreadContext) void {
         const thread: *ke.Thread = @fieldParentPtr("context", self);
-
-        thread.lock.release_no_ipl();
+        new.old_lock = &thread.lock;
 
         if (c.swapcontext(&self.ucontext, &new.ucontext) == -1) {
             @panic("swapcontext() failed");
+        }
+
+        if (self.old_lock) |lock| {
+            self.old_lock = null;
+            lock.release_no_ipl();
         }
     }
 };

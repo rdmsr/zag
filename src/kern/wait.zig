@@ -132,18 +132,20 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
     if (satisfier != null or (has_timeout and timeout.? == 0)) {
         std.debug.assert(curtd.wait_status.load(.acquire) == .Satisfied);
 
-        if (satisfier) |sat| {
-            // Remove any wait block we might've installed
-            for (0..sat) |i| {
-                const is_timer = has_timeout and i == timer_i;
-                var obj = if (is_timer) &timer.hdr else objects[i];
-                var wb = if (is_timer) timer_block else &blocks[i];
+        const cleanup_count = satisfier orelse total_count;
 
-                obj.lock.acquire_no_ipl();
+        // Remove any wait block we might've installed.
+        for (0..cleanup_count) |i| {
+            const is_timer = has_timeout and i == timer_i;
+            var obj = if (is_timer) &timer.hdr else objects[i];
+            var wb = if (is_timer) timer_block else &blocks[i];
+
+            obj.lock.acquire_no_ipl();
+            if (wb.status == .Active) {
                 wb.status = .Inactive;
                 wb.link.remove();
-                obj.lock.release_no_ipl();
             }
+            obj.lock.release_no_ipl();
         }
 
         return satisfier orelse error.Timeout;
@@ -153,12 +155,18 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
         ke.timer.set(timer, timeout.?, null);
     }
 
+    curtd.lock.acquire_no_ipl();
+
     // Now try committing the wait.
     // While we're trying to commit the wait, the object locks have been released, and the state could therefore change.
     // We need to re-check the state of the wait before actually blocking.
     if (curtd.wait_status.cmpxchgStrong(.InProgress, .Committed, .acq_rel, .monotonic) == null) {
         // We're good, now actually block.
-        ke.sched.block();
+        //std.log.debug("Blocking {*} on {*}", .{ curtd, objects[0] });
+        ki.sched.block_locked(curtd);
+    } else {
+        // Could not commit.
+        curtd.lock.release_no_ipl();
     }
 
     // We're back!
@@ -193,6 +201,8 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
 
 /// Satisfy a wait on an object.
 pub fn satisfy_wait(obj: *DispatchHeader) void {
+    std.debug.assert(obj.lock.is_locked());
+
     const all = obj.type == .Notification;
 
     // Go through (potentially) all wait blocks and try to satisfy them.
@@ -200,6 +210,8 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
         // Get the first waitblock from the list.
         var wb: *WaitBlock = @fieldParentPtr("link", obj.waitblocks.first());
         var td = wb.thread;
+        std.debug.assert(wb.status == .Active);
+        std.debug.assert(wb.object == obj);
 
         // Remove it.
         wb.link.remove();

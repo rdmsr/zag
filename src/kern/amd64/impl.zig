@@ -40,11 +40,11 @@ pub const ThreadContext = extern struct {
         var ctx: @This() = undefined;
         var sp: usize = stack + stack_size;
 
-        if (sp % 16 != 0) {
-            sp -= (sp % 16);
-        }
+        sp = sp & ~@as(usize, 15);
+        sp = sp - @sizeOf(ThreadFrame);
+        sp = (sp & ~@as(usize, 15)) - 8;
 
-        const frame: *ThreadFrame = @ptrFromInt(sp - @sizeOf(ThreadFrame));
+        const frame: *ThreadFrame = @ptrFromInt(sp);
 
         frame.* = std.mem.zeroes(ThreadFrame);
 
