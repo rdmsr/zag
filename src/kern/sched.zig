@@ -185,6 +185,9 @@ pub fn handle_preemption(cpu: *PerCpu) void {
         cpu.queues_lock.release_no_ipl();
     }
 
+    next.lock.acquire_no_ipl();
+    next.lock.release_no_ipl();
+
     do_switch(cpu, cur, next);
 
     // cur.lock dropped
@@ -244,20 +247,26 @@ pub fn block() void {
     const td = percpu.local().current_thread.?;
 
     td.lock.acquire_no_ipl();
-
-    td.state = .Blocked;
-    td.sleep_start = ke.time.read_time();
-    td.runq = null;
-
-    yield(ke.cpu.current());
+    block_locked(td);
 
     // td lock released
     ke.ipl.lower(ipl);
 }
 
+/// Block the currently running thread with its lock held.
+pub fn block_locked(curtd: *ke.Thread) void {
+    curtd.state = .Blocked;
+    curtd.sleep_start = ke.time.read_time();
+    curtd.runq = null;
+
+    yield(ke.cpu.current());
+}
+
 /// Unblock a thread.
 pub fn unblock(td: *ke.Thread) void {
     const ipl = td.lock.acquire();
+
+    std.debug.assert(td.state == .Blocked);
 
     td.sleep_time = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
 
@@ -356,10 +365,10 @@ fn pick_realtime_thread(cpu: *PerCpu, minprio: u8, migrate: bool) ?*ke.Thread {
             while (td.pinned) {
                 const entry = td.runq_link.next;
 
-                td = @fieldParentPtr("runq_link", entry);
-
                 // Every thread is pinned, go through another queue
                 if (entry == &curr_queue.head) continue :qloop;
+
+                td = @fieldParentPtr("runq_link", entry);
             }
         }
 
@@ -410,10 +419,10 @@ fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
             while (td.pinned) {
                 const entry = td.runq_link.next;
 
-                td = @fieldParentPtr("runq_link", entry);
-
                 // Every thread is pinned, go through another queue
                 if (entry == &curr_queue.head) continue :qloop;
+
+                td = @fieldParentPtr("runq_link", entry);
             }
         }
 
@@ -442,10 +451,12 @@ fn pick_idle_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
     // Just get the first thread from the queue.
     const td: *ke.Thread = @fieldParentPtr("runq_link", cpu.idle_queue.first());
 
-    if (!(migrate and td.pinned)) {
-        // We can safely remove it.
-        td.runq_link.remove();
+    if (migrate and td.pinned) {
+        return null;
     }
+
+    // We can safely remove it.
+    td.runq_link.remove();
 
     return td;
 }
@@ -655,6 +666,8 @@ fn should_preempt_cpu(td: *ke.Thread, cpu: *PerCpu) bool {
 
 // Enqueue a thread on a CPU.
 fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
+    std.debug.assert(td.lock.is_locked());
+
     const cpu = percpu.remote(c);
     cpu.queues_lock.acquire_no_ipl();
 
@@ -813,8 +826,15 @@ fn yield(cpu: u32) void {
 
     sched_cpu.queues_lock.release_no_ipl();
 
-    // Switch into the thread.
-    do_switch(sched_cpu, cur.?, next.?);
+    if (next != null and cur.? != next.?) {
+        // Switch into the thread. Take its lock here to ensure it is not still on its stack.
+        next.?.lock.acquire_no_ipl();
+        next.?.lock.release_no_ipl();
+
+        do_switch(sched_cpu, cur.?, next.?);
+    } else {
+        cur.?.lock.release_no_ipl();
+    }
 
     // cur lock dropped
 }
@@ -934,7 +954,9 @@ pub fn idle(_: ?*anyopaque) noreturn {
             // Steal a thread.
             if (steal_work(cpu_id)) |td| {
                 // Enqueue it on this CPU.
+                td.lock.acquire_no_ipl();
                 enqueue_on_cpu(cpu_id, td);
+                td.lock.release_no_ipl();
             }
 
             ke.ipl.lower(ipl);
