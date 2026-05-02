@@ -103,6 +103,7 @@ fn make_thread(entrypoint: *const fn (?*anyopaque) void, td: *ke.Thread) void {
 
     td.priority = 0;
     td.priority_class = .Idle;
+    td.pinned = true;
 }
 
 var cpus_up = std.atomic.Value(usize).init(0);
@@ -115,6 +116,7 @@ fn other_cpu_entry(_: ?*anyopaque) callconv(.c) ?*anyopaque {
     ki.cpu.init_cpu(@intCast(my_cpu_id));
 
     ki.sched.percpu.local().current_thread = percpu.local().td;
+    ki.sched.percpu.local().idle_thread = percpu.local().td;
 
     timer.init_cpu();
 
@@ -125,7 +127,11 @@ fn other_cpu_entry(_: ?*anyopaque) callconv(.c) ?*anyopaque {
 
 var cpu: ke.Cpu linksection(r.percpu) = undefined;
 
-fn idle(_: ?*anyopaque) void {}
+fn idle(_: ?*anyopaque) void {
+    while (true) {
+        std.atomic.spinLoopHint();
+    }
+}
 
 extern var __percpu_start: u8;
 extern var __percpu_end: u8;
