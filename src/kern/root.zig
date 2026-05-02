@@ -17,6 +17,7 @@ pub const Console = p.log.Console;
 pub const CpuLocal = p.cpu.CpuLocal;
 pub const ExportedCpuLocal = p.cpu.ExportedCpuLocal;
 pub const CpuMask = p.cpu.CpuMask;
+pub const Event = p.event.Event;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
