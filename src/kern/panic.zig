@@ -70,13 +70,17 @@ fn walk_stack_frame(base: usize) void {
     }
 }
 
+pub var panic_lock: ke.SpinLock = .init();
+
 pub fn panic_with_frame(
     msg: []const u8,
     frame: usize,
 ) noreturn {
-    std.log.err("KERNEL PANIC: {s}", .{msg});
+    std.log.err("KERNEL PANIC: {s} on CPU {}, curthread is {*}", .{ msg, ke.cpu.current(), ki.sched.percpu.local().current_thread.? });
     std.log.err("Stack trace:", .{});
     walk_stack_frame(frame);
+
+    panic_lock.release_no_ipl();
 
     while (true) {}
 }
@@ -88,5 +92,6 @@ pub fn panic(
     if (config.arch == .um) {
         std.debug.defaultPanic(msg, first_trace_addr);
     }
+    panic_lock.acquire_no_ipl();
     panic_with_frame(msg, @frameAddress());
 }

@@ -48,6 +48,7 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.{ .x86_64_sys
     const ipl = ke.ipl.set_hardware(.Device);
 
     if (frame.intno < 32) {
+        ki.panic.panic_lock.acquire_no_ipl();
         std.log.err("Unhandled exception: 0x{x} ({s}), err=0x{x}, pc=0x{x}", .{ frame.intno, exception_msg[frame.intno], frame.errcode, frame.rip });
         std.log.err("RAX=0x{x:0>16} RBX=0x{x:0>16} RCX=0x{x:0>16} RDX=0x{x:0>16}", .{ frame.rax, frame.rbx, frame.rcx, frame.rdx });
         std.log.err("RSI=0x{x:0>16} RDI=0x{x:0>16} RBP=0x{x:0>16} RSP=0x{x:0>16}", .{ frame.rsi, frame.rdi, frame.rbp, frame.rsp });
