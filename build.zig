@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) void {
     const config_module = zonfig.createConfigModule(b, zonfig_dep, "config.zig.zon", ".config.zig.zon");
 
     const ksyms_module = b.createModule(.{
-        .root_source_file = b.path("src/ksyms.zig"), // Use the static wrapper
+        .root_source_file = b.path("src/ksyms.zig"),
         .optimize = optimize,
     });
 
