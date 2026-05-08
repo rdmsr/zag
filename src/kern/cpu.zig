@@ -75,7 +75,7 @@ pub const CpuMask = struct {
 
     /// Return an empty `CpuMask`.
     pub fn empty() CpuMask {
-        return CpuMask{ .bits = [_]usize{0} ** num_words };
+        return CpuMask{ .bits = @splat(0) };
     }
 
     /// Set the bit corresponding to `cpu_id`.
