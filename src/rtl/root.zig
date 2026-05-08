@@ -10,6 +10,7 @@ pub const TaggedPtr = @import("tagged_ptr.zig").TaggedPtr;
 pub const bst = @import("bst.zig");
 pub const BST = bst.BST;
 pub const RBTree = @import("rbtree.zig").RBTree;
+pub const BitMap = @import("bitmap.zig").BitMap;
 
 test {
     std.testing.refAllDecls(@This());
