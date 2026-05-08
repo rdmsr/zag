@@ -846,7 +846,7 @@ fn find_most_loaded(exclude: ?*ke.CpuMask) ?u32 {
 
     for (0..ke.ncpus) |i| {
         if (exclude) |mask| {
-            if (mask.is_set(i)) {
+            if (mask.get(i)) {
                 continue;
             }
         }
@@ -881,7 +881,7 @@ fn find_least_loaded(exclude: ?*ke.CpuMask) ?u32 {
 
     for (0..ke.ncpus) |i| {
         if (exclude) |mask| {
-            if (mask.is_set(i)) {
+            if (mask.get(i)) {
                 continue;
             }
         }
@@ -969,7 +969,7 @@ pub fn idle(_: ?*anyopaque) noreturn {
 /// Called every second to balance work between CPUs on CPU0.
 /// Takes a thread from the most loaded CPU and puts it on the least loaded one.
 fn balance(_: ?*anyopaque) void {
-    var high_mask = ke.CpuMask.empty();
+    var high_mask = ke.CpuMask.init(false);
     var low_mask: ke.CpuMask = undefined;
 
     while (true) {
@@ -984,7 +984,7 @@ fn balance(_: ?*anyopaque) void {
         high_mask.set(high.?);
         low_mask = high_mask;
 
-        if (high_mask.is_full()) {
+        if (high_mask.is_all(true)) {
             // All CPUs are masked, nothing to steal.
             break;
         }
