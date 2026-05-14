@@ -309,13 +309,13 @@ pub const Arena = struct {
         if (next_entry != &self.list.head) {
             const next_seg: *Segment = @fieldParentPtr("link", next_entry);
 
-            if (self.rotor == next_seg) self.rotor = seg;
-
             if (next_seg.type == .Free) {
                 // Remove next segment from freelist and segment list, then merge into seg.
                 self.remove_segment_from_freelist(next_seg);
                 next_seg.link.remove();
                 seg.size += next_seg.size;
+
+                if (self.rotor == next_seg) self.rotor = seg;
                 self.free_segment(next_seg);
             }
         }
@@ -325,14 +325,14 @@ pub const Arena = struct {
         if (prev_entry != &self.list.head) {
             const prev_seg: *Segment = @fieldParentPtr("link", prev_entry);
 
-            if (self.rotor == prev_seg) self.rotor = seg;
-
             if (prev_seg.type == .Free) {
                 // Remove previous segment from freelist and segment list, then merge into seg.
                 self.remove_segment_from_freelist(prev_seg);
                 prev_seg.link.remove();
                 seg.base = prev_seg.base;
                 seg.size += prev_seg.size;
+
+                if (self.rotor == prev_seg) self.rotor = seg;
                 self.free_segment(prev_seg);
             }
         }
