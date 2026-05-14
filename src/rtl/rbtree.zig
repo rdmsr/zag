@@ -84,7 +84,6 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
 
             self.tree.insert(elem) catch |err| {
                 if (err != error.AlreadyExists) unreachable;
-                set_color(elem, red);
                 return error.AlreadyExists;
             };
 
