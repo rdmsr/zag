@@ -77,8 +77,8 @@ const DescState = enum(u2) {
 
 const usize_bits = @bitSizeOf(usize);
 // Id is a monotonically increasing counter. `id & desc_mask` maps to the physical array index.
-const Id = std.meta.Int(.unsigned, usize_bits - 2);
-const IdSigned = std.meta.Int(.signed, usize_bits - 2);
+const Id = @Int(.unsigned, usize_bits - 2);
+const IdSigned = @Int(.signed, usize_bits - 2);
 
 const State = packed struct(usize) {
     id: Id,
