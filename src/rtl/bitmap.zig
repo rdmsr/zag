@@ -2,7 +2,7 @@ const std = @import("std");
 
 fn get_closest_type(comptime N: usize) type {
     const bits = std.math.ceilPowerOfTwo(usize, N) catch unreachable;
-    return std.meta.Int(.unsigned, bits);
+    return @Int(.unsigned, bits);
 }
 
 /// Static bitmap that uses the most efficient underlying word size for N < 64
