@@ -319,7 +319,7 @@ pub const Zone = struct {
 
         self.magtype = null;
         for (&magtypes) |*mtype| {
-            if (chunk_size > mtype.minbuf) {
+            if (chunk_size > mtype.minbuf and chunk_size <= mtype.maxbuf) {
                 self.magtype = mtype;
                 break;
             }
