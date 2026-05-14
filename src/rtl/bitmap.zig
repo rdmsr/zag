@@ -11,8 +11,9 @@ pub fn BitMap(comptime N: usize) type {
         pub const Word = if (N > 32) u64 else get_closest_type(N);
         const Self = @This();
         const bits_per_word = @bitSizeOf(Word);
+        const arr_len = (N + bits_per_word - 1) / bits_per_word;
 
-        storage: [bits_per_word / N]Word,
+        storage: [arr_len]Word,
 
         /// Initialize a bitmap, setting all bits to `val`.
         pub fn init(val: bool) Self {
@@ -65,6 +66,7 @@ test "BitMap has proper underlying type" {
     std.debug.assert(BitMap(32).Word == u32);
     std.debug.assert(BitMap(64).Word == u64);
     std.debug.assert(BitMap(128).Word == u64);
+    std.debug.assert(BitMap(1024).Word == u64);
 }
 
 test BitMap {
