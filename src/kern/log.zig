@@ -71,6 +71,6 @@ pub fn log(
     const ipl = out_lock.acquire_at(.High);
     defer out_lock.release(ipl);
 
-    writer.interface.print("[{:>5}.{:06}] ", .{ res.info.timestamp / std.time.ns_per_s, res.info.timestamp / std.time.ns_per_us }) catch return;
+    writer.interface.print("[{:>5}.{:06}] ", .{ res.info.timestamp / std.time.ns_per_s, (res.info.timestamp % std.time.ns_per_s) / std.time.ns_per_us }) catch return;
     _ = writer.interface.writeAll(res.buf[0..res.info.length]) catch return;
 }
