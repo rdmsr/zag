@@ -15,7 +15,7 @@ pub const Dpc = struct {
     /// Argument passed to the routine
     arg: ?*anyopaque,
     /// Whether or not the DPC is currently inserted
-    inserted: bool,
+    inserted: std.atomic.Value(bool),
 
     /// Initialize a DPC for `func`.
     pub fn init(func: *const fn (?*anyopaque) void) Dpc {
@@ -23,7 +23,7 @@ pub const Dpc = struct {
             .link = undefined,
             .func = func,
             .arg = undefined,
-            .inserted = false,
+            .inserted = .init(false),
         };
     }
 };
@@ -53,7 +53,7 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
     const mycpu = ke.cpu.current();
     const dpc_cpu = pcpu.local();
 
-    if (!dpc.inserted) {
+    if (dpc.inserted.cmpxchgStrong(false, true, .acquire, .monotonic) == null) {
         dpc.arg = arg;
 
         // Insert the DPC on this CPU's DPC queue
@@ -63,7 +63,6 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
         // Mark the DPC as pending on this CPU
         ki.ipl.set_softint_pending(mycpu, .Dispatch);
 
-        dpc.inserted = true;
         dpc_cpu.lock.release_no_ipl();
     }
 
@@ -97,7 +96,7 @@ fn dispatch_queue(cpu: u32) void {
         first_elem.remove();
 
         dpc = @fieldParentPtr("link", first_elem);
-        dpc.inserted = false;
+        dpc.inserted.store(false, .release);
 
         // An interrupt which would enqueue this DPC could occur between loading the argument and calling the routine,
         // which is why we capture it here to ensure that we get the intended context.
