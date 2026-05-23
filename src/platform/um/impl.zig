@@ -101,8 +101,8 @@ fn make_thread(entrypoint: *const fn (?*anyopaque) void, td: *ke.Thread) void {
 
     td.init(@intFromPtr(stack.ptr), 16384, entrypoint, null);
 
-    td.priority = 0;
-    td.priority_class = .Idle;
+    td.base_priority = ke.Thread.Priority.idle;
+    td.priority = td.base_priority;
     td.pinned = true;
 }
 

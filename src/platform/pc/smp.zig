@@ -43,7 +43,7 @@ fn make_thread(entrypoint: *const fn (?*anyopaque) void, stack: usize) *ke.Threa
     td.init(stack, r.kib(32), entrypoint, null);
 
     td.priority = 0;
-    td.priority_class = .Idle;
+    td.base_priority = 0;
     td.pinned = true;
     return td;
 }

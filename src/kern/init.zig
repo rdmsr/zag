@@ -17,7 +17,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
 
     thread0.init(@intFromPtr(&stack), r.kib(16), ki.sched.idle, null);
     thread0.priority = 0;
-    thread0.priority_class = .Idle;
+    thread0.base_priority = 0;
     thread0.pinned = true;
 
     ki.sched.percpu.local().current_thread = &thread0;

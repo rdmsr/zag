@@ -19,19 +19,26 @@ pub const Thread = struct {
         };
 
         pub const idle = 0;
+
+        /// Batch threads have priorities 1-23
         pub const low_batch = 1;
-        pub const high_batch = 32;
+        pub const high_batch = 23;
         pub const batch_range = high_batch - low_batch + 1;
-        pub const realtime = 33;
+
+        /// Realtime threads have priorities 40-63
+        pub const low_realtime = 40;
         pub const max = 63;
+
         /// In the mid-range of batch threads
-        pub const default = 16;
-        /// Interactive threads have a slightly higher priority
-        pub const interactive = 20;
+        pub const default = 10;
+
+        /// Interactive threads have priorities 24-39
+        pub const low_interactive = 24;
+        pub const high_interactive = 39;
 
         pub fn class_from_prio(prio: u8) Class {
-            if (prio >= realtime and prio <= max) return .Realtime;
-            if (prio >= low_batch and prio <= high_batch) return .Batch;
+            if (prio >= low_realtime and prio <= max) return .Realtime;
+            if (prio >= low_batch and prio < low_realtime) return .Batch;
             if (prio == idle) return .Idle;
 
             unreachable;
@@ -44,6 +51,8 @@ pub const Thread = struct {
         Ready,
         /// The thread is currently running.
         Running,
+        /// The thread was selected to run.
+        Selected,
         /// The thread is currently sleeping.
         Blocked,
         /// The thread has exited and is waiting to be reaped.
@@ -57,10 +66,10 @@ pub const Thread = struct {
     lock: ke.SpinLock,
     /// Niceness value.
     nice: i8,
-    /// Priority value of the thread.
+    /// Effective priority value of the thread.
     priority: u8,
-    /// Priority class of the thread.
-    priority_class: Priority.Class,
+    /// Base priority value of the thread.
+    base_priority: u8,
     /// When the thread started sleeping.
     sleep_start: u64,
     /// Ticks spent voluntarily sleeping recently.
@@ -78,6 +87,8 @@ pub const Thread = struct {
     runq_link: rtl.List.Entry,
     /// Last CPU this thread ran on.
     last_cpu: ?u32,
+    /// CPU this thread is enqueued on.
+    cpu: ?u32,
     /// Run queue this thread is in
     runq: ?*ki.sched.RunQueue,
     /// Index into the run queue this thread is currently in.
@@ -101,7 +112,7 @@ pub const Thread = struct {
             .lock = .init(),
             .nice = 0,
             .priority = Thread.Priority.default,
-            .priority_class = Thread.Priority.Class.Batch,
+            .base_priority = Thread.Priority.default,
             .sleep_start = 0,
             .sleep_time = 0,
             .run_time = 0,
@@ -110,14 +121,23 @@ pub const Thread = struct {
             .state = .Ready,
             .runq_link = .{},
             .last_cpu = null,
+            .cpu = null,
             .runq = null,
             .runq_idx = 0,
-            .wait_status = .init(.InProgress),
+            .wait_status = .init(.Satisfied),
             .waitblocks = undefined,
             .timer = undefined,
         };
 
         thread.timer.init();
+    }
+
+    pub fn priority_class(self: *Thread) Priority.Class {
+        return Priority.class_from_prio(self.priority);
+    }
+
+    pub fn is_interactive(self: *Thread) bool {
+        return self.priority >= Priority.low_interactive and self.priority <= Priority.high_interactive;
     }
 };
 

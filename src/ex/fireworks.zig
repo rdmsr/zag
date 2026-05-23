@@ -170,7 +170,7 @@ fn make_thread(entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) *ke.Thread
     ret.init(@intFromPtr(stack), r.kib(16), entry, arg);
 
     ret.priority = ke.Thread.Priority.default;
-    ret.priority_class = .Batch;
+    ret.base_priority = ke.Thread.Priority.default;
 
     return ret;
 }
