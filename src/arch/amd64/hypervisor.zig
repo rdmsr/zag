@@ -1,7 +1,7 @@
 //! Hypervisor detection and identification.
 const std = @import("std");
 const amd64 = @import("root.zig");
-pub const kvm = @import("hv/kvm.zig");
+pub const kvm = @import("paravirt/kvm.zig");
 
 pub const Vendor = enum(u32) {
     Unknown,
