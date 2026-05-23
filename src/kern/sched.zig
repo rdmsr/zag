@@ -60,8 +60,8 @@
 //! always preempt batch and idle threads.
 //!
 //! Remote preemption (sending an IPI to another CPU) is done lock-free
-//! by reading a packed `current_thread_status` field that encodes the
-//! running thread's priority and interactivity in a single atomic byte.
+//! by reading atomically a `current_thread_prio` field that stores the
+//! running thread's priority.
 //!
 //! ## Load Balancing
 //!
@@ -95,7 +95,7 @@ comptime {
 const runqueues_n = 64;
 const interactivity_threshold = 30;
 const scaling_factor = 50;
-const preempt_threshold = ke.Thread.Priority.realtime;
+const preempt_threshold = ke.Thread.Priority.low_realtime;
 const balance_interval = @as(u64, config.sched_balance_interval);
 const steal_threshold = 1;
 
@@ -109,11 +109,6 @@ pub const RunQueue = struct {
     /// Bitmap of non-empty queues. A set bit represents a non-empty queue.
     status: u64,
     queues: [runqueues_n]rtl.List,
-};
-
-const ThreadStatus = packed struct(u8) {
-    interactive: bool,
-    priority: u7,
 };
 
 pub const PreemptionReason = enum(u8) {
@@ -140,9 +135,8 @@ pub const PerCpu = struct {
     insidx: u8,
     /// Used to indicate to this CPU it can steal work
     steal_work: bool,
-    /// Atomic byte for getting the current thread's status locklessly.
-    /// 1 bit for thread interactivity, 7 for priority.
-    current_thread_status: std.atomic.Value(ThreadStatus),
+    /// Atomic byte for getting the current thread's priority locklessly.
+    current_thread_prio: std.atomic.Value(u8),
     /// DPC for rescheduling.
     resched_dpc: ke.Dpc,
     /// Timer for quantum expiration.
@@ -182,6 +176,7 @@ pub fn handle_preemption(cpu: *PerCpu) void {
         // Put it back in the queue.
         cpu.queues_lock.acquire_no_ipl();
         insert_in_queue(cpu, cur, false);
+        cur.cpu = ke.cpu.current();
         cpu.queues_lock.release_no_ipl();
     }
 
@@ -212,7 +207,7 @@ pub fn clock(_: ?*anyopaque) void {
         cpu.insidx = (cpu.insidx + 1) % runqueues_n;
     }
 
-    if (curtd.priority_class == .Batch) {
+    if (curtd.priority_class() == .Batch) {
         // Update interactivity metrics.
         curtd.run_time += config.sched_timeslice;
 
@@ -270,7 +265,7 @@ pub fn unblock(td: *ke.Thread) void {
 
     td.sleep_time = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
 
-    if (td.sleep_time >= config.sched_timeslice and td.priority_class == .Batch) {
+    if (td.sleep_time >= config.sched_timeslice and td.priority_class() == .Batch) {
         // If we have slept for more than a tick, update interactivity.
         clamp_time(td);
         recompute_priority(td);
@@ -281,6 +276,52 @@ pub fn unblock(td: *ke.Thread) void {
     enqueue_on_cpu(cpu, td);
 
     td.lock.release(ipl);
+}
+
+pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
+    std.debug.assert(td.lock.is_locked());
+
+    const old_prio = td.priority;
+    td.priority = new_prio;
+
+    const c = td.cpu orelse return;
+    const cpu = percpu.remote(c);
+
+    cpu.queues_lock.acquire_no_ipl();
+    defer cpu.queues_lock.release_no_ipl();
+
+    if (td.state == .Ready) {
+        // Remove it from its queue and add it back.
+        remove_from_queue(cpu, td);
+        insert_in_queue(cpu, td, false);
+    }
+
+    if (td.state == .Running) {
+        std.debug.assert(td.last_cpu == c);
+
+        cpu.current_thread_prio.store(new_prio, .monotonic);
+
+        // Do nothing else on promotion.
+        if (new_prio >= old_prio) return;
+
+        // Demotion: try to preempt the thread if possible.
+        if (cpu.next_thread != null) return;
+
+        // Only try picking from the realtime queue as batch threads don't preempt each other.
+        const next = pick_realtime_thread(cpu, new_prio + 1, false) orelse return;
+        _ = cpu.load.fetchSub(1, .monotonic);
+
+        cpu.next_thread = next;
+        cpu.preemption_reason = .HigherPriority;
+        ki.ipl.set_softint_pending(c, .Dispatch);
+
+        if (c != ke.cpu.current()) {
+            ki.impl.send_resched_ipi(c);
+        }
+    }
+
+    // XXX: handle selected threads?
+
 }
 
 export const sched_percpu_init linksection(r.percpu_init) = &init_cpu;
@@ -298,7 +339,7 @@ fn init_cpu() linksection(r.init) callconv(.c) void {
         .idle_queue = undefined,
         .steal_work = false,
         .load = .init(0),
-        .current_thread_status = .init(.{ .interactive = false, .priority = 0 }),
+        .current_thread_prio = .init(0),
         .resched_dpc = .init(ki.sched.clock),
         .resched_timer = undefined,
         .start_timer = false,
@@ -360,6 +401,8 @@ fn pick_realtime_thread(cpu: *PerCpu, minprio: u8, migrate: bool) ?*ke.Thread {
         // Get the first thread of the queue.
         var td: *ke.Thread = @fieldParentPtr("runq_link", curr_queue.first());
 
+        td.state = .Selected;
+
         if (migrate) {
             // Find the first thread that is not pinned.
             while (td.pinned) {
@@ -414,6 +457,8 @@ fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
         // Get the first thread of the queue.
         var td: *ke.Thread = @fieldParentPtr("runq_link", curr_queue.first());
 
+        td.state = .Selected;
+
         if (migrate) {
             // Find the first thread that is not pinned.
             while (td.pinned) {
@@ -455,6 +500,8 @@ fn pick_idle_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
         return null;
     }
 
+    td.state = .Selected;
+
     // We can safely remove it.
     td.runq_link.remove();
 
@@ -469,7 +516,9 @@ fn insert_in_list(list: *rtl.List, link: *rtl.List.Entry, head: bool) void {
 fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, head: bool) void {
     std.debug.assert(cpu.queues_lock.is_locked());
 
-    if (td.priority_class == .Realtime or td.interactive) {
+    td.cpu = null;
+
+    if (td.priority_class() == .Realtime or td.is_interactive()) {
         // Insert in realtime queue.
         cpu.realtime_queue.status |=
             (@as(u64, 1) << @intCast(td.priority));
@@ -477,17 +526,17 @@ fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, head: bool) void {
         insert_in_list(&cpu.realtime_queue.queues[td.priority], &td.runq_link, head);
         td.runq = &cpu.realtime_queue;
         td.runq_idx = @intCast(td.priority);
-    } else if (td.priority_class == .Batch) {
+    } else if (td.priority_class() == .Batch) {
         // Insert in calendar queue.
         // The insertion index is determined by insidx and the the priority of the thread,
         // higher priority threads will be put closer to insidx, which ensures that they are ran more frequently.
         const idx = (cpu.insidx + (ke.Thread.Priority.high_batch - td.priority)) % runqueues_n;
 
-        td.runq_idx = @intCast(idx);
         cpu.calendar_queue.status |= (@as(u64, 1) << @intCast(idx));
 
         insert_in_list(&cpu.calendar_queue.queues[idx], &td.runq_link, head);
         td.runq = &cpu.calendar_queue;
+        td.runq_idx = @intCast(idx);
     } else {
         // Insert in idle queue.
         insert_in_list(&cpu.idle_queue, &td.runq_link, head);
@@ -592,9 +641,7 @@ fn recompute_priority(td: *ke.Thread) void {
         // Choose a priority based on score, the lower the score,
         // the higher the priority it will be.
         // This is a simple formula I came up with that is probably good enough.
-        td.priority = @intCast(ke.Thread.Priority.interactive + ((interactivity_threshold - score) / 4));
-        td.interactive = true;
-
+        td.priority = @intCast(ke.Thread.Priority.low_interactive + ((interactivity_threshold - score) / 2));
         return;
     }
 
@@ -625,18 +672,17 @@ fn recompute_priority(td: *ke.Thread) void {
         ke.Thread.Priority.low_batch,
         ke.Thread.Priority.high_batch,
     ));
-    td.interactive = false;
 }
 
 // Return whether or not a thread with given priority and interactivity should get preempted by `td`.
-fn should_prio_preempt(td: *ke.Thread, other_prio: u8, other_interactive: bool) bool {
+fn should_prio_preempt(td: *ke.Thread, other_prio: u8) bool {
     const class = ke.Thread.Priority.class_from_prio(other_prio);
 
     if (class == .Idle) {
         return true;
     }
 
-    if (class == .Batch and !other_interactive and td.interactive) {
+    if (class == .Batch and td.is_interactive() and other_prio < ke.Thread.Priority.low_interactive) {
         // Interactive threads always preempt batch non-interactive ones.
         return true;
     }
@@ -644,7 +690,7 @@ fn should_prio_preempt(td: *ke.Thread, other_prio: u8, other_interactive: bool) 
     // Preempt if the priority exceeds the preemption threshold (i.e the thread is real-time)
     // or if the thread is interactive.
     // Interactive threads may still preempt each other based on interactivity.
-    if ((td.priority >= preempt_threshold or td.interactive) and td.priority > other_prio) {
+    if ((td.priority >= preempt_threshold or td.is_interactive()) and td.priority > other_prio) {
         return true;
     }
 
@@ -654,14 +700,14 @@ fn should_prio_preempt(td: *ke.Thread, other_prio: u8, other_interactive: bool) 
 // Return whether or not `td` should preempt `cur`.
 // This is called with the current CPU's queue lock held.
 fn should_preempt(td: *ke.Thread, cur: *ke.Thread) bool {
-    return should_prio_preempt(td, cur.priority, cur.interactive);
+    return should_prio_preempt(td, cur.priority);
 }
 
 // Return whether or not `td` should preempt the thread running on `cpu`.
 // This is done in a lock-free manner.
 fn should_preempt_cpu(td: *ke.Thread, cpu: *PerCpu) bool {
-    const status = cpu.current_thread_status.load(.monotonic);
-    return should_prio_preempt(td, status.priority, status.interactive);
+    const prio = cpu.current_thread_prio.load(.monotonic);
+    return should_prio_preempt(td, prio);
 }
 
 // Enqueue a thread on a CPU.
@@ -685,6 +731,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
                 // This thread can preempt the next thread,
                 // put the next thread back into a queue as the first element.
                 insert_in_queue(cpu, n, true);
+                n.cpu = c;
             } else {
                 // The next thread is higher priority, we can't preempt it.
                 can_preempt = false;
@@ -695,6 +742,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
             // Preempt the CPU.
             cpu.next_thread = td;
             cpu.preemption_reason = .HigherPriority;
+            td.cpu = c;
 
             ki.ipl.set_softint_pending(c, .Dispatch);
 
@@ -711,6 +759,8 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
     // Normal enqueue path.
     // Add the thread to its appropriate queue.
     insert_in_queue(cpu, td, false);
+
+    td.cpu = c;
 
     if (cpu.resched_timer.state.load(.monotonic) == .Stopped) {
         cpu.start_timer = true;
@@ -764,7 +814,7 @@ fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
     }
 
     // Nothing lower can preempt this thread.
-    if (cur != null and (cur.?.priority_class == .Realtime or cur.?.interactive)) {
+    if (cur != null and (cur.?.priority_class() == .Realtime or cur.?.is_interactive())) {
         return null;
     }
 
@@ -774,7 +824,7 @@ fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
         return td;
     }
 
-    if (cur != null and cur.?.priority_class == .Idle) {
+    if (cur != null and cur.?.priority_class() == .Idle) {
         // Idle threads don't preempt each other
         return null;
     }
@@ -796,7 +846,7 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
     next.last_cpu = ke.cpu.current();
 
     // Stash thread status.
-    cpu.current_thread_status.store(.{ .interactive = next.interactive, .priority = @intCast(next.priority) }, .monotonic);
+    cpu.current_thread_prio.store(next.priority, .monotonic);
 
     // Do machine-dependent switch.
     cur.context.switch_to(&next.context);
