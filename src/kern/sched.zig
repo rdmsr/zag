@@ -207,8 +207,7 @@ pub fn clock(_: ?*anyopaque) void {
         cpu.insidx = (cpu.insidx + 1) % runqueues_n;
     }
 
-    if (curtd.priority_class() == .Batch) {
-        // Update interactivity metrics.
+    if (curtd.base_priority_class() == .Batch) {
         curtd.run_time += config.sched_timeslice;
 
         clamp_time(curtd);
@@ -265,7 +264,7 @@ pub fn unblock(td: *ke.Thread) void {
 
     td.sleep_time = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
 
-    if (td.sleep_time >= config.sched_timeslice and td.priority_class() == .Batch) {
+    if (td.sleep_time >= config.sched_timeslice and td.base_priority_class() == .Batch) {
         // If we have slept for more than a tick, update interactivity.
         clamp_time(td);
         recompute_priority(td);
@@ -554,7 +553,7 @@ fn remove_from_queue(cpu: *PerCpu, td: *ke.Thread) void {
     std.debug.assert(cpu.queues_lock.is_locked());
 
     // Decrease load.
-    cpu.load.fetchSub(1, .monotonic);
+    _ = cpu.load.fetchSub(1, .monotonic);
 
     // Remove the thread from its queue.
     td.runq_link.remove();
@@ -627,7 +626,7 @@ fn interactive_score(td: *ke.Thread) usize {
     return score;
 }
 
-// Recompute the priority for a thread.
+// Recompute the base priority for a thread from interactivity and nice.
 fn recompute_priority(td: *ke.Thread) void {
 
     // Priority is computed only for time-shared (batch) thread based on
@@ -637,41 +636,43 @@ fn recompute_priority(td: *ke.Thread) void {
     // priority is calculated based on recent CPU usage and nice.
     const score = interactive_score(td);
 
-    if (score < interactivity_threshold) {
+    const base: u8 = if (score < interactivity_threshold)
         // Choose a priority based on score, the lower the score,
         // the higher the priority it will be.
         // This is a simple formula I came up with that is probably good enough.
-        td.priority = @intCast(ke.Thread.Priority.low_interactive + ((interactivity_threshold - score) / 2));
-        return;
-    }
+        @intCast(ke.Thread.Priority.low_interactive + ((interactivity_threshold - score) / 2))
+    else blk: {
+        // Thread is not interactive, compute priority from recent CPU usage.
+        // cpu_pri_off is the fraction of the history window spent running,
+        // scaled to [0, batch_range). A thread that spent all its time running
+        // gets cpu_pri_off = batch_range - 1 (lowest priority).
+        // A thread that barely ran gets cpu_pri_off = 0 (highest batch priority).
+        // This is a pretty straightforward formula, which /should/ be good enough.
+        const cpu_range = ke.Thread.Priority.batch_range;
+        const window = if (td.run_time + td.sleep_time == 0) @as(u64, 1) else td.run_time + td.sleep_time;
+        const cpu_pri_off: u8 = @intCast((td.run_time * (cpu_range - 1)) / window);
 
-    // Thread is not interactive, compute priority from recent CPU usage.
-    // cpu_pri_off is the fraction of the history window spent running,
-    // scaled to [0, batch_range). A thread that spent all its time running
-    // gets cpu_pri_off = batch_range - 1 (lowest priority).
-    // A thread that barely ran gets cpu_pri_off = 0 (highest batch priority).
-    // This is a pretty straightforward formula, which /should/ be good enough.
-    const cpu_range = ke.Thread.Priority.batch_range;
-    const window = if (td.run_time + td.sleep_time == 0) @as(u64, 1) else td.run_time + td.sleep_time;
-    const cpu_pri_off: u8 = @intCast((td.run_time * (cpu_range - 1)) / window);
+        // nice offset: negative nice increases priority value, positive decreases it.
+        // Clamped to half the range to avoid pushing priority out of bounds before clamping.
+        const nice_off = std.math.clamp(
+            -@as(i32, td.nice),
+            -@as(i32, cpu_range / 2),
+            @as(i32, cpu_range / 2),
+        );
 
-    // nice offset: negative nice increases priority value, positive decreases it.
-    // Clamped to half the range to avoid pushing priority out of bounds before clamping.
-    const nice_off = std.math.clamp(
-        -@as(i32, td.nice),
-        -@as(i32, cpu_range / 2),
-        @as(i32, cpu_range / 2),
-    );
+        const raw = @as(i32, ke.Thread.Priority.low_batch) +
+            @as(i32, cpu_pri_off) +
+            nice_off;
 
-    const raw = @as(i32, ke.Thread.Priority.low_batch) +
-        @as(i32, cpu_pri_off) +
-        nice_off;
+        break :blk @intCast(std.math.clamp(
+            raw,
+            ke.Thread.Priority.low_batch,
+            ke.Thread.Priority.high_batch,
+        ));
+    };
 
-    td.priority = @intCast(std.math.clamp(
-        raw,
-        ke.Thread.Priority.low_batch,
-        ke.Thread.Priority.high_batch,
-    ));
+    td.base_priority = base;
+    td.priority = td.effective_priority();
 }
 
 // Return whether or not a thread with given priority and interactivity should get preempted by `td`.

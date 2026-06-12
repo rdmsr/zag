@@ -66,18 +66,18 @@ pub const Thread = struct {
     lock: ke.SpinLock,
     /// Niceness value.
     nice: i8,
-    /// Effective priority value of the thread.
+    /// Effective priority value of the thread: `max(base_priority, inherited_prio)`.
     priority: u8,
     /// Base priority value of the thread.
     base_priority: u8,
+    /// Priority inherited via priority donation.
+    inherited_prio: u8,
     /// When the thread started sleeping.
     sleep_start: u64,
     /// Ticks spent voluntarily sleeping recently.
     sleep_time: u64,
     /// Ticks spent running recently.
     run_time: u64,
-    /// Whether the thread is interactive or not.
-    interactive: bool,
     /// Whether the thread is pinned to this CPU.
     /// If it is pinned, then it can't be moved across another CPU.
     pinned: bool,
@@ -101,6 +101,13 @@ pub const Thread = struct {
     /// Timer used for timeouts.
     timer: ke.Timer,
 
+    /// Turnstile.
+    turnstile: *ki.turnstile.Turnstile,
+    turnstile_waiter: ?*ki.turnstile.Waiter,
+    turnstiles_owned: rtl.List,
+    /// Object this thread is currently blocked on, or null.
+    waiting_on: ?*anyopaque,
+
     /// Initialize a thread.
     /// - `stack`: Address of the **base** of the stack on which the initial context for the thread is built
     /// - `stack_size`: Size of the stack
@@ -113,10 +120,10 @@ pub const Thread = struct {
             .nice = 0,
             .priority = Thread.Priority.default,
             .base_priority = Thread.Priority.default,
+            .inherited_prio = 0,
             .sleep_start = 0,
             .sleep_time = 0,
             .run_time = 0,
-            .interactive = false,
             .pinned = false,
             .state = .Ready,
             .runq_link = .{},
@@ -127,13 +134,29 @@ pub const Thread = struct {
             .wait_status = .init(.Satisfied),
             .waitblocks = undefined,
             .timer = undefined,
+            .turnstile = undefined,
+            .turnstile_waiter = null,
+            .turnstiles_owned = undefined,
+            .waiting_on = null,
         };
+
+        thread.turnstiles_owned.init();
 
         thread.timer.init();
     }
 
     pub fn priority_class(self: *Thread) Priority.Class {
         return Priority.class_from_prio(self.priority);
+    }
+
+    /// Class of the thread's *base* priority, ignoring any inherited boost.
+    pub fn base_priority_class(self: *Thread) Priority.Class {
+        return Priority.class_from_prio(self.base_priority);
+    }
+
+    /// The priority the thread should run at.
+    pub fn effective_priority(self: *Thread) u8 {
+        return @max(self.base_priority, self.inherited_prio);
     }
 
     pub fn is_interactive(self: *Thread) bool {
