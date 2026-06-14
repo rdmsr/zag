@@ -135,9 +135,11 @@ fn reboost(ts: *Turnstile, to: *ke.Thread) void {
 /// successive owner until one is already at least as high.
 ///
 /// Locking:
-///   - `root` is held by the caller throughout and never dropped here.
-///   - Any other chain bucket is taken with trylock, failure means restart. At
-///     most one such bucket is held at a time.
+///   - `root` is held by the caller on entry and is held again on return.
+///   - If another chain bucket cannot be trylocked, we drop the current thread
+///     lock and `root`, then reacquire `root` and restart from `curtd`.
+///   - Any other chain bucket is taken with trylock. At most one such bucket is
+///     held at a time.
 fn propagate(curtd: *ke.Thread, root: *Chain) void {
     var donate = curtd.priority;
     var thread = curtd;
@@ -150,10 +152,26 @@ fn propagate(curtd: *ke.Thread, root: *Chain) void {
         const bucket = &chains[hash_obj(obj)];
 
         // Lock `bucket` and confirm `thread` didn't move before we got it.
-        // If either fails, restart below.
+        // If the trylock fails, drop root and restart from curtd.
+        // If validation fails, restart while still holding root.
         const restart = blk: {
             if (bucket != root) {
-                if (!bucket.lock.try_acquire_no_ipl()) break :blk true;
+                if (!bucket.lock.try_acquire_no_ipl()) {
+                    std.debug.assert(held == null);
+
+                    // Drop everything and try again. This avoids a livelock
+                    // between two PI walks holding different roots and trying to
+                    // acquire each other.
+                    thread.lock.release_no_ipl();
+                    root.lock.release_no_ipl();
+
+                    root.lock.acquire_no_ipl();
+                    curtd.lock.acquire_no_ipl();
+
+                    thread = curtd;
+                    donate = curtd.priority;
+                    continue;
+                }
                 held = bucket;
             }
             break :blk thread.waiting_on != obj;
