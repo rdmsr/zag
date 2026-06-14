@@ -20,31 +20,6 @@ fn mutex_test(_: ?*anyopaque) void {
     }
 }
 
-var starts: [10]ke.Event = undefined;
-var done: ke.Event = undefined;
-var done_count: std.atomic.Value(usize) = .init(0);
-
-fn worker(arg: ?*anyopaque) void {
-    const idx: usize = @intFromPtr(arg);
-    while (true) {
-        _ = ke.wait.wait_one(&starts[idx].hdr, null) catch {};
-        if (done_count.fetchAdd(1, .acq_rel) == 10 - 1) {
-            done_count.store(0, .release);
-            done.signal();
-        }
-    }
-}
-
-fn controller(_: ?*anyopaque) void {
-    var i: usize = 0;
-    while (true) {
-        for (&starts) |*s| s.signal();
-        _ = ke.wait.wait_one(&done.hdr, null) catch {};
-
-        i += 1;
-    }
-}
-
 fn make_thread(entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) *ke.Thread {
     var ret: *ke.Thread = mm.zone.gpa.create(ke.Thread) catch @panic("oom");
     const stack = mm.heap.alloc(r.kib(64)) catch @panic("wtf");
@@ -93,18 +68,6 @@ pub fn init(boot_info: *pl.BootInfo) void {
     }
 
     const ipl = ke.ipl.raise(.Dispatch);
-
-    if (false) {
-        for (&starts) |*s| s.init(.Synchronization);
-        done.init(.Synchronization);
-
-        for (0..10) |i| {
-            const t = make_thread(worker, @ptrFromInt(i));
-            ke.sched.enqueue(t);
-        }
-        const t = make_thread(controller, null);
-        ke.sched.enqueue(t);
-    }
 
     for (0..10) |_| {
         const t = make_thread(mutex_test, null);
