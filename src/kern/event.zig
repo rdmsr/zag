@@ -8,9 +8,9 @@ pub const Event = struct {
     const Self = @This();
 
     pub const Type = enum {
-        /// Wake only one waiter.
+        /// Wake only one waiter and decrease signaled.
         Synchronization,
-        /// Wake all waiters.
+        /// Wake all waiters a keep signaled high.
         Notification,
     };
 
@@ -27,6 +27,13 @@ pub const Event = struct {
         const ipl = self.hdr.lock.acquire();
         self.hdr.signaled = 1;
         ki.wait.satisfy_wait(&self.hdr);
+        self.hdr.lock.release(ipl);
+    }
+
+    /// Reset an event.
+    pub fn reset(self: *Self) void {
+        const ipl = self.hdr.lock.acquire();
+        self.hdr.signaled = 0;
         self.hdr.lock.release(ipl);
     }
 };
