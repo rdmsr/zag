@@ -14,8 +14,9 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     std.log.info("Welcome to the machine", .{});
     pl.early_init(boot_info);
     ki.cpu.init_cpu(0);
+    ki.turnstile.init_turnstiles();
 
-    thread0.init(@intFromPtr(&stack), r.kib(16), ki.sched.idle, null);
+    thread0.init(@intFromPtr(&stack), r.kib(16), ke.Thread.Priority.idle, ki.sched.idle, null);
     thread0.priority = 0;
     thread0.base_priority = 0;
     thread0.pinned = true;

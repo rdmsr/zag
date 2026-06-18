@@ -3,6 +3,7 @@ const std = @import("std");
 const r = @import("root");
 const ke = r.ke;
 const mm = r.mm;
+const ps = r.ps;
 const sintab = @import("sintab.zig");
 
 var pixel_buffer: [*]u8 = undefined;
@@ -30,20 +31,8 @@ fn plot_pixel(x: i64, y: i64, color: u32) void {
     @as(*u32, @ptrCast(@alignCast(&pixel_buffer[pixel_offset]))).* = color;
 }
 
-fn read_tsc() u64 {
-    var lo: u32 = 0;
-    var hi: u32 = 0;
-
-    asm volatile ("rdtsc"
-        : [lo] "={eax}" (lo),
-          [hi] "={edx}" (hi),
-    );
-
-    return (@as(u64, hi) << 32) | @as(u64, lo);
-}
-
 fn rand_tsc_based() u32 {
-    const tsc = read_tsc();
+    const tsc = ke.time.read_time();
     const lo: u32 = @truncate(tsc);
     const hi: u32 = @truncate(tsc >> 32);
     return lo ^ hi;
@@ -163,26 +152,14 @@ fn particle(param: ?*anyopaque) void {
     ke.sched.block();
 }
 
-fn make_thread(entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) *ke.Thread {
-    var ret: *ke.Thread = mm.zone.gpa.create(ke.Thread) catch @panic("oom");
-    const stack = mm.heap.alloc(r.kib(16)) catch @panic("wtf");
-
-    ret.init(@intFromPtr(stack), r.kib(16), entry, arg);
-
-    ret.priority = ke.Thread.Priority.default;
-    ret.base_priority = ke.Thread.Priority.default;
-
-    return ret;
-}
-
 fn spawn_particle(arg: ?*anyopaque) void {
-    const thread = make_thread(&particle, arg);
-    ke.sched.enqueue(thread);
+    const t = ps.thread.create_kernel(ke.Thread.Priority.default, &particle, arg) catch @panic("OOM");
+    ke.sched.enqueue(&t.kern);
 }
 
 fn spawn_explodeable() void {
-    const thread = make_thread(&explodeable, null);
-    ke.sched.enqueue(thread);
+    const t = ps.thread.create_kernel(ke.Thread.Priority.default, &explodeable, null) catch @panic("OOM");
+    ke.sched.enqueue(&t.kern);
 }
 
 fn explodeable(_: ?*anyopaque) void {
