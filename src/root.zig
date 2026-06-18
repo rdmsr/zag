@@ -6,6 +6,7 @@ pub const rtl = @import("rtl");
 pub const ksyms = @import("ksyms");
 pub const arch = @import("arch");
 pub const mm = @import("mm/root.zig");
+pub const ps = @import("proc/root.zig");
 
 const config = @import("config");
 
