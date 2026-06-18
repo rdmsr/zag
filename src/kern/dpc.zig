@@ -11,14 +11,14 @@ pub const Dpc = struct {
     /// Entry into per-CPU DPC queue
     link: rtl.List.Entry,
     /// Routine to call
-    func: *const fn (?*anyopaque) void,
+    func: *const fn (*Dpc, ?*anyopaque) void,
     /// Argument passed to the routine
     arg: ?*anyopaque,
     /// Whether or not the DPC is currently inserted
     inserted: std.atomic.Value(bool),
 
     /// Initialize a DPC for `func`.
-    pub fn init(func: *const fn (?*anyopaque) void) Dpc {
+    pub fn init(func: *const fn (*Dpc, ?*anyopaque) void) Dpc {
         return .{
             .link = undefined,
             .func = func,
@@ -105,7 +105,7 @@ fn dispatch_queue(cpu: u32) void {
         dpc_cpu.lock.release(ipl);
         std.debug.assert(ke.ipl.current() == .Dispatch);
 
-        dpc.func(arg);
+        dpc.func(dpc, arg);
     }
 
     if (sched_cpu.start_timer) {

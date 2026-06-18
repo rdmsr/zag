@@ -138,7 +138,7 @@ pub fn clock() void {
 }
 
 // Called in a DPC when a timer has expired.
-fn handle_expiry(_: ?*anyopaque) void {
+fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
     std.debug.assert(ki.ipl.current() == .Dispatch);
     const cpu = percpu.local();
 
