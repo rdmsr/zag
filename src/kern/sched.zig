@@ -189,7 +189,7 @@ pub fn handle_preemption(cpu: *PerCpu) void {
 }
 
 /// Called every time slice in DPC context.
-pub fn clock(_: ?*anyopaque) void {
+pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
     const cpu = percpu.local();
     std.debug.assert(ki.ipl.current() == .Dispatch);
 
@@ -1019,7 +1019,7 @@ pub fn idle(_: ?*anyopaque) noreturn {
 
 /// Called every second to balance work between CPUs on CPU0.
 /// Takes a thread from the most loaded CPU and puts it on the least loaded one.
-fn balance(_: ?*anyopaque) void {
+fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
     var high_mask = ke.CpuMask.init(false);
     var low_mask: ke.CpuMask = undefined;
 
