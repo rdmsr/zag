@@ -8,7 +8,7 @@ const ps = r.ps;
 const amd64 = @import("arch");
 const turnstile = ke.private.turnstile;
 
-var mtx: ke.private.mutex.Mutex = .init();
+var mtx: ke.Mutex = .init();
 var shared_counter: usize = 0;
 
 var work_item: ex.WorkItem = undefined;
