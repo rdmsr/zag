@@ -68,3 +68,4 @@ pub fn ExportedCpuLocal(comptime T: type, comptime init: T, comptime name: []con
 
 /// Bitmask of CPUs.
 pub const CpuMask = rtl.BitMap(config.ncpus);
+pub const AtomicCpuMask = rtl.AtomicBitMap(config.ncpus);
