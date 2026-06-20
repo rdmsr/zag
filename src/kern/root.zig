@@ -19,6 +19,7 @@ pub const ExportedCpuLocal = p.cpu.ExportedCpuLocal;
 pub const CpuMask = p.cpu.CpuMask;
 pub const Event = p.event.Event;
 pub const Queue = p.queue.Queue;
+pub const Mutex = p.mutex.Mutex;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
