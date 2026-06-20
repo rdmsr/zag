@@ -256,10 +256,8 @@ pub fn block_locked(curtd: *ke.Thread) void {
     yield(ke.cpu.current());
 }
 
-/// Unblock a thread.
-pub fn unblock(td: *ke.Thread) void {
-    const ipl = td.lock.acquire();
-
+pub fn unblock_locked(td: *ke.Thread) void {
+    std.debug.assert(td.lock.is_locked());
     std.debug.assert(td.state == .Blocked);
 
     td.sleep_time = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
@@ -273,6 +271,13 @@ pub fn unblock(td: *ke.Thread) void {
     // Enqueue the thread
     const cpu = pick_cpu(td);
     enqueue_on_cpu(cpu, td);
+}
+
+/// Unblock a thread.
+pub fn unblock(td: *ke.Thread) void {
+    const ipl = td.lock.acquire();
+
+    unblock_locked(td);
 
     td.lock.release(ipl);
 }

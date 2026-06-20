@@ -18,6 +18,7 @@ pub const CpuLocal = p.cpu.CpuLocal;
 pub const ExportedCpuLocal = p.cpu.ExportedCpuLocal;
 pub const CpuMask = p.cpu.CpuMask;
 pub const Event = p.event.Event;
+pub const Queue = p.queue.Queue;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;

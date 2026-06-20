@@ -97,16 +97,17 @@ pub const Thread = struct {
     /// Current wait status.
     wait_status: std.atomic.Value(ki.wait.Status),
     waitblocks: [4]ki.wait.WaitBlock,
-
     /// Timer used for timeouts.
     timer: ke.Timer,
-
     /// Turnstile.
     turnstile: *ki.turnstile.Turnstile,
     turnstile_waiter: ?*ki.turnstile.Waiter,
     turnstiles_owned: rtl.List,
     /// Object this thread is currently blocked on, or null.
     waiting_on: ?*anyopaque,
+    /// Queue this thread is associated with.
+    queue: ?*ke.Queue,
+    queue_item: ?*rtl.List.Entry,
 
     /// Initialize a thread.
     /// - `stack`: Address of the **base** of the stack on which the initial context for the thread is built
@@ -139,6 +140,8 @@ pub const Thread = struct {
             .turnstile_waiter = null,
             .turnstiles_owned = undefined,
             .waiting_on = null,
+            .queue = null,
+            .queue_item = null,
         };
 
         thread.turnstiles_owned.init();
