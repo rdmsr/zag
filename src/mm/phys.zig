@@ -256,7 +256,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
         const map_end = std.mem.alignForward(usize, exact_end, mm.page_size);
 
         // 3. Map the virtual pages.
-        mi.kernel_pmap.map_range_allocating(map_start, map_end - map_start, .{
+        mi.kernel_space.pmap.map_range_allocating(map_start, map_end - map_start, .{
             .read = true,
             .write = true,
             .global = true,

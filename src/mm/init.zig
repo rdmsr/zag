@@ -29,30 +29,30 @@ fn map_kernel(boot_info: *pl.BootInfo) void {
     const start_virt = kaddr.virtual_base;
     const until_size = text_start - start_virt;
 
-    mi.kernel_pmap.map_contiguous_range(start_virt, start_phys, until_size, .{
+    mi.kernel_space.pmap.map_contiguous_range(start_virt, start_phys, until_size, .{
         .read = true,
         .write = true,
         .global = true,
     });
 
-    mi.kernel_pmap.map_contiguous_range(text_start, kaddr.physical_base + (text_start - kaddr.virtual_base), text_size, .{
+    mi.kernel_space.pmap.map_contiguous_range(text_start, kaddr.physical_base + (text_start - kaddr.virtual_base), text_size, .{
         .read = true,
         .execute = true,
         .global = true,
     });
 
-    mi.kernel_pmap.map_contiguous_range(rodata_start, kaddr.physical_base + (rodata_start - kaddr.virtual_base), rodata_size, .{
+    mi.kernel_space.pmap.map_contiguous_range(rodata_start, kaddr.physical_base + (rodata_start - kaddr.virtual_base), rodata_size, .{
         .read = true,
         .global = true,
     });
 
-    mi.kernel_pmap.map_contiguous_range(data_start, kaddr.physical_base + (data_start - kaddr.virtual_base), data_size, .{
+    mi.kernel_space.pmap.map_contiguous_range(data_start, kaddr.physical_base + (data_start - kaddr.virtual_base), data_size, .{
         .read = true,
         .write = true,
         .global = true,
     });
 
-    mi.kernel_pmap.map_contiguous_range(mm.p2v(0), 0, mi.impl.hhdm_minimum_max_address, .{
+    mi.kernel_space.pmap.map_contiguous_range(mm.p2v(0), 0, mi.impl.hhdm_minimum_max_address, .{
         .read = true,
         .write = true,
         .global = true,
@@ -81,7 +81,7 @@ fn map_kernel(boot_info: *pl.BootInfo) void {
             entry_size -= adjust;
         }
 
-        mi.kernel_pmap.map_contiguous_range(mm.p2v(entry_start), entry_start, entry_size, .{
+        mi.kernel_space.pmap.map_contiguous_range(mm.p2v(entry_start), entry_start, entry_size, .{
             .read = true,
             .write = true,
             .global = true,
@@ -94,7 +94,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     if (config.arch != .um) {
         map_kernel(boot_info);
     }
-    mi.kernel_pmap.activate();
+    mi.kernel_space.pmap.activate();
     mi.phys.init_pfndb();
     mi.zone.early_init();
     mi.vmem.init();

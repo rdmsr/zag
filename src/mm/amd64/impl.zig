@@ -100,9 +100,9 @@ pub fn init_kernel() void {
     const higher_half_start = phys_to_virt(0);
     const higher_half_size: usize = 256 * (1 << 39);
 
-    mi.kernel_pmap.impl.root_pa = mi.phys.alloc();
-    const table_ptr: [*]u64 = @ptrFromInt(mm.p2v(mi.kernel_pmap.impl.root_pa));
+    mi.kernel_space.pmap.impl.root_pa = mi.phys.alloc();
+    const table_ptr: [*]u64 = @ptrFromInt(mm.p2v(mi.kernel_space.pmap.impl.root_pa));
     @memset(table_ptr[0..512], 0);
 
-    mi.kernel_pmap.impl.preallocate(higher_half_start, higher_half_size, 2);
+    mi.kernel_space.pmap.impl.preallocate(higher_half_start, higher_half_size, 2);
 }

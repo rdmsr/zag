@@ -51,7 +51,7 @@ pub fn init() linksection(r.init) void {
     const trampoline_size = @intFromPtr(&AP_TRAMPOLINE_END) - trampoline_start;
 
     // Map the trampoline page.
-    mm.private.kernel_pmap.map_contiguous_range(0x8000, 0x8000, 0x1000, .{
+    mm.private.kernel_space.pmap.map_contiguous_range(0x8000, 0x8000, 0x1000, .{
         .read = true,
         .write = true,
         .execute = true,

@@ -522,7 +522,7 @@ pub const Zone = struct {
         // Find the slab for the buffer.
         const slab: *Slab = if (self.obj_size > small_slab_size) blk: {
             const page_va = std.mem.alignBackward(usize, @intFromPtr(obj), mm.page_size);
-            const phys = mi.kernel_pmap.query(page_va).?;
+            const phys = mi.kernel_space.pmap.query(page_va).?;
             const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys));
             break :blk page.alloced.slab_data.slab;
         } else blk: {
@@ -627,7 +627,7 @@ pub const Zone = struct {
         ret.refcount = 0;
 
         for (0..self.slab_size / mm.page_size) |i| {
-            const phys_page = mi.kernel_pmap.query(@intFromPtr(buf) + i * mm.page_size) orelse @panic("Could not query page");
+            const phys_page = mi.kernel_space.pmap.query(@intFromPtr(buf) + i * mm.page_size) orelse @panic("Could not query page");
             const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys_page));
             page.alloced.slab_data.slab = ret;
         }
