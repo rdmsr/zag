@@ -12,6 +12,7 @@ pub const BST = bst.BST;
 pub const RBTree = @import("rbtree.zig").RBTree;
 pub const AVLTree = @import("avl.zig").AVLTree;
 pub const BitMap = @import("bitmap.zig").BitMap;
+pub const AtomicBitMap = @import("bitmap.zig").AtomicBitMap;
 
 test {
     std.testing.refAllDecls(@This());
