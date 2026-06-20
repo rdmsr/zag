@@ -15,6 +15,8 @@ pub const DispatchHeader = struct {
         Notification,
         /// When signaled, `signaled` is decreased until 0, and a single waiter is woken up.
         Synchronization,
+        /// Special type for queue objects.
+        Queue,
     };
 
     /// List of WaitBlocks.
@@ -34,13 +36,35 @@ pub const DispatchHeader = struct {
         obj.waitblocks.init();
     }
 
-    fn consume(self: *DispatchHeader) void {
+    fn consume(self: *DispatchHeader, td: *ke.Thread) void {
         switch (self.type) {
             .Synchronization => self.signaled -= 1,
             .Notification => {
                 // Object remains signaled.
             },
+            .Queue => {
+                const q: *ke.Queue = @fieldParentPtr("hdr", self);
+                const item = q.items.first();
+
+                item.remove();
+                q.hdr.signaled -= 1;
+                q.active += 1;
+
+                td.queue_item = item;
+            },
         }
+    }
+
+    fn can_satisfy(self: *DispatchHeader) bool {
+        if (self.signaled == 0) return false;
+
+        return switch (self.type) {
+            .Notification, .Synchronization => true,
+            .Queue => blk: {
+                const q: *ke.Queue = @fieldParentPtr("hdr", self);
+                break :blk q.active < q.max_active;
+            },
+        };
     }
 };
 
@@ -98,7 +122,8 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
     const total_count = obj_count + @intFromBool(has_timeout);
     const timer_i = obj_count;
     const timer = &curtd.timer;
-    const timer_block = &curtd.waitblocks[3];
+    const timer_block = &curtd.waitblocks[obj_count];
+    var queue: ?*ke.Queue = null;
 
     var satisfier: ?usize = null;
     curtd.wait_status.store(.InProgress, .release);
@@ -111,14 +136,18 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
         obj.lock.acquire_no_ipl();
         defer obj.lock.release_no_ipl();
 
-        if (obj.signaled > 0) {
+        if (obj.can_satisfy()) {
             // Object was already signaled. Try consuming it.
             if (curtd.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acq_rel, .monotonic) == null) {
-                obj.consume();
+                obj.consume(curtd);
+                satisfier = i;
             }
             // We have already been satisfied in the meantime, abort.
-            satisfier = i;
             break;
+        }
+
+        if (obj.type == .Queue) {
+            queue = @fieldParentPtr("hdr", obj);
         }
 
         wb.object = obj;
@@ -130,7 +159,9 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
 
     // Wait was already satisfied, back out.
     if (satisfier != null or (has_timeout and timeout.? == 0)) {
-        std.debug.assert(curtd.wait_status.load(.acquire) == .Satisfied);
+        if (satisfier != null) {
+            std.debug.assert(curtd.wait_status.load(.acquire) == .Satisfied);
+        }
 
         const cleanup_count = satisfier orelse total_count;
 
@@ -161,10 +192,17 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
     // While we're trying to commit the wait, the object locks have been released, and the state could therefore change.
     // We need to re-check the state of the wait before actually blocking.
     if (curtd.wait_status.cmpxchgStrong(.InProgress, .Committed, .acq_rel, .monotonic) == null) {
+        if (queue == null) {
+            if (curtd.queue) |q| {
+                ki.queue.signal_wait(q);
+            }
+        }
+
         // We're good, now actually block.
-        //std.log.debug("Blocking {*} on {*}", .{ curtd, objects[0] });
         ki.sched.block_locked(curtd);
     } else {
+        queue = null;
+
         // Could not commit.
         curtd.lock.release_no_ipl();
     }
@@ -206,10 +244,11 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
     const all = obj.type == .Notification;
 
     // Go through (potentially) all wait blocks and try to satisfy them.
-    while (!obj.waitblocks.is_empty() and obj.signaled > 0) {
+    while (!obj.waitblocks.is_empty() and obj.can_satisfy()) {
         // Get the first waitblock from the list.
         var wb: *WaitBlock = @fieldParentPtr("link", obj.waitblocks.first());
         var td = wb.thread;
+
         std.debug.assert(wb.status == .Active);
         std.debug.assert(wb.object == obj);
 
@@ -225,7 +264,7 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
         if (td.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acq_rel, .monotonic) == null) {
             // We interrupted the wait while it was being prepared.
             wb.status = .Signaled;
-            obj.consume();
+            obj.consume(td);
         }
 
         // 2.
@@ -233,8 +272,18 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
             // We interrupted the wait while it was committed.
             // Wake the thread.
             wb.status = .Signaled;
-            obj.consume();
-            ke.sched.unblock(td);
+            obj.consume(td);
+
+            const ipl = td.lock.acquire();
+
+            if (obj.type != .Queue) {
+                if (td.queue) |q| {
+                    ki.queue.signal_wake(q);
+                }
+            }
+
+            ki.sched.unblock_locked(td);
+            td.lock.release(ipl);
         }
 
         // 3.

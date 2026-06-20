@@ -27,3 +27,4 @@ pub const log_ring = @import("log_ring.zig");
 pub const event = @import("event.zig");
 pub const turnstile = @import("turnstile.zig");
 pub const mutex = @import("mutex.zig");
+pub const queue = @import("queue.zig");
