@@ -17,9 +17,11 @@ pub const Console = p.log.Console;
 pub const CpuLocal = p.cpu.CpuLocal;
 pub const ExportedCpuLocal = p.cpu.ExportedCpuLocal;
 pub const CpuMask = p.cpu.CpuMask;
+pub const AtomicCpuMask = p.cpu.AtomicCpuMask;
 pub const Event = p.event.Event;
 pub const Queue = p.queue.Queue;
 pub const Mutex = p.mutex.Mutex;
+pub const ShootdownState = p.shootdown.ShootdownState;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
@@ -70,6 +72,11 @@ pub const log = struct {
 
 pub const cpu = struct {
     pub const current = p.cpu.current;
+};
+
+pub const shootdown = struct {
+    pub const submit = p.shootdown.submit;
+    pub const shootdowns = &p.shootdown.shootdowns;
 };
 
 /// Number of CPUs on the system

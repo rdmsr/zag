@@ -116,6 +116,8 @@ fn particle(param: ?*anyopaque) void {
     data.act_y = parent_data.act_y;
     const explosion_range = parent_data.explosion_range;
 
+    mm.zone.gpa.destroy(parent_data);
+
     const angle = @rem(rand(), 65536);
     data.vel_x = mul_fp_fp(cos(angle), rand_fp_sign()) * explosion_range;
     data.vel_y = mul_fp_fp(sin(angle), rand_fp_sign()) * explosion_range;

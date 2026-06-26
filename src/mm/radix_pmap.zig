@@ -109,6 +109,46 @@ pub fn RadixPmap(comptime Impl: type) type {
             }
         }
 
+        /// Unmap a contiguous range of virtual pages.
+        /// Only small pages are supported.
+        /// Return a pfn that points to the physical pages that were unmapped.
+        pub fn unmap(self: *Self, va: r.VAddr, size: usize) ?mm.Pfn {
+            std.debug.assert(std.mem.isAligned(va, mm.page_size));
+
+            var c = self.cursor(va);
+
+            const npages: usize = size / mm.page_size;
+            var head_pfn: mm.Pfn = mm.null_pfn;
+
+            for (0..npages) |_| {
+                var level: usize = num_levels - 1;
+                blk: while (true) {
+                    const idx = index_for_level(c.va, level);
+                    const pte = c.tables[level][idx];
+
+                    if (!pte.present) break :blk;
+
+                    if (level == 0) {
+                        // Found a present entry, add it to the list.
+                        const addr = pte.address();
+                        const pfn = mm.page_to_pfn(addr);
+                        const page = mm.pfn_to_struct_page(pfn);
+                        page.free.next_pfn = head_pfn;
+                        head_pfn = pfn;
+                        c.tables[level][idx] = std.mem.zeroes(Impl.Pte);
+                        break;
+                    }
+
+                    if (!c.walk_down_resolve(level - 1)) return null;
+                    level -= 1;
+                }
+
+                c.advance(mm.page_size);
+            }
+
+            return if (head_pfn == mm.null_pfn) null else head_pfn;
+        }
+
         /// Ensure all intermediate page tables down to `target_level` exist for
         /// the given virtual address range, allocating them as needed. Useful for
         /// pre-populating a shared region (e.g. the kernel half of a user pmap)

@@ -109,3 +109,7 @@ pub fn arm_timer(deadline: r.Nanoseconds) void {
 pub fn send_resched_ipi(target_cpu: u32) void {
     apic.send_ipi(smp.cpu_id_to_apic_id[target_cpu], 240, 0);
 }
+
+pub fn send_tlb_ipi(target_cpu: u32) void {
+    apic.send_ipi(smp.cpu_id_to_apic_id[target_cpu], 241, 0);
+}

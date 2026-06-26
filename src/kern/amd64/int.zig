@@ -4,6 +4,7 @@ const r = @import("root");
 const ke = r.ke;
 const ki = ke.private;
 const pl = r.pl;
+const mi = r.mm.private;
 
 extern const __interrupt_vectors: [256]usize;
 
@@ -82,6 +83,10 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.{ .x86_64_sys
 
     if (frame.intno == 32) {
         ki.timer.clock();
+    }
+
+    if (frame.intno == 241) {
+        ki.shootdown.ipi_handler();
     }
 
     if (frame.intno >= 32) {

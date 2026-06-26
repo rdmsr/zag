@@ -15,6 +15,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     pl.early_init(boot_info);
     ki.cpu.init_cpu(0);
     ki.turnstile.init_turnstiles();
+    ki.shootdown.init();
 
     thread0.init(@intFromPtr(&stack), r.kib(16), ke.Thread.Priority.idle, ki.sched.idle, null);
     thread0.priority = 0;

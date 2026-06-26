@@ -121,6 +121,8 @@ fn dispatch_queue(cpu: u32) void {
     sched_cpu.start_timer = false;
     sched_cpu.preemption_reason = .None;
 
+    ki.shootdown.process_shootdowns();
+
     if (sched_cpu.next_thread != null) {
         ki.sched.handle_preemption(sched_cpu);
     }
