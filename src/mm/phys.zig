@@ -16,13 +16,11 @@ const ke = r.ke;
 
 const log = std.log.scoped(.@"mm/phys");
 
-// === Early state ===
 var bootstrapped = false;
 var early_alloc_entry_idx: usize = 0;
 var memory_map: *pl.BootInfo.MemMap = undefined;
 var early_allocs: usize = 0;
 
-// === Memory allocator state ===
 /// Head for the global treiber stack.
 const GlobalHead = packed struct(u64) {
     pfn: mm.Pfn,
@@ -41,13 +39,11 @@ const PerCpu = struct {
 
 const percpu = ke.CpuLocal(PerCpu, undefined);
 
-const null_pfn: mm.Pfn = std.math.maxInt(mm.Pfn);
-
 // TODO: make this configurable (or dynamic).
 const batch_size: u8 = 64;
 
 var batch_pool: std.atomic.Value(GlobalHead) = .init(.{
-    .pfn = null_pfn,
+    .pfn = mm.null_pfn,
     .tag = 0,
 });
 
@@ -83,7 +79,7 @@ fn pop_from_pool() ?*mm.Page {
     while (true) {
         const batch_pfn = old_head.pfn;
 
-        if (batch_pfn == null_pfn) {
+        if (batch_pfn == mm.null_pfn) {
             return null;
         }
 
@@ -177,15 +173,15 @@ pub fn free(addr: r.PAddr) void {
 
     const page = mm.pfn_to_struct_page(mm.page_to_pfn(addr));
 
-    page.free.next_pfn = null_pfn;
-    page.free.batch_next = null_pfn;
+    page.free.next_pfn = mm.null_pfn;
+    page.free.batch_next = mm.null_pfn;
     page.free.batch_count = 0;
 
     if (cpu.active_batch) |curr| {
         // Add the page to the current batch.
         page.free.next_pfn = mm.struct_page_to_pfn(curr);
     } else {
-        page.free.next_pfn = null_pfn;
+        page.free.next_pfn = mm.null_pfn;
     }
 
     cpu.active_batch = page;

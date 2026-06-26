@@ -20,8 +20,10 @@ const Slab = struct {
     /// Reference count indicating how many objects are in use.
     refcount: u16,
     capacity: u16,
-    /// Base address of the slab.
+    /// Base address of the slab + its color.
     base: usize,
+    /// Base address of the slab allocation.
+    buf: usize,
 
     pub fn bitmap(self: *Slab) [*]u64 {
         return @ptrFromInt(@intFromPtr(self) + @sizeOf(Slab));
@@ -623,6 +625,7 @@ pub const Zone = struct {
         if (rem > 0) bm[full_words] = (@as(u64, 1) << @intCast(rem)) - 1;
 
         ret.base = @intFromPtr(buf) + self.color;
+        ret.buf = @intFromPtr(buf);
         ret.capacity = @intCast(capacity);
         ret.refcount = 0;
 
@@ -667,7 +670,7 @@ pub const Zone = struct {
             const alloc_size = @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity);
             gpa.free(@as([*]u8, @ptrCast(slab))[0..alloc_size]);
 
-            // FIXME: call free_pages on slab.base here!
+            mm.heap.free(slab.buf, self.slab_size);
         } else {
             free_page(@ptrFromInt(std.mem.alignBackward(usize, @intFromPtr(slab), mm.page_size)));
         }
@@ -842,9 +845,8 @@ fn gpa_free(
     _: usize,
 ) void {
     if (buf.len > 2048) {
-        //const pages = std.mem.alignForward(usize, buf.len, mm.page_size);
-        // TODO
-        //mi.heap.free_pages(@ptrCast(buf.ptr), pages);
+        const pages = std.mem.alignForward(usize, buf.len, mm.page_size);
+        mm.heap.free(@intFromPtr(buf.ptr), pages);
         return;
     }
 

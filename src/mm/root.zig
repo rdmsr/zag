@@ -15,6 +15,7 @@ pub const Space = private.Space;
 // 16 TB of maximum physical memory.
 // This should be fine on consumer hardware for at least a decade :^)
 pub const Pfn = u32;
+pub const null_pfn: Pfn = std.math.maxInt(Pfn);
 
 pub const Page = extern union {
     free: extern struct {

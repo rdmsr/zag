@@ -103,6 +103,17 @@ pub const PMap = struct {
         self.map_from(va, size, src);
     }
 
+    /// Unmap a contiguous range of virtual pages.
+    /// Returns a list threaded through PFNs of the unmapped physical pages if any.
+    pub fn unmap(self: *Self, va: r.VAddr, size: usize) ?mm.Pfn {
+        return self.impl.unmap(va, size);
+    }
+
+    /// Flush the TLB entry of a single page.
+    pub fn flush(self: *Self, va: r.VAddr) void {
+        self.impl.flush(va);
+    }
+
     /// Map a single page. Convenience wrapper around map_contiguous_range.
     pub fn map_page(self: *Self, va: r.VAddr, pa: r.PAddr, flags: mm.MapFlags) void {
         self.map_contiguous_range(va, pa, mm.page_size, flags);

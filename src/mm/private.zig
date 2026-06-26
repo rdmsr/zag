@@ -7,6 +7,7 @@ pub const vmem = @import("vmem.zig");
 pub const heap = @import("heap.zig");
 pub const zone = @import("zone.zig");
 pub const PMap = pmap.PMap;
+pub const tlb = @import("tlb.zig");
 
 const ke = @import("root").ke;
 
@@ -22,4 +23,8 @@ pub const impl = switch (config.arch) {
     else => @compileError("unsupported architecture"),
 };
 
-pub var kernel_space: Space = undefined;
+pub var kernel_space: Space = .{
+    .pmap = undefined,
+    .arena = undefined,
+    .lock = .init(),
+};

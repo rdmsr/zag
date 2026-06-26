@@ -5,6 +5,8 @@ const amd64 = r.arch;
 
 const std = @import("std");
 
+pub const tlb_max_pages = 33;
+
 pub const init = @import("init.zig");
 pub const early_init = init.early_init;
 
@@ -113,4 +115,20 @@ pub inline fn restore_interrupts(state: bool) void {
 
 pub inline fn send_resched_ipi(target: u32) void {
     pl.impl.send_resched_ipi(target);
+}
+
+pub inline fn send_tlb_ipi(target: u32) void {
+    pl.impl.send_tlb_ipi(target);
+}
+
+pub inline fn flush_full_tlb() void {
+    const prev_cr3 = amd64.read_cr(3);
+    // Reload CR3 to flush the entire TLB.
+    // This works because we assume global pages are never unmapped.
+    // If they are in the future, this should toggle CR4.PGE instead.
+    amd64.write_cr(3, prev_cr3);
+}
+
+pub inline fn flush_tlb(va: r.VAddr) void {
+    amd64.invlpg(va);
 }
