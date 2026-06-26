@@ -123,6 +123,10 @@ pub fn enqueue(item: *WorkItem) void {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
 
+    if (item.enqueued.cmpxchgStrong(false, true, .acquire, .monotonic) != null) {
+        return;
+    }
+
     var pool: *Pool = undefined;
 
     switch (item.priority) {
