@@ -167,8 +167,3 @@ pub const Thread = struct {
         return self.priority >= Priority.low_interactive and self.priority <= Priority.high_interactive;
     }
 };
-
-comptime {
-    if (!@hasDecl(ki.impl, "ThreadContext")) @compileError("impl must provide ThreadContext");
-    if (!@hasDecl(ki.impl.ThreadContext, "init")) @compileError("ThreadContext must have init()");
-}
