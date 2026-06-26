@@ -83,10 +83,6 @@ pub fn lower(new: Ipl) void {
     }
 }
 
-comptime {
-    if (!@hasDecl(ki.impl, "set_hardware_ipl")) @compileError("impl must provide set_hardware_ipl()");
-}
-
 /// Set the hardware IPL to `new`.
 pub fn set_hardware(new: Ipl) Ipl {
     var cpu = percpu.local();

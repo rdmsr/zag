@@ -88,10 +88,6 @@ const r = @import("root");
 const ke = r.ke;
 const ki = ke.private;
 
-comptime {
-    if (!@hasDecl(ki.impl, "send_resched_ipi")) @compileError("impl must provide send_resched_ipi");
-}
-
 const runqueues_n = 64;
 const interactivity_threshold = 30;
 const scaling_factor = 50;

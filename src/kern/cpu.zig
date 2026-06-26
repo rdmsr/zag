@@ -28,18 +28,13 @@ pub fn current() u32 {
     return id.local().*;
 }
 
-comptime {
-    if (!@hasDecl(ki.impl, "percpu_ptr")) @compileError("impl must provide percpu_ptr()");
-    if (!@hasDecl(ki.impl, "percpu_ptr_other")) @compileError("impl must provide percpu_ptr_other()");
-}
-
 /// Wraps around CPU-local data.
 pub fn CpuLocal(comptime T: type, comptime init: T) type {
     return struct {
         var storage: T linksection(".data.percpu") = init;
 
         /// Return a pointer to local CPU data.
-        pub fn local() @TypeOf(ki.impl.percpu_ptr(&storage)) {
+        pub fn local() *T {
             return ki.impl.percpu_ptr(&storage);
         }
 

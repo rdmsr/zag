@@ -8,12 +8,6 @@ const ke = r.ke;
 const ki = ke.private;
 const mm = r.mm;
 
-comptime {
-    if (!@hasDecl(ki.impl, "send_tlb_ipi")) @compileError("impl must provide send_tlb_ipi");
-    if (!@hasDecl(ki.impl, "flush_full_tlb")) @compileError("impl must provide flush_full_tlb");
-    if (!@hasDecl(ki.impl, "flush_tlb")) @compileError("impl must provide flush_tlb");
-}
-
 /// Structure representing a single shootdown request.
 pub const ShootdownState = struct {
     /// State of the request.
