@@ -67,6 +67,15 @@ pub fn assert_interface(T: type, I: type) void {
             if (@TypeOf(impl_member) != type) {
                 @compileError(std.fmt.comptimePrint("Declaration '{s}' in type '{s}' is required to be a type by '{s}', but got '{s}'", .{ decl.name, @typeName(T), @typeName(I), @typeName(@TypeOf(impl_member)) }));
             }
+        } else {
+            if (!@hasDecl(T, decl.name)) {
+                @compileError(std.fmt.comptimePrint("Expected variable declaration '{s}' in type '{s}' required by '{s}'", .{ decl.name, @typeName(T), @typeName(I) }));
+            }
+
+            const impl_member = @field(T, decl.name);
+            if (@TypeOf(impl_member) != @TypeOf(member)) {
+                @compileError(std.fmt.comptimePrint("Declaration '{s}' in type '{s}' is required to be a variable of type '{s}' by '{s}', but got '{s}'", .{ decl.name, @typeName(T), @typeName(@TypeOf(member)), @typeName(I), @typeName(@TypeOf(impl_member)) }));
+            }
         }
     }
 }

@@ -13,6 +13,10 @@ pub const impl = switch (config.arch) {
 const ImplSchema = struct {
     pub const ThreadContext = struct {};
 
+    /// Maximum number of pages that can be flushed by individual TLB flushes
+    /// before it is more efficient to flush the entire TLB.
+    pub const tlb_max_pages = 0;
+
     /// Set the hardware interrupt priority level.
     pub fn set_hardware_ipl(level: ipl.Ipl) void {
         _ = level;
