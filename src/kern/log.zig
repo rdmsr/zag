@@ -1,10 +1,10 @@
 const std = @import("std");
+const config = @import("config");
 const r = @import("root");
-const rtl = @import("rtl");
+
 const pl = r.pl;
 const ke = r.ke;
 const ki = ke.private;
-const config = @import("config");
 
 var out_lock: ke.SpinLock = .init();
 

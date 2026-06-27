@@ -1,8 +1,7 @@
-const r = @import("root");
-const std = @import("std");
-const rtl = @import("rtl");
 const config = @import("config");
 const init_mod = @import("init.zig");
+const r = @import("root");
+const rtl = @import("rtl");
 
 pub const impl = switch (config.arch) {
     .amd64 => @import("amd64/impl.zig"),

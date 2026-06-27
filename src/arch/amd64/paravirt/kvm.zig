@@ -1,5 +1,4 @@
 //! KVM paravirtualization support.
-const std = @import("std");
 const amd64 = @import("../root.zig");
 
 pub const Features = packed struct(u32) {

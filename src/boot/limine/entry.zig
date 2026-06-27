@@ -1,15 +1,14 @@
-const b = @import("root");
-const ksyms = @import("ksyms");
+const std = @import("std");
+
+const r = @import("root");
 const limine = @import("limine.zig");
 
-const pl = b.pl;
-const ke = b.ke;
+const pl = r.pl;
+const ke = r.ke;
 const ki = ke.private;
 
-pub const std_options = b.std_options;
-pub const panic = b.panic;
-
-const std = @import("std");
+pub const std_options = r.std_options;
+pub const panic = r.panic;
 
 var boot_info: pl.BootInfo = undefined;
 

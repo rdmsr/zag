@@ -8,7 +8,7 @@
 //!  If the depot is full when trying to add a new batch, one batch is pushed back to the global stack to make room.
 const r = @import("root");
 const std = @import("std");
-const rtl = @import("rtl");
+
 const pl = r.pl;
 const mm = r.mm;
 const mi = mm.private;
