@@ -168,7 +168,7 @@ pub fn handle_preemption(cpu: *PerCpu) void {
     cpu.queues_lock.release_no_ipl();
     cur.lock.acquire_no_ipl();
 
-    if (cur != cpu.idle_thread and cur.state != .Blocked) {
+    if (cur != cpu.idle_thread and cur.state.load(.monotonic) != .Blocked) {
         // Put it back in the queue.
         cpu.queues_lock.acquire_no_ipl();
         insert_in_queue(cpu, cur, false);
@@ -245,7 +245,7 @@ pub fn block() void {
 
 /// Block the currently running thread with its lock held.
 pub fn block_locked(curtd: *ke.Thread) void {
-    curtd.state = .Blocked;
+    curtd.state.store(.Blocked, .monotonic);
     curtd.sleep_start = ke.time.read_time();
     curtd.runq = null;
 
@@ -254,7 +254,7 @@ pub fn block_locked(curtd: *ke.Thread) void {
 
 pub fn unblock_locked(td: *ke.Thread) void {
     std.debug.assert(td.lock.is_locked());
-    std.debug.assert(td.state == .Blocked);
+    std.debug.assert(td.state.load(.monotonic) == .Blocked);
 
     td.sleep_time = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
 
@@ -290,13 +290,15 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
     cpu.queues_lock.acquire_no_ipl();
     defer cpu.queues_lock.release_no_ipl();
 
-    if (td.state == .Ready) {
+    const state = td.state.load(.monotonic);
+
+    if (state == .Ready) {
         // Remove it from its queue and add it back.
         remove_from_queue(cpu, td);
         insert_in_queue(cpu, td, false);
     }
 
-    if (td.state == .Running) {
+    if (state == .Running) {
         std.debug.assert(td.last_cpu == c);
 
         cpu.current_thread_prio.store(new_prio, .monotonic);
@@ -401,7 +403,7 @@ fn pick_realtime_thread(cpu: *PerCpu, minprio: u8, migrate: bool) ?*ke.Thread {
         // Get the first thread of the queue.
         var td: *ke.Thread = @fieldParentPtr("runq_link", curr_queue.first());
 
-        td.state = .Selected;
+        td.state.store(.Selected, .monotonic);
 
         if (migrate) {
             // Find the first thread that is not pinned.
@@ -457,7 +459,7 @@ fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
         // Get the first thread of the queue.
         var td: *ke.Thread = @fieldParentPtr("runq_link", curr_queue.first());
 
-        td.state = .Selected;
+        td.state.store(.Selected, .monotonic);
 
         if (migrate) {
             // Find the first thread that is not pinned.
@@ -500,7 +502,7 @@ fn pick_idle_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
         return null;
     }
 
-    td.state = .Selected;
+    td.state.store(.Selected, .monotonic);
 
     // We can safely remove it.
     td.runq_link.remove();
@@ -544,7 +546,7 @@ fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, head: bool) void {
         td.runq_idx = 0;
     }
 
-    td.state = .Ready;
+    td.state.store(.Ready, .monotonic);
     _ = cpu.load.fetchAdd(1, .monotonic);
 }
 
@@ -569,13 +571,13 @@ fn remove_from_queue(cpu: *PerCpu, td: *ke.Thread) void {
 
 // Update recent history for a thread.
 fn clamp_time(td: *ke.Thread) void {
-    const max = 5 * std.time.ms_per_s; // 5 seconds
+    const max = 5 * std.time.ms_per_s;
     const sum = td.run_time + td.sleep_time;
 
     if (sum < max) return;
 
     if (sum > max * 2) {
-        // History is way out of range (>10s), hard reset.
+        // History is way out of range (>10s), reset it.
         // Preserve the dominant side to avoid flipping interactivity classification.
         if (td.run_time > td.sleep_time) {
             td.run_time = max;
@@ -596,7 +598,7 @@ fn clamp_time(td: *ke.Thread) void {
         return;
     }
 
-    // History is slightly out of range (5s-6s), gentle 20% decay.
+    // History is slightly out of range (5s-6s), 20% decay.
     // Gradually ages out old history without disturbing the ratio.
     td.run_time = (td.run_time / 5) * 4;
     td.sleep_time = (td.sleep_time / 5) * 4;
@@ -843,7 +845,7 @@ fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
 
 // Execute a context switch on `cpu`.
 fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
-    next.state = .Running;
+    next.state.store(.Running, .monotonic);
     cpu.current_thread = next;
     next.last_cpu = ke.cpu.current();
 
