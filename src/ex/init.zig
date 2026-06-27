@@ -5,8 +5,10 @@ const ke = r.ke;
 const mm = r.mm;
 const ex = r.ex;
 const ps = r.ps;
-const amd64 = @import("arch");
-const turnstile = ke.private.turnstile;
+const exp = ex.private;
+
+// XXX
+const fbconsole = @import("../dev/fbconsole.zig");
 
 pub fn init(boot_info: *pl.BootInfo) void {
     mm.init(boot_info);
@@ -15,14 +17,15 @@ pub fn init(boot_info: *pl.BootInfo) void {
     pl.late_init(boot_info);
     mm.late_init();
     ke.sched.late_init();
-    ex.private.workqueue.init() catch @panic("e");
+    exp.workqueue.init() catch @panic("e");
+    exp.console.init();
 
     if (boot_info.framebuffer != null) {
-        const t = ps.thread.create_kernel(ke.Thread.Priority.default, ex.fireworks.start, boot_info) catch @panic("oom");
-        ke.sched.enqueue(&t.kern);
-    }
+        fbconsole.init(boot_info);
 
-    while (true) {}
+        //   const t = ps.thread.create_kernel(ke.Thread.Priority.default, ex.fireworks.start, boot_info) catch @panic("oom");
+        //  ke.sched.enqueue(&t.kern);
+    }
 
     while (true) {
         std.atomic.spinLoopHint();

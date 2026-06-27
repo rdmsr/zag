@@ -68,6 +68,8 @@ pub const wait = struct {
 pub const log = struct {
     pub const register_console = p.log.register_console;
     pub const log = p.log.log;
+    pub const ringbuffer = &p.log.ringbuffer;
+    pub const event = &p.log.event;
 };
 
 pub const cpu = struct {

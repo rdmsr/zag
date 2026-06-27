@@ -80,6 +80,8 @@ pub fn init() linksection(r.init) void {
     ki.impl.cpu_offsets = @ptrCast(mm.zone.gpa.alloc(usize, apic.apics.items.len + 1) catch @panic("Failed to allocate AP local data offsets"));
     const percpu_size = @intFromPtr(&__percpu_end) - @intFromPtr(&__percpu_start);
 
+    log.info("per-CPU data size: {} bytes", .{percpu_size});
+
     ki.impl.cpu_offsets[0] = 0;
 
     cpu_id_to_apic_id[0] = apic.get_id();
