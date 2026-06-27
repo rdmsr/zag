@@ -1,7 +1,7 @@
-const std = @import("std");
+const config = @import("config");
 const rtl = @import("rtl");
 const r = @import("root");
-const config = @import("config");
+
 const ke = r.ke;
 const ki = r.ke.private;
 

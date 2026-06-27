@@ -1,6 +1,6 @@
-const b = @import("root");
-const mm = b.mm;
-const pl = b.pl;
+const r = @import("root");
+const mm = r.mm;
+const pl = r.pl;
 const arch = @import("arch");
 const std = @import("std");
 const timer = @import("timer.zig");
@@ -103,10 +103,10 @@ pub const Gas = extern struct {
     pub fn read(self: Gas) u64 {
         const raw: u64 = switch (self.address_space_id) {
             .SystemMemory => switch (self.access_size) {
-                1 => b.mmio_read(u8, self.address),
-                2 => b.mmio_read(u16, self.address),
-                3 => b.mmio_read(u32, self.address),
-                4 => b.mmio_read(u64, self.address),
+                1 => r.mmio_read(u8, self.address),
+                2 => r.mmio_read(u16, self.address),
+                3 => r.mmio_read(u32, self.address),
+                4 => r.mmio_read(u64, self.address),
                 else => unreachable,
             },
             .SystemIo => switch (self.access_size) {
@@ -135,10 +135,10 @@ pub const Gas = extern struct {
 
         switch (self.address_space_id) {
             .SystemMemory => switch (self.access_size) {
-                1 => b.mmio_write(u8, self.address, @truncate(shifted_value)),
-                2 => b.mmio_write(u16, self.address, @truncate(shifted_value)),
-                3 => b.mmio_write(u32, self.address, @truncate(shifted_value)),
-                4 => b.mmio_write(u64, self.address, shifted_value),
+                1 => r.mmio_write(u8, self.address, @truncate(shifted_value)),
+                2 => r.mmio_write(u16, self.address, @truncate(shifted_value)),
+                3 => r.mmio_write(u32, self.address, @truncate(shifted_value)),
+                4 => r.mmio_write(u64, self.address, shifted_value),
                 else => unreachable,
             },
             .SystemIo => switch (self.access_size) {
@@ -271,9 +271,9 @@ pub fn find_table(signature: []const u8) ?*SdtHeader {
                 return hdr;
             }
         }
-    } else if (rsdt) |r| {
-        const entry_count = (r.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
-        const entries_ptr: [*]align(1) u32 = @ptrCast(&r.entries);
+    } else if (rsdt) |rsdt_table| {
+        const entry_count = (rsdt_table.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
+        const entries_ptr: [*]align(1) u32 = @ptrCast(&rsdt_table.entries);
 
         for (0..entry_count) |i| {
             const hdr: *SdtHeader = @ptrFromInt(mm.p2v(entries_ptr[i]));
@@ -310,9 +310,9 @@ fn enumerate_tables() void {
             const hdr: *SdtHeader = @ptrFromInt(mm.p2v(phys));
             format_table(hdr, phys);
         }
-    } else if (rsdt) |r| {
-        const entry_count = (r.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
-        const entries_ptr: [*]align(1) u32 = @ptrCast(&r.entries);
+    } else if (rsdt) |rsdt_table| {
+        const entry_count = (rsdt_table.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
+        const entries_ptr: [*]align(1) u32 = @ptrCast(&rsdt_table.entries);
 
         for (0..entry_count) |i| {
             const phys: u64 = entries_ptr[i];
@@ -322,7 +322,7 @@ fn enumerate_tables() void {
     }
 }
 
-pub fn init(boot_info: *pl.BootInfo) linksection(b.init) void {
+pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     const rsdp_addr = boot_info.rsdp orelse return;
 
     const rsdp: *Rsdp = @ptrFromInt(rsdp_addr);

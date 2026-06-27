@@ -1,5 +1,3 @@
-const config = @import("config");
-
 // === Exported Modules ===
 pub const private = @import("private.zig");
 

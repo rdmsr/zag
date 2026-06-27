@@ -1,6 +1,6 @@
-const std = @import("std");
-const b = @import("root");
-const acpi = b.pl.acpi;
+const r = @import("root");
+
+const acpi = r.pl.acpi;
 
 pub var madt_ptr: ?*acpi.Madt = null;
 

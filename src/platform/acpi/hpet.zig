@@ -1,8 +1,8 @@
-const b = @import("root");
+const r = @import("root");
 const std = @import("std");
-const acpi = b.pl.acpi;
-const mm = b.mm;
-const ke = b.ke;
+const acpi = r.pl.acpi;
+const mm = r.mm;
+const ke = r.ke;
 
 var hpet_timer: ke.TimeCounter = .{
     .name = "HPET",
@@ -18,23 +18,23 @@ var hpet_regs: *volatile acpi.HpetRegs = undefined;
 
 const femtos_per_s = 1_000_000_000_000_000;
 
-pub fn init(hpet: *acpi.HpetTable) linksection(b.init) void {
+pub fn init(hpet: *acpi.HpetTable) linksection(r.init) void {
     hpet_regs = @ptrFromInt(mm.p2v(hpet.base_address.address));
 
-    hpet_timer.frequency = femtos_per_s / (b.mmio_read(u64, @intFromPtr(&hpet_regs.general_capabilities)) >> 32);
+    hpet_timer.frequency = femtos_per_s / (r.mmio_read(u64, @intFromPtr(&hpet_regs.general_capabilities)) >> 32);
 
     // Disable timer.
-    b.mmio_write(u64, @intFromPtr(&hpet_regs.general_configuration), 0);
+    r.mmio_write(u64, @intFromPtr(&hpet_regs.general_configuration), 0);
 
     // Reset counter.
-    b.mmio_write(u64, @intFromPtr(&hpet_regs.main_counter_value), 0);
+    r.mmio_write(u64, @intFromPtr(&hpet_regs.main_counter_value), 0);
 
     // Enable timer.
-    b.mmio_write(u64, @intFromPtr(&hpet_regs.general_configuration), 1);
+    r.mmio_write(u64, @intFromPtr(&hpet_regs.general_configuration), 1);
 
     ke.time.register_source(&hpet_timer);
 }
 
 fn read_hpet() u64 {
-    return b.mmio_read(u64, @intFromPtr(&hpet_regs.main_counter_value));
+    return r.mmio_read(u64, @intFromPtr(&hpet_regs.main_counter_value));
 }

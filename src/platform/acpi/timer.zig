@@ -1,8 +1,8 @@
-const b = @import("root");
+const r = @import("root");
 const std = @import("std");
-const acpi = b.pl.acpi;
-const ke = b.ke;
-const arch = @import("arch");
+
+const acpi = r.pl.acpi;
+const ke = r.ke;
 
 var pm_timer: ke.TimeCounter = .{
     .name = "ACPI",
@@ -16,7 +16,7 @@ var pm_timer: ke.TimeCounter = .{
 
 var timer_gas: acpi.Gas = undefined;
 
-pub fn init(fadt: *acpi.Fadt) linksection(b.init) void {
+pub fn init(fadt: *acpi.Fadt) linksection(r.init) void {
     const fadt_rev = fadt.revision();
 
     if (fadt.pm_tmr_len == 0 or fadt.pm_tmr_blk == 0) {
