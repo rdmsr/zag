@@ -3,7 +3,7 @@ const ke = @import("root").ke;
 const ki = ke.private;
 
 /// Number of spins before blocking.
-const optimistic_spins = 10000;
+const optimistic_spins = 100;
 
 pub const Mutex = struct {
     /// The thread currently holding the mutex, null if unlocked.
@@ -17,14 +17,29 @@ pub const Mutex = struct {
         const ipl = ke.ipl.raise(.Dispatch);
         const curtd = ki.sched.percpu.local().current_thread.?;
 
-        // Fast path: try to acquire without a turnstile by spinning a bit.
-        for (0..optimistic_spins) |_| {
-            if (m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic) == null) {
+        // Very fast path: the lock is uncontended and we can acquire it immediately.
+        const cur_owner = m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic);
+
+        if (cur_owner == null) {
+            ke.ipl.lower(ipl);
+            return;
+        }
+
+        // Fast path: if the owner is running, try to acquire without a turnstile by spinning a bit.
+        if (cur_owner.?.?.state.load(.monotonic) == .Running) {
+            for (0..optimistic_spins) |_| {
+                if (m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic)) |maybe_owner| {
+                    const owner = maybe_owner.?;
+                    if (owner.state.load(.monotonic) != .Running) break;
+
+                    std.atomic.spinLoopHint();
+
+                    continue;
+                }
+
                 ke.ipl.lower(ipl);
                 return;
             }
-
-            std.atomic.spinLoopHint();
         }
 
         // Slow path: contended, block on a turnstile.
