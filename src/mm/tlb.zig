@@ -11,23 +11,11 @@ const ps = r.ps;
 pub var sync_shootdowns: std.atomic.Value(usize) = .init(0);
 pub var async_shootdowns: std.atomic.Value(usize) = .init(0);
 
-fn free_pages(head_pfn: mm.Pfn) void {
-    var pfn = head_pfn;
-
-    // Free all the physical pages.
-    while (pfn != mm.null_pfn) {
-        const page = mm.pfn_to_struct_page(pfn);
-        const next = page.free.next_pfn;
-        mm.phys.free(mm.pfn_to_page(pfn));
-        pfn = next;
-    }
-}
-
 /// Reclaim the memory associated with a state.
 /// This can only be done when all CPUs have flushed their TLB.
 fn reclaim_state(state: *ke.ShootdownState) void {
     const space: *mm.Space = @ptrFromInt(state.payload[0]);
-    const pfn: u32 = @truncate(state.payload[1]);
+    const pfn_list: mi.PfnList = @bitCast(state.payload[1]);
     const base = state.base;
     const npages = state.npages;
 
@@ -40,7 +28,7 @@ fn reclaim_state(state: *ke.ShootdownState) void {
     _ = async_shootdowns.fetchAdd(1, .monotonic);
 
     // Free the physical pages
-    free_pages(pfn);
+    mm.phys.free_batch(mm.pfn_to_struct_page(pfn_list.head), mm.pfn_to_struct_page(pfn_list.tail), npages);
 
     // Release the slot after all copied state has been consumed.
     state.release();
@@ -62,7 +50,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
     std.debug.assert(std.mem.isAligned(va, mm.page_size));
 
     // Unmap the virtual addresses and get the backing physical pages.
-    const head_pfn = space.pmap.unmap(va, size) orelse {
+    const list = space.pmap.unmap(va, size) orelse {
         // If no physical pages, free the VA directly.
         space.arena.free(va, size) catch unreachable;
         return;
@@ -75,7 +63,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
         .state = .init(0),
         .payload = .{
             @intFromPtr(space),
-            @intCast(head_pfn),
+            @bitCast(list),
         },
     };
 
@@ -90,7 +78,9 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
     ke.shootdown.submit(state, mask) catch {
         _ = sync_shootdowns.fetchAdd(1, .monotonic);
         space.arena.free(va, size) catch unreachable;
-        free_pages(head_pfn);
+
+        // Free the physical pages
+        mm.phys.free_batch(mm.pfn_to_struct_page(list.head), mm.pfn_to_struct_page(list.tail), size / mm.page_size);
         return;
     };
 }
