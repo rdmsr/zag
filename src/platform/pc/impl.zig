@@ -102,6 +102,13 @@ pub fn debug_write(c: u8) void {
     com1_write(c);
 }
 
+pub fn debug_read() u8 {
+    while ((amd64.inb(com1 + 0x5) & 0x01) == 0) {
+        std.atomic.spinLoopHint();
+    }
+    return amd64.inb(com1);
+}
+
 pub fn arm_timer(deadline: r.Nanoseconds) void {
     apic.arm_timer(deadline);
 }
