@@ -94,6 +94,19 @@ fn worker(_: ?*anyopaque) void {
     }
 }
 
+pub fn write(buf: []const u8) void {
+    console_lock.acquire();
+
+    var it = console_list.iterator();
+
+    while (it.next()) : (it.advance()) {
+        const console: *Console = @fieldParentPtr("link", it.get());
+        console.write(console.ctx, buf);
+    }
+
+    console_lock.release();
+}
+
 pub fn register(cons: *Console) void {
     // Drain all logs until now.
     _ = drain_from_on(0, cons);

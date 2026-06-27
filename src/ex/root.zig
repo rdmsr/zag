@@ -12,4 +12,5 @@ pub const workqueue = struct {
 
 pub const console = struct {
     pub const register = p.console.register;
+    pub const write = p.console.write;
 };
