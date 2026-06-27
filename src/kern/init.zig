@@ -13,6 +13,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     ki.impl.early_init();
     std.log.info("Welcome to the machine", .{});
     pl.early_init(boot_info);
+    ki.log.init();
     ki.cpu.init_cpu(0);
     ki.turnstile.init_turnstiles();
     ki.shootdown.init();

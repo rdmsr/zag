@@ -39,6 +39,22 @@ const avg_msg_size_bits = 5;
 
 pub var ringbuffer = ki.log_ring.RingBuffer(config.log_buffer_shift, avg_msg_size_bits).init();
 
+// Initialize manually because we need this ASAP.
+pub var event: ke.Event = .{
+    .hdr = .{
+        .lock = .init(),
+        .signaled = 0,
+        .type = .Notification,
+        .waitblocks = .{
+            .head = .{ .next = &event.hdr.waitblocks.head, .prev = &event.hdr.waitblocks.head },
+        },
+    },
+};
+
+pub fn init() void {
+    event.init(.Notification);
+}
+
 pub fn log(
     comptime level: std.log.Level,
     comptime scope: @EnumLiteral(),
@@ -63,9 +79,9 @@ pub fn log(
 
     ringbuffer.publish(res);
 
-    // TODO: for now, we print to the platform's debug output immediately.
-    // In the future, we should instead set an event that would get triggered in Ex,
-    // which would consume the ringbuffer from multiple consoles in a separate thread.
+    // Signal whomever is waiting on logs to get published.
+    event.signal();
+
     var writer = DebugWriter.init();
 
     const ipl = out_lock.acquire_at(.High);
