@@ -5,7 +5,7 @@ pub const List = struct {
     head: Entry,
 
     /// A list entry
-    pub const Entry = struct {
+    pub const Entry = extern struct {
         /// Next element in the list
         next: *Entry = undefined,
         /// Previous element
