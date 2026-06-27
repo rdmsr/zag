@@ -1,14 +1,6 @@
-//! Physical memory allocator:
-//! - Uses a per-CPU magazined allocator with a global Treiber stack as the fallback.
-//! Each CPU has 4 batches of 64 pages each for fast allocation and deallocation without contention.
-//!  When a CPU's active batch is exhausted, it tries to get a new batch from its local depot.
-//!  If the depot is empty, it pops a batch from the global stack.
-//! When freeing pages, they are added to the active batch until it reaches capacity,
-//!  at which point the full batch is moved to the local depot.
-//!  If the depot is full when trying to add a new batch, one batch is pushed back to the global stack to make room.
 const r = @import("root");
 const std = @import("std");
-
+const rtl = @import("rtl");
 const pl = r.pl;
 const mm = r.mm;
 const mi = mm.private;
@@ -20,81 +12,10 @@ var bootstrapped = false;
 var early_alloc_entry_idx: usize = 0;
 var memory_map: *pl.BootInfo.MemMap = undefined;
 var early_allocs: usize = 0;
+var list_lock: ke.SpinLock = undefined;
+var free_list: rtl.List = undefined;
 
-/// Head for the global treiber stack.
-const GlobalHead = packed struct(u64) {
-    pfn: mm.Pfn,
-    // A 32-bit ABA tag is more than enough for this,
-    // on 32-bit machines which do not support cmpxchg8b, we could use 12 bits instead.
-    tag: u32,
-};
-
-/// Per-CPU state.
-const PerCpu = struct {
-    depot: [4]*mm.Page,
-    depot_count: u8,
-    active_batch: ?*mm.Page,
-    active_count: u8,
-};
-
-const percpu = ke.CpuLocal(PerCpu, undefined);
-
-// TODO: make this configurable (or dynamic).
-const batch_size: u8 = 64;
-
-var batch_pool: std.atomic.Value(GlobalHead) = .init(.{
-    .pfn = mm.null_pfn,
-    .tag = 0,
-});
-
-export const phys_percpu_init linksection(r.percpu_init) = &init_cpu;
-
-fn init_cpu() callconv(.c) void {
-    const cpu = percpu.local();
-    cpu.active_batch = null;
-    cpu.active_count = 0;
-    cpu.depot_count = 0;
-}
-
-/// Push a batch of free pages to the global pool.
-fn push_to_pool(batch: *mm.Page) void {
-    var old_head = batch_pool.load(.acquire);
-
-    while (true) {
-        batch.free.batch_next = old_head.pfn;
-
-        const new_head = GlobalHead{
-            .pfn = mm.struct_page_to_pfn(batch),
-            .tag = old_head.tag +% 1,
-        };
-
-        old_head = batch_pool.cmpxchgWeak(old_head, new_head, .acq_rel, .acquire) orelse break;
-    }
-}
-
-/// Pop a batch of free pages from the global pool. Returns null if the pool is empty.
-fn pop_from_pool() ?*mm.Page {
-    var old_head = batch_pool.load(.acquire);
-
-    while (true) {
-        const batch_pfn = old_head.pfn;
-
-        if (batch_pfn == mm.null_pfn) {
-            return null;
-        }
-
-        const batch = mm.pfn_to_struct_page(batch_pfn);
-
-        const new_head = GlobalHead{
-            .pfn = batch.free.batch_next,
-            .tag = old_head.tag +% 1,
-        };
-
-        old_head = batch_pool.cmpxchgWeak(old_head, new_head, .acq_rel, .acquire) orelse return batch;
-    }
-
-    return null;
-}
+pub var usable_memory: std.atomic.Value(usize) = .init(0);
 
 fn early_alloc() usize {
     while (early_alloc_entry_idx < memory_map.entry_count) {
@@ -120,97 +41,57 @@ fn early_alloc() usize {
 /// Allocate a page of physical memory.
 pub fn alloc() r.PAddr {
     if (!bootstrapped) {
+        @branchHint(.unlikely);
         return early_alloc();
     }
 
-    const ipl = ke.ipl.raise(.High);
-    const cpu = percpu.local();
+    const ipl = list_lock.acquire();
 
-    defer ke.ipl.lower(ipl);
-
-    if (cpu.active_count == 0) {
-        // Our batch is empty, get another one.
-        if (cpu.depot_count > 0) {
-            // Get a new batch from the local depot.
-            cpu.depot_count -= 1;
-            cpu.active_batch = cpu.depot[cpu.depot_count];
-            cpu.active_count = batch_size;
-        } else {
-            // Get one from the global pool.
-            const new_batch = pop_from_pool();
-
-            if (new_batch) |new| {
-                cpu.active_batch = new;
-                cpu.active_count = new.free.batch_count;
-            } else {
-                // TODO: call an IPI here for the other CPUs to fill the global pool before giving up.
-                @panic("OOM");
-            }
-        }
+    if (free_list.is_empty()) {
+        list_lock.release(ipl);
+        // FIXME: wait for free memory
+        @panic("mm/phys: Out of memory for physical allocation");
     }
 
-    const batch = cpu.active_batch.?;
+    const head = free_list.first();
+    head.remove();
 
-    if (cpu.active_count > 1) {
-        // Pop the next page from the batch and set it as the new head.
-        const next_page = mm.pfn_to_struct_page(batch.free.next_pfn);
-        cpu.active_batch = next_page;
-    } else {
-        cpu.active_batch = null;
-    }
+    _ = usable_memory.fetchSub(mm.page_size, .monotonic);
 
-    cpu.active_count -= 1;
+    const elem: *mm.PageFree = @fieldParentPtr("link", head);
+    const page: *mm.Page = @ptrCast(elem);
+    const phys_addr = mm.pfn_to_page(mm.struct_page_to_pfn(page));
 
-    return mm.pfn_to_page(mm.struct_page_to_pfn(batch));
+    list_lock.release(ipl);
+
+    return phys_addr;
 }
 
 /// Free a page of physical memory.
 pub fn free(addr: r.PAddr) void {
-    const ipl = ke.ipl.raise(.High);
-    defer ke.ipl.lower(ipl);
+    const page: *mm.Page = mm.pfn_to_struct_page(mm.page_to_pfn(addr));
 
-    const cpu = percpu.local();
+    const ipl = list_lock.acquire();
+    _ = usable_memory.fetchAdd(mm.page_size, .monotonic);
+    free_list.insert_head(&page.free.link);
+    list_lock.release(ipl);
+}
 
-    const page = mm.pfn_to_struct_page(mm.page_to_pfn(addr));
+/// Free a list of pages of physical memory.
+pub fn free_batch(head: *mm.Page, tail: *mm.Page, count: usize) void {
+    const ipl = list_lock.acquire();
 
-    page.free.next_pfn = mm.null_pfn;
-    page.free.batch_next = mm.null_pfn;
-    page.free.batch_count = 0;
+    tail.free.link.next = free_list.first();
+    free_list.insert_head(&head.free.link);
 
-    if (cpu.active_batch) |curr| {
-        // Add the page to the current batch.
-        page.free.next_pfn = mm.struct_page_to_pfn(curr);
-    } else {
-        page.free.next_pfn = mm.null_pfn;
-    }
+    _ = usable_memory.fetchAdd(count * mm.page_size, .monotonic);
 
-    cpu.active_batch = page;
-    cpu.active_count += 1;
-
-    if (cpu.active_count == batch_size) {
-        // The batch is full, move it to the depot.
-        page.free.batch_count = @intCast(cpu.active_count);
-
-        if (cpu.depot_count == cpu.depot.len) {
-            // The depot is full, push one batch back to the global pool to make room.
-            push_to_pool(cpu.depot[0]);
-
-            cpu.depot[0] = cpu.depot[1];
-            cpu.depot[1] = cpu.depot[2];
-            cpu.depot[2] = cpu.depot[3];
-            cpu.depot_count -= 1;
-        }
-
-        cpu.depot[cpu.depot_count] = cpu.active_batch.?;
-        cpu.depot_count += 1;
-
-        cpu.active_batch = null;
-        cpu.active_count = 0;
-    }
+    list_lock.release(ipl);
 }
 
 pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     memory_map = &boot_info.memory_map;
+    free_list.init();
 
     var total_usable_memory: usize = 0;
     log.info("physical memory map:", .{});

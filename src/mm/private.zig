@@ -17,6 +17,11 @@ pub const Space = struct {
     lock: ke.QSpinLock,
 };
 
+pub const PfnList = extern struct {
+    head: u32,
+    tail: u32,
+};
+
 pub const impl = switch (config.arch) {
     .amd64 => @import("amd64/impl.zig"),
     .um => @import("um/impl.zig"),

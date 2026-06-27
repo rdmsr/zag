@@ -1,6 +1,7 @@
 pub const private = @import("private.zig");
 
 const std = @import("std");
+const rtl = @import("rtl");
 
 pub const page_size = 4096;
 
@@ -17,13 +18,12 @@ pub const Space = private.Space;
 pub const Pfn = u32;
 pub const null_pfn: Pfn = std.math.maxInt(Pfn);
 
+pub const PageFree = extern struct {
+    link: rtl.List.Entry,
+};
+
 pub const Page = extern union {
-    free: extern struct {
-        // Fields used when the page is free.
-        next_pfn: Pfn,
-        batch_next: Pfn,
-        batch_count: u8,
-    },
+    free: PageFree,
 
     alloced: extern struct {
         slab_data: zone.Page,

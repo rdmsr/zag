@@ -105,7 +105,7 @@ pub const PMap = struct {
 
     /// Unmap a contiguous range of virtual pages.
     /// Returns a list threaded through PFNs of the unmapped physical pages if any.
-    pub fn unmap(self: *Self, va: r.VAddr, size: usize) ?mm.Pfn {
+    pub fn unmap(self: *Self, va: r.VAddr, size: usize) ?mi.PfnList {
         return self.impl.unmap(va, size);
     }
 

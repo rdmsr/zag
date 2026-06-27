@@ -25,9 +25,10 @@
 //!     the CPU (e.g. write CR3 or satp).
 
 const r = @import("root");
+const rtl = @import("rtl");
+const std = @import("std");
 const mm = r.mm;
 const mi = mm.private;
-const std = @import("std");
 
 pub const Level = struct {
     shift: u6,
@@ -112,13 +113,14 @@ pub fn RadixPmap(comptime Impl: type) type {
         /// Unmap a contiguous range of virtual pages.
         /// Only small pages are supported.
         /// Return a pfn that points to the physical pages that were unmapped.
-        pub fn unmap(self: *Self, va: r.VAddr, size: usize) ?mm.Pfn {
+        pub fn unmap(self: *Self, va: r.VAddr, size: usize) ?mi.PfnList {
             std.debug.assert(std.mem.isAligned(va, mm.page_size));
 
             var c = self.cursor(va);
 
             const npages: usize = size / mm.page_size;
-            var head_pfn: mm.Pfn = mm.null_pfn;
+            var list: rtl.List = undefined;
+            list.init();
 
             for (0..npages) |_| {
                 var level: usize = num_levels - 1;
@@ -133,8 +135,8 @@ pub fn RadixPmap(comptime Impl: type) type {
                         const addr = pte.address();
                         const pfn = mm.page_to_pfn(addr);
                         const page = mm.pfn_to_struct_page(pfn);
-                        page.free.next_pfn = head_pfn;
-                        head_pfn = pfn;
+                        list.insert_tail(&page.free.link);
+
                         c.tables[level][idx] = std.mem.zeroes(Impl.Pte);
                         break;
                     }
@@ -146,7 +148,12 @@ pub fn RadixPmap(comptime Impl: type) type {
                 c.advance(mm.page_size);
             }
 
-            return if (head_pfn == mm.null_pfn) null else head_pfn;
+            const head_free: *mm.PageFree = @fieldParentPtr("link", list.first());
+            const tail_free: *mm.PageFree = @fieldParentPtr("link", list.last());
+            const head: *mm.Page = @ptrCast(head_free);
+            const tail: *mm.Page = @ptrCast(tail_free);
+
+            return if (list.is_empty()) null else .{ .head = mm.struct_page_to_pfn(head), .tail = mm.struct_page_to_pfn(tail) };
         }
 
         /// Ensure all intermediate page tables down to `target_level` exist for
