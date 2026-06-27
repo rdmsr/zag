@@ -1,3 +1,4 @@
+//! Very bad and slow framebuffer console.
 const r = @import("root");
 
 const pl = r.pl;
@@ -144,8 +145,23 @@ fn newline() void {
     }
 }
 
-fn write_char(c: u8) void {
+pub fn write_char(c: u8) void {
     if (font.width == 0 or font.height == 0 or content_w < font.width or visible_h < font.height) {
+        return;
+    }
+
+    // Backspace.
+    if (c == '\x08') {
+        if (cursor_x >= font.width) {
+            cursor_x -= font.width;
+            ensure_cursor_visible();
+            for (0..font.height) |row| {
+                const dst_y = content_y + cursor_y + row;
+                for (0..font.width) |col| {
+                    framebuffer[dst_y * framebuffer_width + content_x + cursor_x + col] = bg_color;
+                }
+            }
+        }
         return;
     }
 
