@@ -82,7 +82,7 @@ pub const Thread = struct {
     /// If it is pinned, then it can't be moved across another CPU.
     pinned: bool,
     /// Current state of the thread.
-    state: State,
+    state: std.atomic.Value(State),
     /// Linkage into a scheduler run queue.
     runq_link: rtl.List.Entry,
     /// Last CPU this thread ran on.
@@ -127,7 +127,7 @@ pub const Thread = struct {
             .sleep_time = 0,
             .run_time = 0,
             .pinned = false,
-            .state = .Ready,
+            .state = .init(.Ready),
             .runq_link = .{},
             .last_cpu = null,
             .cpu = null,
