@@ -227,7 +227,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
 
     const pfndb_size_required = @sizeOf(mm.Page) * (std.math.divCeil(usize, total_usable_memory, mm.page_size) catch unreachable);
 
-    log.info("using {} KiB for pfndb", .{pfndb_size_required / 1024});
+    log.info("using {} KiB for pfndb ({} bytes per page)", .{ pfndb_size_required / 1024, @sizeOf(mm.Page) });
 
     // Create the kernel pagemap from the early allocator.
     mi.impl.init_kernel();
