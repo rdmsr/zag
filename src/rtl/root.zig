@@ -13,6 +13,7 @@ pub const RBTree = @import("rbtree.zig").RBTree;
 pub const AVLTree = @import("avl.zig").AVLTree;
 pub const BitMap = @import("bitmap.zig").BitMap;
 pub const AtomicBitMap = @import("bitmap.zig").AtomicBitMap;
+pub const HandoffList = @import("handoff.zig").HandoffList;
 
 /// Asserts that a given type `T` matches the schema declared by `I`.
 /// This includes public methods and fields.
