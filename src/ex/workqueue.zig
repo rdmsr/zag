@@ -38,8 +38,8 @@ pub const WorkItem = struct {
         }
     };
 
-    pub fn init(priority: Priority, func: *const fn (arg: ?*anyopaque) void, arg: ?*anyopaque) WorkItem {
-        return .{
+    pub fn init(self: *WorkItem, priority: Priority, func: *const fn (arg: ?*anyopaque) void, arg: ?*anyopaque) void {
+        self.* = .{
             .func = func,
             .arg = arg,
             .link = undefined,

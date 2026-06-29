@@ -33,6 +33,9 @@ pub const ipl = struct {
 
 pub const thread = struct {
     pub const init = p.thread.init;
+    pub const exit = p.thread.exit;
+    pub const current = p.thread.current;
+    pub const reaper_list = &p.thread.reaper_list;
 };
 
 pub const dpc = struct {
@@ -51,6 +54,7 @@ pub const sched = struct {
     pub const block = p.sched.block;
     pub const unblock = p.sched.unblock;
     pub const late_init = p.sched.late_init;
+    pub const yield = p.sched.yield;
 };
 
 pub const timer = struct {

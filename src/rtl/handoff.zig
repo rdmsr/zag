@@ -41,6 +41,8 @@ pub const HandoffList = struct {
     }
 
     /// Pop the entire list and process it.
+    /// The callback takes the object pointer as its first parameter
+    /// and ctx as its second.
     pub fn process(self: *Self, callback: *const fn (*anyopaque, ?*anyopaque) void, ctx: ?*anyopaque) void {
         while (true) {
             const head = self.head.swap(processing_tag, .acquire);

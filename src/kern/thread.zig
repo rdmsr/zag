@@ -108,6 +108,8 @@ pub const Thread = struct {
     /// Queue this thread is associated with.
     queue: ?*ke.Queue,
     queue_item: ?*rtl.List.Entry,
+    /// Base of the stack.
+    stack: r.VAddr,
 
     /// Initialize a thread.
     /// - `stack`: Address of the **base** of the stack on which the initial context for the thread is built
@@ -142,6 +144,7 @@ pub const Thread = struct {
             .waiting_on = null,
             .queue = null,
             .queue_item = null,
+            .stack = stack,
         };
 
         thread.turnstiles_owned.init();
@@ -167,3 +170,27 @@ pub const Thread = struct {
         return self.priority >= Priority.low_interactive and self.priority <= Priority.high_interactive;
     }
 };
+
+/// HandoffList of threads waiting to be reaped.
+/// This is managed by the process subsystem.
+pub var reaper_list: rtl.HandoffList = undefined;
+
+/// Terminate the currently running thread.
+/// This does not return.
+pub fn exit() void {
+    _ = ke.ipl.raise(.Dispatch);
+    const curtd = current();
+
+    curtd.lock.acquire_no_ipl();
+    curtd.state.store(.Zombie, .monotonic);
+
+    // Reuse the runq linkage to put on reaper list.
+    reaper_list.insert(@ptrCast(&curtd.runq_link.next));
+
+    ki.sched.yield_locked();
+}
+
+/// Return the currently running thread.
+pub fn current() *ke.Thread {
+    return ki.sched.percpu.local().current_thread.?;
+}

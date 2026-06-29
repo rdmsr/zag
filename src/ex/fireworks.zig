@@ -150,8 +150,7 @@ fn particle(param: ?*anyopaque) void {
         data.vel_y += @divTrunc(int_to_fp(10) * delay, 1000);
     }
 
-    // Now block.
-    ke.sched.block();
+    ps.thread.exit();
 }
 
 fn spawn_particle(arg: ?*anyopaque) void {
@@ -214,7 +213,7 @@ fn explodeable(_: ?*anyopaque) void {
         spawn_particle(param);
     }
 
-    ke.sched.block();
+    ps.thread.exit();
 }
 
 pub fn start(param: ?*anyopaque) void {
@@ -238,6 +237,8 @@ pub fn start(param: ?*anyopaque) void {
         for (0..spawn_count) |_| {
             spawn_explodeable();
         }
+
+        std.log.info("async: {}, sync: {}, usable memory: {} KiB", .{ mm.private.tlb.async_shootdowns.load(.monotonic), mm.private.tlb.sync_shootdowns.load(.monotonic), mm.private.phys.usable_memory.load(.monotonic) / 1024 });
 
         perform_delay(2000);
     }
