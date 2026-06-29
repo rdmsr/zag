@@ -231,6 +231,27 @@ pub fn enqueue(td: *ke.Thread) void {
     td.lock.release(ipl);
 }
 
+/// Yield on the current CPU.
+pub fn yield() void {
+    const ipl = ke.ipl.raise(.Dispatch);
+    const td = percpu.local().current_thread.?;
+
+    td.lock.acquire_no_ipl();
+
+    const cpu = percpu.local();
+    if (td != cpu.idle_thread and td.state.load(.monotonic) == .Running) {
+        cpu.queues_lock.acquire_no_ipl();
+        insert_in_queue(cpu, td, false);
+        td.cpu = ke.cpu.current();
+        cpu.queues_lock.release_no_ipl();
+    }
+
+    yield_locked();
+
+    // td lock released
+    ke.ipl.lower(ipl);
+}
+
 /// Block the currently running thread.
 pub fn block() void {
     const ipl = ke.ipl.raise(.Dispatch);
@@ -249,7 +270,44 @@ pub fn block_locked(curtd: *ke.Thread) void {
     curtd.sleep_start = ke.time.read_time();
     curtd.runq = null;
 
-    yield(ke.cpu.current());
+    yield_locked();
+}
+
+/// Yield the current CPU with the current thread already locked at Dispatch IPL.
+pub fn yield_locked() void {
+    const sched_cpu = percpu.local();
+
+    sched_cpu.queues_lock.acquire_no_ipl();
+
+    const cur = sched_cpu.current_thread;
+    var next = sched_cpu.next_thread;
+
+    if (next != null) {
+        sched_cpu.next_thread = null;
+    } else {
+        // Pick a new thread to run.
+        next = select_thread(null, sched_cpu, false);
+    }
+
+    if (next == null) {
+        // Nothing to run, go idle.
+        next = sched_cpu.idle_thread;
+        sched_cpu.steal_work = true;
+    }
+
+    sched_cpu.queues_lock.release_no_ipl();
+
+    if (next != null and cur.? != next.?) {
+        // Switch into the thread. Take its lock here to ensure it is not still on its stack.
+        next.?.lock.acquire_no_ipl();
+        next.?.lock.release_no_ipl();
+
+        do_switch(sched_cpu, cur.?, next.?);
+    } else {
+        cur.?.lock.release_no_ipl();
+    }
+
+    // cur lock dropped
 }
 
 pub fn unblock_locked(td: *ke.Thread) void {
@@ -854,43 +912,6 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
 
     // Do machine-dependent switch.
     cur.context.switch_to(&next.context);
-}
-
-// Yield on `cpu`
-fn yield(cpu: u32) void {
-    const sched_cpu = percpu.remote(cpu);
-
-    sched_cpu.queues_lock.acquire_no_ipl();
-
-    const cur = sched_cpu.current_thread;
-    var next = sched_cpu.next_thread;
-
-    if (next != null) {
-        sched_cpu.next_thread = null;
-    } else {
-        // Pick a new thread to run.
-        next = select_thread(null, sched_cpu, false);
-    }
-
-    if (next == null) {
-        // Nothing to run, go idle.
-        next = sched_cpu.idle_thread;
-        sched_cpu.steal_work = true;
-    }
-
-    sched_cpu.queues_lock.release_no_ipl();
-
-    if (next != null and cur.? != next.?) {
-        // Switch into the thread. Take its lock here to ensure it is not still on its stack.
-        next.?.lock.acquire_no_ipl();
-        next.?.lock.release_no_ipl();
-
-        do_switch(sched_cpu, cur.?, next.?);
-    } else {
-        cur.?.lock.release_no_ipl();
-    }
-
-    // cur lock dropped
 }
 
 fn find_most_loaded(exclude: ?*ke.CpuMask) ?u32 {

@@ -21,10 +21,10 @@ pub fn init(boot_info: *pl.BootInfo) void {
     exp.console.init();
 
     if (boot_info.framebuffer != null) {
-        fbconsole.init(boot_info);
+        //   fbconsole.init(boot_info);
 
-        //   const t = ps.thread.create_kernel(ke.Thread.Priority.default, ex.fireworks.start, boot_info) catch @panic("oom");
-        //  ke.sched.enqueue(&t.kern);
+        const t = ps.thread.create_kernel(ke.Thread.Priority.default, ex.fireworks.start, boot_info) catch @panic("oom");
+        ke.sched.enqueue(&t.kern);
     }
 
     while (true) {

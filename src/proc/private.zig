@@ -25,4 +25,5 @@ fn turnstile_ctor(ts: *ki.turnstile.Turnstile) void {
 /// Initialize the process subsystem.
 pub fn init() void {
     turnstile_zone.init("turnstiles", .{ .ctor = turnstile_ctor });
+    thread.init();
 }
