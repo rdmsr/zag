@@ -53,9 +53,10 @@ const ContiguousSource = struct {
 /// returns a single page, so this is intended to be consumed by `map_from` in a loop until the entire range is mapped.
 const AllocatingSource = struct {
     flags: mm.MapFlags,
+    policy: mm.WaitPolicy,
 
     pub fn next(self: *const AllocatingSource, _: r.VAddr) MapItem {
-        const pa = mi.phys.alloc();
+        const pa = mi.phys.alloc_opts(.{ .policy = self.policy }) orelse @panic("Out of memory");
         return .{
             .pa = pa,
             .len = mm.page_size,
@@ -95,9 +96,10 @@ pub const PMap = struct {
     }
 
     /// Map a virtual address range to physical addresses allocated on demand.
-    pub fn map_range_allocating(self: *Self, va: r.VAddr, size: usize, flags: mm.MapFlags) void {
+    pub fn map_range_allocating(self: *Self, va: r.VAddr, size: usize, flags: mm.MapFlags, policy: mm.WaitPolicy) void {
         const src = AllocatingSource{
             .flags = flags,
+            .policy = policy,
         };
 
         self.map_from(va, size, src);

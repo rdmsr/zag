@@ -14,7 +14,7 @@ const ke = @import("root").ke;
 pub const Space = struct {
     pmap: PMap,
     arena: vmem.Arena,
-    lock: ke.QSpinLock,
+    lock: ke.Mutex,
 };
 
 pub const PfnList = extern struct {

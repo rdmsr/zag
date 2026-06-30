@@ -40,6 +40,11 @@ pub const MapFlags = packed struct {
     cache_disable: bool = false,
 };
 
+pub const WaitPolicy = enum {
+    WaitForMemory,
+    DontWaitForMemory,
+};
+
 pub const Error = error{ OutOfMemory, InvalidAddress, InvalidSize };
 
 pub inline fn page_to_pfn(addr: usize) Pfn {
