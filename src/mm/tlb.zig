@@ -20,10 +20,11 @@ fn reclaim_state(state: *ke.ShootdownState) void {
     const npages = state.npages;
 
     // Reclaim the virtual address space.
-    const ipl = space.lock.acquire();
+    space.lock.acquire();
 
     space.arena.free(base, @as(usize, npages) * mm.page_size) catch unreachable;
-    space.lock.release(ipl);
+
+    space.lock.release();
 
     _ = async_shootdowns.fetchAdd(1, .monotonic);
 

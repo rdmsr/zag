@@ -107,7 +107,7 @@ pub fn init() linksection(r.init) void {
         // copy the offset into the AP's self_offset variable
         @as(*usize, @ptrCast(@alignCast(&cpu_data[self_offset_offset]))).* = ki.impl.cpu_offsets[cpu_id];
 
-        const stack_top = @intFromPtr(mm.heap.alloc(r.kib(32)) catch @panic("Failed to allocate AP stack")) + r.kib(32);
+        const stack_top = @intFromPtr(mm.heap.alloc(r.kib(32), .DontWaitForMemory) catch @panic("Failed to allocate AP stack")) + r.kib(32);
 
         start_stack.remote(@intCast(cpu_id)).* = stack_top & ~@as(usize, 15);
 

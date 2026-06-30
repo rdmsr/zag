@@ -11,6 +11,7 @@ const mm = r.mm;
 const kernel_thread_stack_size = r.kib(16);
 
 var reaper_item: ex.WorkItem = undefined;
+var thread_zone: mm.zone.TypedZone(Thread) = undefined;
 
 /// Higher-level wrapper over a thread.
 pub const Thread = struct {
@@ -28,7 +29,7 @@ fn reap_thread(obj: *anyopaque, _: ?*anyopaque) void {
 
     psp.turnstile_zone.destroy(td.kern.turnstile);
     mm.heap.free(td.kern.stack, kernel_thread_stack_size);
-    mm.zone.gpa.destroy(td);
+    thread_zone.destroy(td);
 }
 
 fn reaper_fn(_: ?*anyopaque) void {
@@ -40,6 +41,7 @@ fn activation(_: *rtl.HandoffList) void {
 }
 
 pub fn init() void {
+    thread_zone.init("thread", .{});
     ke.thread.reaper_list.* = .init(activation);
     reaper_item.init(.High, reaper_fn, null);
 }
@@ -49,8 +51,8 @@ pub fn init() void {
 /// - `entry`: entry point.
 /// - `arg`: argument passed to `entry`.
 pub fn create_kernel(prio: u8, entry: *const fn (arg: ?*anyopaque) void, arg: ?*anyopaque) !*Thread {
-    var td = try mm.zone.gpa.create(Thread);
-    const stack = try mm.heap.alloc(kernel_thread_stack_size);
+    var td = try thread_zone.create();
+    const stack = try mm.heap.alloc(kernel_thread_stack_size, .WaitForMemory);
 
     td.kern.init(@intFromPtr(stack), kernel_thread_stack_size, prio, entry, arg);
     td.kern.turnstile = try psp.turnstile_zone.create();

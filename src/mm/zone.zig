@@ -258,7 +258,7 @@ pub const Zone = struct {
     /// Current color for slab coloring.
     color: usize,
     /// Zone lock.
-    lock: ke.QSpinLock,
+    lock: ke.Mutex,
     /// List of full slabs in this zone.
     full_slabs: rtl.List,
     /// List of partial slabs in this zone.
@@ -344,9 +344,7 @@ pub const Zone = struct {
     }
 
     /// Allocate an object from the zone.
-    pub fn alloc(self: *Self) mm.Error!*anyopaque {
-        const ipl = ke.ipl.raise(.Dispatch);
-        defer ke.ipl.lower(ipl);
+    pub fn alloc(self: *Self, opts: struct { policy: mm.WaitPolicy = .WaitForMemory }) mm.Error!*anyopaque {
         var buf: *anyopaque = undefined;
 
         // Try grabbing an object from the magazine layer.
@@ -354,8 +352,8 @@ pub const Zone = struct {
             @branchHint(.likely);
             const cpu = &self.cpus[ke.cpu.current()];
 
-            cpu.lock.acquire_no_ipl();
-            defer cpu.lock.release_no_ipl();
+            const ipl = cpu.lock.acquire();
+            defer cpu.lock.release(ipl);
 
             while (true) {
                 if (cpu.alloc_rounds > 0) {
@@ -407,13 +405,17 @@ pub const Zone = struct {
         }
 
         // Fall back to the slab layer.
-        self.lock.acquire_no_ipl();
-        defer self.lock.release_no_ipl();
+        self.lock.acquire();
+        defer self.lock.release();
 
         var slab: *Slab = undefined;
 
         if (self.partial_slabs.is_empty()) {
-            slab = try self.slab_create();
+            self.lock.release();
+
+            slab = try self.slab_create(opts.policy);
+
+            self.lock.acquire();
             self.partial_slabs.insert_tail(&slab.link);
         } else {
             slab = @fieldParentPtr("link", self.partial_slabs.first());
@@ -446,16 +448,14 @@ pub const Zone = struct {
 
     /// Free an object back to the zone.
     pub fn free(self: *Self, obj: *anyopaque) void {
-        const ipl = ke.ipl.raise(.Dispatch);
-        defer ke.ipl.lower(ipl);
-
         if (magazines_initialized and self.use_magazines) {
             @branchHint(.likely);
 
-            const cpu = &self.cpus[ke.cpu.current()];
+            const ipl = ke.ipl.raise(.Dispatch);
+            var cpu = &self.cpus[ke.cpu.current()];
 
             cpu.lock.acquire_no_ipl();
-            defer cpu.lock.release_no_ipl();
+            defer cpu.lock.release(ipl);
 
             while (true) {
                 if (cpu.free != null and cpu.free_rounds < cpu.magazine_size) {
@@ -495,11 +495,7 @@ pub const Zone = struct {
                 }
 
                 // No empty magazine in the depot, try to allocate a new one.
-                cpu.lock.release_no_ipl();
-
-                const new_mag: ?*Magazine = @ptrCast(@alignCast(self.magtype.?.zone.alloc() catch null));
-
-                cpu.lock.acquire_no_ipl();
+                const new_mag: ?*Magazine = @ptrCast(@alignCast(self.magtype.?.zone.alloc(.{ .policy = .DontWaitForMemory }) catch null));
 
                 if (new_mag) |m| {
                     self.free_to_depot(m, &self.empty_mags);
@@ -518,8 +514,8 @@ pub const Zone = struct {
             fill_with_poison(obj, self.obj_size, free_poison);
         }
 
-        self.lock.acquire_no_ipl();
-        defer self.lock.release_no_ipl();
+        self.lock.acquire();
+        defer self.lock.release();
 
         // Find the slab for the buffer.
         const slab: *Slab = if (self.obj_size > small_slab_size) blk: {
@@ -551,8 +547,8 @@ pub const Zone = struct {
         }
     }
 
-    fn alloc_page() !*anyopaque {
-        const alloc_ret = mi.phys.alloc();
+    fn alloc_page(policy: mm.WaitPolicy) !*anyopaque {
+        const alloc_ret = mi.phys.alloc_opts(.{ .policy = policy }) orelse return error.OutOfMemory;
         return @ptrFromInt(mm.p2v(alloc_ret));
     }
 
@@ -562,8 +558,8 @@ pub const Zone = struct {
         mi.phys.free(phys);
     }
 
-    fn slab_create_small(self: *Self) mm.Error!*Slab {
-        const buf = try alloc_page();
+    fn slab_create_small(self: *Self, policy: mm.WaitPolicy) mm.Error!*Slab {
+        const buf = try alloc_page(policy);
 
         // We employ a simple coloring scheme; every time a slab is created,
         // the color is shifted by the alignment. This is done until we reach the
@@ -604,7 +600,7 @@ pub const Zone = struct {
         return slab;
     }
 
-    fn slab_create_large(self: *Self) mm.Error!*Slab {
+    fn slab_create_large(self: *Self, policy: mm.WaitPolicy) mm.Error!*Slab {
         self.color += self.alignment;
 
         if (self.color > self.max_color) {
@@ -612,7 +608,7 @@ pub const Zone = struct {
         }
 
         const capacity = (self.slab_size - self.color) / self.chunk_size;
-        const buf = try mi.heap.alloc(self.slab_size);
+        const buf = try mi.heap.alloc(self.slab_size, policy);
 
         var ret: *Slab = @ptrCast(@alignCast(try gpa.alloc(u8, @sizeOf(Slab) + Slab.bitmap_bytes(capacity))));
 
@@ -648,11 +644,11 @@ pub const Zone = struct {
         return ret;
     }
 
-    fn slab_create(self: *Self) mm.Error!*Slab {
+    fn slab_create(self: *Self, policy: mm.WaitPolicy) mm.Error!*Slab {
         if (self.obj_size <= small_slab_size) {
-            return self.slab_create_small();
+            return self.slab_create_small(policy);
         } else {
-            return self.slab_create_large();
+            return self.slab_create_large(policy);
         }
     }
 
@@ -723,7 +719,7 @@ pub fn TypedZone(comptime T: type) type {
         }
 
         pub fn create(self: *Self) mm.Error!*T {
-            const ret = try self.zone.alloc();
+            const ret = try self.zone.alloc(.{});
             return @ptrCast(@alignCast(ret));
         }
 
@@ -794,12 +790,12 @@ fn gpa_alloc(
     if (len > 2048) {
         if (ptr_align.toByteUnits() > mm.page_size) return null;
         const pages = std.mem.alignForward(usize, len, mm.page_size);
-        const ptr = mi.heap.alloc(pages) catch return null;
+        const ptr = mi.heap.alloc(pages, .WaitForMemory) catch return null;
         return @ptrCast(ptr);
     }
 
     const zone = zone_for(len, ptr_align.toByteUnits()) orelse return null;
-    const obj = zone.alloc() catch return null;
+    const obj = zone.alloc(.{}) catch return null;
     return @ptrCast(obj);
 }
 

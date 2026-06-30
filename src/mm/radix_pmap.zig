@@ -148,12 +148,14 @@ pub fn RadixPmap(comptime Impl: type) type {
                 c.advance(mm.page_size);
             }
 
+            if (list.is_empty()) return null;
+
             const head_free: *mm.PageFree = @fieldParentPtr("link", list.first());
             const tail_free: *mm.PageFree = @fieldParentPtr("link", list.last());
             const head: *mm.Page = @ptrCast(head_free);
             const tail: *mm.Page = @ptrCast(tail_free);
 
-            return if (list.is_empty()) null else .{ .head = mm.struct_page_to_pfn(head), .tail = mm.struct_page_to_pfn(tail) };
+            return .{ .head = mm.struct_page_to_pfn(head), .tail = mm.struct_page_to_pfn(tail) };
         }
 
         /// Ensure all intermediate page tables down to `target_level` exist for

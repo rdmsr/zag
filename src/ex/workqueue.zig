@@ -146,10 +146,6 @@ pub fn enqueue(item: *WorkItem) void {
 
 /// Initialize the workqueue subsystem.
 pub fn init() !void {
-    // Ensure readying the threads doesn't preempt us.
-    const ipl = ke.ipl.raise(.Dispatch);
-    defer ke.ipl.lower(ipl);
-
     for (0..ke.ncpus) |cpu| {
         const c = percpu.remote(@intCast(cpu));
 
