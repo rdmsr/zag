@@ -13,6 +13,10 @@ pub const Mutex = struct {
         return .{ .owner = .init(null) };
     }
 
+    pub fn is_locked(self: *Mutex) bool {
+        return self.owner.load(.monotonic) != null;
+    }
+
     pub fn acquire(m: *Mutex) void {
         const ipl = ke.ipl.raise(.Dispatch);
         const curtd = ki.sched.percpu.local().current_thread.?;
