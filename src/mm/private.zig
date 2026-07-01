@@ -1,6 +1,5 @@
 const config = @import("config");
 pub const phys = @import("phys.zig");
-pub const radix_pmap = @import("radix_pmap.zig");
 pub const pmap = @import("pmap.zig");
 pub const init = @import("init.zig");
 pub const vmem = @import("vmem.zig");
@@ -20,6 +19,12 @@ pub const Space = struct {
 pub const PfnList = extern struct {
     head: u32,
     tail: u32,
+};
+
+pub const PMapLevel = struct {
+    shift: u6,
+    mask: usize,
+    leaf: bool,
 };
 
 pub const impl = switch (config.arch) {

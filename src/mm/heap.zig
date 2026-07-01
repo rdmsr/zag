@@ -8,16 +8,33 @@ pub fn init() void {
 }
 
 pub fn alloc(size: usize, policy: mm.WaitPolicy) mm.Error!*anyopaque {
-    _ = policy;
-
     mi.kernel_space.lock.acquire();
 
-    const addr = try mi.kernel_space.arena.alloc(size, .{});
+    const addr = mi.kernel_space.arena.alloc(size, .{}) catch {
+        mi.kernel_space.lock.release();
+        return mm.Error.OutOfMemory;
+    };
 
-    mi.kernel_space.pmap.map_range_allocating(addr, size, .{ .read = true, .write = true }, .DontWaitForMemory);
+    const npages = size / mm.page_size;
+
+    for (0..npages) |i| {
+        const pte = mi.pmap.wire_pte(&mi.kernel_space, addr + (i * mm.page_size), policy) catch {
+            mi.kernel_space.lock.release();
+            return mm.Error.OutOfMemory;
+        };
+
+        mi.kernel_space.lock.release();
+
+        const page = mi.phys.alloc_opts(.{ .policy = policy }) orelse {
+            return mm.Error.OutOfMemory;
+        };
+
+        mi.kernel_space.lock.acquire();
+
+        pte.* = mi.impl.make_leaf_pte(page, .{ .read = true, .write = true }, 0);
+    }
 
     mi.kernel_space.lock.release();
-
     return @ptrFromInt(addr);
 }
 

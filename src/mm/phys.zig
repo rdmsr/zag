@@ -23,7 +23,7 @@ var free_pages: usize = 0;
 
 pub var usable_memory: std.atomic.Value(usize) = .init(0);
 
-fn early_alloc() usize {
+pub fn early_alloc() usize {
     while (early_alloc_entry_idx < memory_map.entry_count) {
         const entry = &memory_map.entries[early_alloc_entry_idx];
 
@@ -72,10 +72,6 @@ fn wait_for_pages(old_ipl: ke.Ipl) void {
 /// Allocate a page of physical memory.
 /// This may block if no memory is available.
 pub fn alloc() r.PAddr {
-    if (!bootstrapped) {
-        @branchHint(.unlikely);
-        return early_alloc();
-    }
     const ipl = list_lock.acquire();
     defer list_lock.release(ipl);
 
@@ -97,11 +93,6 @@ pub fn alloc() r.PAddr {
 }
 
 pub fn alloc_opts(opts: struct { policy: mm.WaitPolicy }) ?r.PAddr {
-    if (!bootstrapped) {
-        @branchHint(.unlikely);
-        return early_alloc();
-    }
-
     const ipl = list_lock.acquire();
     defer list_lock.release(ipl);
 
@@ -216,7 +207,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
                 .write = true,
                 .global = true,
             },
-            .DontWaitForMemory,
+            .Boot,
         );
     }
 }

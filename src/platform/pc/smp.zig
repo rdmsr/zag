@@ -55,7 +55,7 @@ pub fn init() linksection(r.init) void {
         .read = true,
         .write = true,
         .execute = true,
-    });
+    }, .Normal);
 
     // From Linux, on modern CPUs we can skip the long delay after INIT.
     const skip_delay = switch (amd64.cpu_features.vendor) {
