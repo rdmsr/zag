@@ -10,6 +10,7 @@ const ps = r.ps;
 
 pub var sync_shootdowns: std.atomic.Value(usize) = .init(0);
 pub var async_shootdowns: std.atomic.Value(usize) = .init(0);
+pub var sent_shootdowns: std.atomic.Value(usize) = .init(0);
 
 /// Reclaim the memory associated with a state.
 /// This can only be done when all CPUs have flushed their TLB.
@@ -26,10 +27,10 @@ fn reclaim_state(state: *ke.ShootdownState) void {
 
     space.lock.release();
 
-    _ = async_shootdowns.fetchAdd(1, .monotonic);
-
     // Free the physical pages
     mm.phys.free_batch(mm.pfn_to_struct_page(pfn_list.head), mm.pfn_to_struct_page(pfn_list.tail), npages);
+
+    _ = async_shootdowns.fetchAdd(1, .monotonic);
 
     // Release the slot after all copied state has been consumed.
     state.release();
@@ -40,7 +41,6 @@ fn worker_thread(_: ?*anyopaque) void {
         const entry = ke.shootdown.shootdowns.remove();
         const state: *ke.ShootdownState = @fieldParentPtr("link", entry);
 
-        _ = async_shootdowns.fetchAdd(1, .monotonic);
         reclaim_state(state);
     }
 }
