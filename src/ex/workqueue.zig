@@ -111,9 +111,8 @@ fn work_loop(p: ?*anyopaque) void {
         const item = pool.queue.remove();
         const work: *WorkItem = @fieldParentPtr("link", item);
 
-        work.func(work.arg);
-
         work.enqueued.store(false, .release);
+        work.func(work.arg);
     }
 }
 
