@@ -80,7 +80,9 @@ pub fn log(
     ringbuffer.publish(res);
 
     // Signal whomever is waiting on logs to get published.
-    event.signal();
+    if (@intFromEnum(ke.ipl.current()) <= @intFromEnum(ke.Ipl.Dispatch)) {
+        event.signal();
+    }
 
     var writer = DebugWriter.init();
 
