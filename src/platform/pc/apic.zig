@@ -199,7 +199,11 @@ fn timer_init() linksection(r.init) void {
 pub fn arm_timer(ns: r.Nanoseconds) void {
     if (amd64.cpu_features.tsc_deadline) {
         const now = amd64.rdtsc();
-        const deadline = now + (ns * tsc.tsc_timer.frequency / std.time.ns_per_s);
+
+        const delta: u64 = @intCast((@as(u128, ns) * tsc.tsc_timer.frequency) / std.time.ns_per_s);
+
+        const deadline = now +% delta;
+
         amd64.write_msr(.TscDeadline, deadline);
         return;
     }
