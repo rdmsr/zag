@@ -103,9 +103,7 @@ fn map_kernel(boot_info: *pl.BootInfo) void {
 
 pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     mi.phys.init(boot_info);
-    if (config.arch != .um) {
-        map_kernel(boot_info);
-    }
+    map_kernel(boot_info);
     mi.kernel_space.pmap.activate();
     mi.phys.init_pfndb();
     mi.zone.early_init();

@@ -56,8 +56,6 @@ pub const std_options = std.Options{
 
 pub const panic = std.debug.FullPanic(ke.panic);
 
-pub const main = if (config.arch == .um) pl.impl.entry.main else undefined;
-
 comptime {
     // Ensure the entry point is linked in.
     _ = @import("boot/limine/entry.zig");

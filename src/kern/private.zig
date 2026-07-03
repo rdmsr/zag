@@ -5,7 +5,6 @@ const rtl = @import("rtl");
 
 pub const impl = switch (config.arch) {
     .amd64 => @import("amd64/impl.zig"),
-    .um => @import("um/impl.zig"),
     else => @compileError("unsupported architecture"),
 };
 

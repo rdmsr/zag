@@ -9,7 +9,6 @@
             .options = .{
                 .{ .value = "amd64" },
                 .{ .value = "aarch64" },
-                .{ .value = "um", .label = "Usermode (Linux)" },
             },
         },
         .{
@@ -19,11 +18,6 @@
             .default = .{ .choice = "limine" },
             .options = .{
                 .{ .value = "limine", .label = "Limine" },
-            },
-            .depends_on = .{
-                .not = .{
-                    .key_eq = .{ .key = "arch", .value = "um" },
-                },
             },
         },
         .{
@@ -37,7 +31,6 @@
                     .default = .{ .int = 10 },
                     .help = "This option sets the default time slice (in milliseconds) used by the scheduler.",
                 },
-
                 .{
                     .kind = .int,
                     .key = "sched_balance_interval",
@@ -45,7 +38,6 @@
                     .default = .{ .int = 1000 },
                     .help = "This option sets the rate (in milliseconds) at which thread load balancing is performed.",
                 },
-
                 .{
                     .kind = .int,
                     .key = "ncpus",
@@ -54,7 +46,6 @@
                     .range = .{ .min = 1, .max = 16384 },
                     .help = "This option sets the maximum number of CPUs the kernel can support.",
                 },
-
                 .{
                     .kind = .int,
                     .key = "log_buffer_shift",
@@ -62,11 +53,9 @@
                     .default = .{ .int = 14 },
                     .help = "This option sets the size of the kernel log buffer as a power of two. The actual size is calculated as 2 raised to the power of this value (i.e., 2^LOG_BUFFER_SHIFT bytes).",
                 },
-
                 .{
                     .kind = .menu,
                     .label = "Memory Management Options",
-
                     .entries = .{
                         .{
                             .kind = .menu,
