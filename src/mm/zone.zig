@@ -11,7 +11,63 @@ const config = @import("config");
 const std = @import("std");
 const ke = r.ke;
 const mm = r.mm;
+const ex = r.ex;
 const mi = mm.private;
+
+/// Interval at which we do housekeeping (working set update, reaping, etc.)
+const update_interval = std.time.ns_per_s * 15;
+var update_work_item: ex.WorkItem = undefined;
+
+/// Fixed point conversion for WMA computation.
+const wma_unit = 256;
+
+/// Default slab alignment.
+const slab_align = 8;
+
+/// Global count of zones.
+const zones_num = 32;
+
+/// Every power-of-two-size from 8 to 2048 (inclusively).
+const generic_zones_num = 9;
+
+const generic_zone_names = [_][]const u8{
+    "zone-8",
+    "zone-16",
+    "zone-32",
+    "zone-64",
+    "zone-128",
+    "zone-256",
+    "zone-512",
+    "zone-1024",
+    "zone-2048",
+};
+
+/// 1/8th of a page.
+const small_slab_size = 512;
+
+/// Generic zones for power-of-two sizes from 8 to 2048.
+var generic_zones: [generic_zones_num]Zone = undefined;
+
+var magazines_initialized = false;
+var all_zones: ?*Zone = null;
+var zone_list_lock: ke.Mutex = .init();
+
+var magtypes = [_]MagazineType{
+    .{ .rounds = 1, .alignment = 8, .minbuf = 3200, .maxbuf = 65536, .zone = undefined },
+    .{ .rounds = 3, .alignment = 16, .minbuf = 256, .maxbuf = 32768, .zone = undefined },
+    .{ .rounds = 7, .alignment = 32, .minbuf = 64, .maxbuf = 16384, .zone = undefined },
+    .{ .rounds = 15, .alignment = 64, .minbuf = 0, .maxbuf = 8192, .zone = undefined },
+    .{ .rounds = 31, .alignment = 64, .minbuf = 0, .maxbuf = 4096, .zone = undefined },
+    .{ .rounds = 47, .alignment = 64, .minbuf = 0, .maxbuf = 2048, .zone = undefined },
+    .{ .rounds = 63, .alignment = 64, .minbuf = 0, .maxbuf = 1024, .zone = undefined },
+    .{ .rounds = 95, .alignment = 64, .minbuf = 0, .maxbuf = 512, .zone = undefined },
+    .{ .rounds = 143, .alignment = 64, .minbuf = 0, .maxbuf = 0, .zone = undefined },
+};
+
+const alloc_poison: u32 = 0xBADDC0DE;
+const free_poison: u32 = 0xDEADBEEF;
+const is_poison_enabled = config.slab_poison;
+const should_check_poison = config.slab_check_poison;
 
 /// A slab is a contiguous memory region that holds multiple objects of the same type.
 const Slab = struct {
@@ -120,6 +176,17 @@ const Magazine = struct {
     }
 };
 
+const MagazineList = struct {
+    /// List of magazines.
+    list: ?*Magazine,
+    /// Number of magazines.
+    num: usize,
+    /// Minimum since last update
+    min: usize,
+    /// Weighted moving average of `min`.
+    wma: usize,
+};
+
 const MagazineType = struct {
     rounds: usize,
     alignment: usize,
@@ -147,54 +214,6 @@ const Cpu = struct {
 pub const Page = extern struct {
     slab: *Slab,
 };
-
-const initial_hash = 32;
-
-const slab_align = 8;
-
-/// Global count of zones.
-const zones_num = 32;
-
-/// Every power-of-two-size from 8 to 2048 (inclusively).
-const generic_zones_num = 9;
-
-const generic_zone_names = [_][]const u8{
-    "zone-8",
-    "zone-16",
-    "zone-32",
-    "zone-64",
-    "zone-128",
-    "zone-256",
-    "zone-512",
-    "zone-1024",
-    "zone-2048",
-};
-
-/// 1/8th of a page.
-const small_slab_size = 512;
-
-/// Generic zones for power-of-two sizes from 8 to 2048.
-var generic_zones: [generic_zones_num]Zone = undefined;
-
-var magazines_initialized = false;
-var all_zones: ?*Zone = null;
-
-var magtypes = [_]MagazineType{
-    .{ .rounds = 1, .alignment = 8, .minbuf = 3200, .maxbuf = 65536, .zone = undefined },
-    .{ .rounds = 3, .alignment = 16, .minbuf = 256, .maxbuf = 32768, .zone = undefined },
-    .{ .rounds = 7, .alignment = 32, .minbuf = 64, .maxbuf = 16384, .zone = undefined },
-    .{ .rounds = 15, .alignment = 64, .minbuf = 0, .maxbuf = 8192, .zone = undefined },
-    .{ .rounds = 31, .alignment = 64, .minbuf = 0, .maxbuf = 4096, .zone = undefined },
-    .{ .rounds = 47, .alignment = 64, .minbuf = 0, .maxbuf = 2048, .zone = undefined },
-    .{ .rounds = 63, .alignment = 64, .minbuf = 0, .maxbuf = 1024, .zone = undefined },
-    .{ .rounds = 95, .alignment = 64, .minbuf = 0, .maxbuf = 512, .zone = undefined },
-    .{ .rounds = 143, .alignment = 64, .minbuf = 0, .maxbuf = 0, .zone = undefined },
-};
-
-const alloc_poison: u32 = 0xBADDC0DE;
-const free_poison: u32 = 0xDEADBEEF;
-const is_poison_enabled = config.slab_poison;
-const should_check_poison = config.slab_check_poison;
 
 inline fn fill_with_poison(ptr: *anyopaque, len: usize, pattern: u32) void {
     const bytes: [*]u8 = @ptrCast(ptr);
@@ -240,6 +259,11 @@ inline fn check_poison(ptr: *anyopaque, len: usize, pattern: u32) bool {
     return true;
 }
 
+inline fn wma_mix(old: usize, new: usize) usize {
+    // Keep 75% of old sample and 25% of new.
+    return (3 * old + new * wma_unit) / 4;
+}
+
 pub const Zone = struct {
     /// Name used for debugging purposes.
     name: []const u8,
@@ -267,8 +291,8 @@ pub const Zone = struct {
     next: ?*Zone,
     depot_lock: ke.QSpinLock,
 
-    empty_mags: ?*Magazine,
-    full_mags: ?*Magazine,
+    empty_mags: MagazineList,
+    full_mags: MagazineList,
     magtype: ?*MagazineType,
     /// Per-CPU state.
     cpus: []Cpu,
@@ -315,9 +339,16 @@ pub const Zone = struct {
         self.lock = .init();
         self.use_magazines = options.magazines;
 
+        self.empty_mags = .{ .list = null, .min = 0, .num = 0, .wma = 0 };
+        self.full_mags = .{ .list = null, .min = 0, .num = 0, .wma = 0 };
+
+        zone_list_lock.acquire();
+
         const prev = all_zones;
         all_zones = self;
         self.next = prev;
+
+        zone_list_lock.release();
 
         self.magtype = null;
         for (&magtypes) |*mtype| {
@@ -507,6 +538,10 @@ pub const Zone = struct {
             }
         }
 
+        self.slab_free(obj);
+    }
+
+    fn slab_free(self: *Self, obj: *anyopaque) void {
         if (is_poison_enabled) {
             if (self.dtor) |dtor| {
                 dtor(obj);
@@ -545,6 +580,114 @@ pub const Zone = struct {
             self.slab_destroy(slab);
             return;
         }
+    }
+
+    /// Periodic updates on the zone.
+    /// Updates the working set and trims it if needed (for now, will do magazine resizing later...).
+    pub fn update(self: *Self) void {
+        const ipl = self.depot_lock.acquire();
+
+        // Update the working set size.
+        // This tracks the minimum number of magazines required, we assume it is safe
+        // to reclaim `min` magazines, since the number of magazines never went below that, and
+        // those magazines sat unused. e.g if the number of magazines ranged between 47 and 37 in an update
+        // interval, then the working set size is 10 and we can reclaim 37 magazines. We keep track of
+        // this in a weighted moving average (WMA) to bias recent utilization when trimming.
+        self.empty_mags.wma = wma_mix(self.empty_mags.wma, self.empty_mags.min);
+        self.empty_mags.min = self.empty_mags.num;
+
+        self.full_mags.wma = wma_mix(self.full_mags.wma, self.full_mags.min);
+        self.full_mags.min = self.full_mags.num;
+
+        const should_trim = self.trim_needed();
+
+        self.depot_lock.release(ipl);
+
+        if (should_trim) {
+            self.trim();
+        }
+    }
+
+    /// Returns whether or not we should trim excess magazines.
+    fn trim_needed(self: *Self) bool {
+        if (!self.use_magazines) return false;
+
+        const empty = @min(self.empty_mags.wma, self.empty_mags.min * wma_unit);
+
+        if (empty > config.excess_magazines * wma_unit) {
+            // Too many excess magazines.
+            return true;
+        }
+
+        const full = @min(self.full_mags.wma, self.full_mags.min * wma_unit);
+
+        const full_bytes = full * self.magtype.?.rounds * self.chunk_size;
+
+        if (full >= 2 * wma_unit and full_bytes >= r.kib(16) * wma_unit) {
+            // We have at least 2 excess full magazines and they take up at least 16 KiB.
+            return true;
+        }
+
+        return false;
+    }
+
+    /// Called when memory needs to be reaped from this zone.
+    /// This frees the excess magazines.
+    fn trim(self: *Self) void {
+        self.trim_maglist(&self.empty_mags, 0);
+        self.trim_maglist(&self.full_mags, self.magtype.?.rounds);
+    }
+
+    fn trim_maglist(self: *Self, maglist: *MagazineList, rounds: usize) void {
+        const ipl = self.depot_lock.acquire();
+
+        // Grab the magazines and WSS under the depot lock.
+        const target = @min(
+            maglist.min * wma_unit,
+            maglist.wma,
+        ) / wma_unit;
+
+        var removed_head: ?*Magazine = maglist.list;
+        var last_removed: ?*Magazine = null;
+        var removed: usize = 0;
+
+        for (0..target) |_| {
+            if (maglist.list) |head| {
+                last_removed = head;
+                maglist.list = head.next;
+                removed += 1;
+            } else break;
+        }
+
+        if (last_removed) |last| {
+            last.next = null;
+        } else {
+            removed_head = null;
+        }
+
+        maglist.min -= removed;
+        maglist.num -= removed;
+        maglist.wma -= removed * wma_unit;
+
+        self.depot_lock.release(ipl);
+
+        // Destroy each magazine.
+        var elems = removed_head;
+        while (elems) |mag| {
+            elems = mag.next;
+            self.magazine_destroy(mag, rounds);
+        }
+    }
+
+    /// Destroy a magazine.
+    fn magazine_destroy(self: *Self, magazine: *Magazine, rounds: usize) void {
+        // Free its rounds to the slab layer.
+        for (0..rounds) |i| {
+            self.slab_free(magazine.rounds_ptr()[i]);
+        }
+
+        // Free the magazine.
+        self.magtype.?.zone.free(magazine);
     }
 
     fn alloc_page(policy: mm.WaitPolicy) !*anyopaque {
@@ -672,31 +815,64 @@ pub const Zone = struct {
         }
     }
 
-    fn maglist_alloc(list_head: *?*Magazine) ?*Magazine {
-        const ret = list_head.* orelse return null;
-        list_head.* = ret.next;
+    fn maglist_alloc(list: *MagazineList) ?*Magazine {
+        const ret = list.list orelse return null;
+        list.list = ret.next;
 
         return ret;
     }
 
-    fn maglist_free(list_head: *?*Magazine, mag: *Magazine) void {
-        mag.next = list_head.*;
-        list_head.* = mag;
+    fn maglist_free(list: *MagazineList, mag: *Magazine) void {
+        mag.next = list.list;
+        list.list = mag;
     }
 
-    fn alloc_from_depot(self: *Self, maglist: *?*Magazine) ?*Magazine {
+    fn alloc_from_depot(self: *Self, maglist: *MagazineList) ?*Magazine {
         self.depot_lock.acquire_no_ipl();
         const ret = maglist_alloc(maglist);
+        if (ret != null) {
+            maglist.num -= 1;
+            maglist.min = @min(maglist.min, maglist.num);
+        }
         self.depot_lock.release_no_ipl();
         return ret;
     }
 
-    fn free_to_depot(self: *Self, mag: *Magazine, maglist: *?*Magazine) void {
+    fn free_to_depot(self: *Self, mag: *Magazine, maglist: *MagazineList) void {
         self.depot_lock.acquire_no_ipl();
         maglist_free(maglist, mag);
+        maglist.num += 1;
         self.depot_lock.release_no_ipl();
     }
 };
+
+/// Called periodically to do housekeeping tasks on zones.
+fn update(_: ?*anyopaque) void {
+    zone_list_lock.acquire();
+
+    var zone = all_zones;
+
+    while (zone) |z| : (zone = z.next) {
+        z.update();
+    }
+
+    zone_list_lock.release();
+
+    // Do it again.
+    ex.workqueue.enqueue_in(&update_work_item, update_interval);
+}
+
+/// Called when memory is low, reaps all zones.
+pub fn reap() void {
+    zone_list_lock.acquire();
+    var zone = all_zones;
+
+    while (zone) |z| : (zone = z.next) {
+        z.reap();
+    }
+
+    zone_list_lock.release();
+}
 
 /// Parameterized version of Zone, useful for object caches.
 pub fn TypedZone(comptime T: type) type {
@@ -745,6 +921,7 @@ pub fn early_init() linksection(r.init) void {
 /// Post-SMP initialization.
 pub fn late_init() linksection(r.init) void {
     // Go through all caches with magazines enabled and initialize their per-CPU magazines.
+    zone_list_lock.acquire();
     var zone = all_zones;
 
     while (zone) |z| {
@@ -765,7 +942,11 @@ pub fn late_init() linksection(r.init) void {
         zone = z.next;
     }
 
+    zone_list_lock.release();
+
     magazines_initialized = true;
+    update_work_item.init(.Normal, update, null);
+    ex.workqueue.enqueue_in(&update_work_item, update_interval);
 }
 
 // === Global general purpose allocator ===

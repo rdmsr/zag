@@ -76,6 +76,13 @@
                                     .help = "This option enables checking of the poison pattern when allocating objects from the slab allocator. When enabled, the allocator will verify that the poison pattern is intact before reusing a freed object. This can help detect use-after-free bugs where an object is accessed after being freed, but may have a performance impact.",
                                     .depends_on = .{ .key = "slab_poison" },
                                 },
+                                .{
+                                    .kind = .int,
+                                    .key = "excess_magazines",
+                                    .label = "Maximum excess empty magazines",
+                                    .default = .{ .int = 8 },
+                                    .help = "This option configures the maximum number of excess empty magazines allowed. Increasing this increases memory usage but could improve performance.",
+                                },
                             },
                         },
                     },
