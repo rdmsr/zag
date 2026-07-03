@@ -87,11 +87,8 @@ pub fn panic_with_frame(
 
 pub fn panic(
     msg: []const u8,
-    first_trace_addr: ?usize,
+    _: ?usize,
 ) noreturn {
-    if (config.arch == .um) {
-        std.debug.defaultPanic(msg, first_trace_addr);
-    }
     panic_lock.acquire_no_ipl();
     panic_with_frame(msg, @frameAddress());
 }

@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
         return;
     };
 
-    // Get the target platform (might be linux or freestanding)
+    // Get the target platform
     const plat = config.getPlatform(cfg) catch {
         b.default_step.dependOn(
             &b.addFail("Invalid platform (this should not happen!)").step,
@@ -48,10 +48,10 @@ pub fn build(b: *std.Build) void {
 
     rtl_module.addImport("rtl", rtl_module);
 
-    const arch = if (plat.os == .freestanding) switch (plat.arch) {
+    const arch = switch (plat.arch) {
         .x86_64 => "amd64",
         else => @tagName(plat.arch),
-    } else "um";
+    };
 
     const arch_module = b.createModule(.{
         .root_source_file = b.path(b.fmt("src/arch/{s}/root.zig", .{arch})),
@@ -132,24 +132,22 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
     var q: std.Target.Query = .{
         .cpu_arch = plat.arch,
         .os_tag = plat.os,
-        .abi = if (plat.os == .freestanding) .none else .gnu,
+        .abi = .none,
         .cpu_model = .baseline,
     };
 
-    if (plat.os == .freestanding) {
-        switch (plat.arch) {
-            .x86_64 => {
-                const f = std.Target.Cpu.Feature.FeatureSetFns(std.Target.x86.Feature);
-                q.cpu_features_add = f.featureSet(&.{.soft_float});
-                q.cpu_features_sub = f.featureSet(&.{ .x87, .mmx, .sse, .sse2 });
-            },
-            .aarch64 => {
-                const f = std.Target.Cpu.Feature.FeatureSetFns(std.Target.aarch64.Feature);
-                q.cpu_features_sub = f.featureSet(&.{ .fp_armv8, .neon });
-            },
-            .riscv64 => {},
-            else => {},
-        }
+    switch (plat.arch) {
+        .x86_64 => {
+            const f = std.Target.Cpu.Feature.FeatureSetFns(std.Target.x86.Feature);
+            q.cpu_features_add = f.featureSet(&.{.soft_float});
+            q.cpu_features_sub = f.featureSet(&.{ .x87, .mmx, .sse, .sse2 });
+        },
+        .aarch64 => {
+            const f = std.Target.Cpu.Feature.FeatureSetFns(std.Target.aarch64.Feature);
+            q.cpu_features_sub = f.featureSet(&.{ .fp_armv8, .neon });
+        },
+        .riscv64 => {},
+        else => {},
     }
 
     return q;
@@ -181,59 +179,42 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     const modules: []const *std.Build.Module = &.{ config_module, ksyms_module, rtl, arch, kernel.root_module };
 
-    if (plat.os == .freestanding) {
-        kernel.linkage = .static;
-        kernel.pie = false;
+    kernel.linkage = .static;
+    kernel.pie = false;
 
-        for (modules) |m| {
-            m.pic = false;
-            m.strip = false;
-            m.stack_check = false;
-            m.stack_protector = false;
-            m.unwind_tables = .none;
-            m.omit_frame_pointer = false;
+    for (modules) |m| {
+        m.pic = false;
+        m.strip = false;
+        m.stack_check = false;
+        m.stack_protector = false;
+        m.unwind_tables = .none;
+        m.omit_frame_pointer = false;
 
-            m.code_model = switch (plat.arch) {
-                .x86_64 => .kernel,
-                .riscv64 => .medium,
-                else => .large,
-            };
-
-            switch (plat.arch) {
-                .x86_64 => {
-                    m.red_zone = false;
-                },
-                else => {},
-            }
-        }
-
-        kernel.entry = .{ .symbol_name = "kmain" };
+        m.code_model = switch (plat.arch) {
+            .x86_64 => .kernel,
+            .riscv64 => .medium,
+            else => .large,
+        };
 
         switch (plat.arch) {
             .x86_64 => {
-                kernel.root_module.addAssemblyFile(b.path("src/kern/amd64/locore.s"));
-                kernel.root_module.addAssemblyFile(b.path("src/platform/pc/ap.s"));
+                m.red_zone = false;
             },
             else => {},
         }
-
-        kernel.linker_script = b.path(b.fmt("build/linker-scripts/{s}.lds", .{@tagName(plat.arch)}));
-    } else {
-        const translate_c = b.addTranslateC(.{
-            .root_source_file = b.path("src/platform/um/c.h"),
-            .target = target,
-            .optimize = optimize,
-        });
-
-        translate_c.addIncludePath(.{ .cwd_relative = "/usr/include" });
-
-        kernel.root_module.addImport("c", translate_c.createModule());
-        kernel.linker_script = b.path("build/linker-scripts/uml.lds");
-        kernel.root_module.link_libc = true;
-        kernel.linker_allow_shlib_undefined = true;
-        kernel.root_module.linkSystemLibrary("sdl2-compat", .{ .use_pkg_config = .force });
-        kernel.root_module.addLibraryPath(.{ .cwd_relative = "/usr/lib64" });
     }
+
+    kernel.entry = .{ .symbol_name = "kmain" };
+
+    switch (plat.arch) {
+        .x86_64 => {
+            kernel.root_module.addAssemblyFile(b.path("src/kern/amd64/locore.s"));
+            kernel.root_module.addAssemblyFile(b.path("src/platform/pc/ap.s"));
+        },
+        else => {},
+    }
+
+    kernel.linker_script = b.path(b.fmt("build/linker-scripts/{s}.lds", .{@tagName(plat.arch)}));
 
     return kernel;
 }
