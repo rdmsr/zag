@@ -20,6 +20,8 @@ pub const WorkItem = struct {
     link: rtl.List.Entry,
     enqueued: std.atomic.Value(bool),
     priority: Priority,
+    dpc: ke.Dpc,
+    timer: ke.Timer,
 
     pub const Priority = enum {
         /// Low priority background work.
@@ -45,7 +47,11 @@ pub const WorkItem = struct {
             .link = undefined,
             .enqueued = .init(false),
             .priority = priority,
+            .dpc = .init(work_dpc),
+            .timer = undefined,
         };
+
+        self.timer.init();
     }
 };
 
@@ -114,6 +120,17 @@ fn work_loop(p: ?*anyopaque) void {
         work.enqueued.store(false, .release);
         work.func(work.arg);
     }
+}
+
+/// Called when a work timer expires.
+fn work_dpc(dpc: *ke.Dpc, _: ?*anyopaque) void {
+    const item: *WorkItem = @fieldParentPtr("dpc", dpc);
+    enqueue(item);
+}
+
+/// Enqueue a work item in `time`.
+pub fn enqueue_in(item: *WorkItem, time: r.Nanoseconds) void {
+    ke.timer.set(&item.timer, time, &item.dpc);
 }
 
 /// Enqueue a work item to be executed eventually.
