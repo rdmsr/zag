@@ -8,7 +8,15 @@ const ke = r.ke;
 
 const log = std.log.scoped(.@"mm/phys");
 
-const free_pages_limit = 128;
+// How aggressive is memory reclamation.
+const threshold_scale_factor = 10;
+
+/// Threshold at which most memory allocations block, only high priority allocations are allowed.
+pub var min_memory_threshold: usize = 0;
+/// Threshold at which reclamation starts.
+pub var low_memory_threshold: usize = 0;
+/// Threshold at which reclamation stops.
+pub var high_memory_threshold: usize = 0;
 
 var bootstrapped = false;
 var early_alloc_entry_idx: usize = 0;
@@ -51,13 +59,13 @@ fn wait_for_pages(old_ipl: ke.Ipl) void {
 
     std.debug.assert(@intFromEnum(ipl) < @intFromEnum(ke.Ipl.Dispatch));
 
-    if (free_pages >= free_pages_limit) {
+    if (free_pages >= min_memory_threshold) {
         return;
     }
 
     var cnt = free_pages;
 
-    while (cnt < free_pages_limit) {
+    while (cnt < min_memory_threshold) {
         free_page_event.reset();
 
         list_lock.release(ipl);
@@ -126,7 +134,7 @@ pub fn free(addr: r.PAddr) void {
     _ = usable_memory.fetchAdd(mm.page_size, .monotonic);
     free_list.insert_head(&page.free.link);
     free_pages += 1;
-    if (free_pages >= free_pages_limit) {
+    if (free_pages >= min_memory_threshold) {
         free_page_event.signal();
     }
     list_lock.release(ipl);
@@ -147,7 +155,7 @@ pub fn free_batch(head: *mm.Page, tail: *mm.Page, count: usize) void {
 
     free_pages += count;
 
-    if (free_pages >= free_pages_limit) {
+    if (free_pages >= min_memory_threshold) {
         free_page_event.signal();
     }
 
@@ -210,6 +218,20 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
             .Boot,
         );
     }
+
+    // Calculate the minimum amount of free memory we accept,
+    // this formula is from Linux and does not grow linearly; it would be wasteful
+    // to take a fixed percentage of memory from a large server.
+    // We clamp this between 128 KiB and 256 MiB.
+    const min_free_kb = std.math.clamp(std.math.sqrt((usable_memory.load(.monotonic) / 1024) * 16), 128, 256 * 1024);
+    min_memory_threshold = min_free_kb / 4;
+
+    const total_usable_pages = total_usable_memory / mm.page_size;
+
+    const gap = @max(min_memory_threshold / 4, total_usable_pages * threshold_scale_factor / 10000);
+
+    low_memory_threshold = min_memory_threshold + gap;
+    high_memory_threshold = low_memory_threshold + gap;
 }
 
 pub fn init_pfndb() void {
