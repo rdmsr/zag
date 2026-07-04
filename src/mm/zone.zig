@@ -39,8 +39,9 @@
 
 const rtl = @import("rtl");
 const r = @import("root");
-const config = @import("config");
 const std = @import("std");
+const config = @import("config");
+
 const ke = r.ke;
 const mm = r.mm;
 const ex = r.ex;
@@ -61,16 +62,22 @@ const slab_align = 8;
 const zones_num = 32;
 
 /// Number of rounds in a magazine.
-const magazine_size = 8;
+const magazine_size = ke.Tunable(u8, 8, "mm.zone.mag_size");
 
 /// How much extra memory CPUs are allowed to keep around.
-const max_local_memory = r.kib(128);
+const max_local_memory = ke.Tunable(u32, r.kib(128), "mm.zone.max_local_mem");
 
 /// Number of contentions allowed per second before the depot grows.
-const depot_grow_level = 5 * wma_unit;
+const depot_grow_level = ke.Tunable(u32, 5 * wma_unit, "mm.zone.depot_grow_level");
 
 /// Number of contentions allowed per second before the depot shrinks.
-const depot_shrink_level = wma_unit / 2;
+const depot_shrink_level = ke.Tunable(u32, wma_unit / 2, "mm.zone.depot_shrink_level");
+
+/// Number of excess magazines in a zone before they are trimmed.
+const excess_magazines = ke.Tunable(u32, 8, "mm.zone.excess_mags");
+
+/// Excess memory in a zone before magazines are trimmed.
+const excess_memory = ke.Tunable(u32, r.kib(16), "mm.zone.excess_mem");
 
 /// Every power-of-two-size from 8 to 2048 (inclusively).
 const generic_zones_num = 9;
@@ -406,7 +413,7 @@ pub const Zone = struct {
         self.depot_contention_cur = 0;
         self.depot_contention_wma = 0;
         self.cpu_depot_size = 0;
-        self.cpu_depot_limit = max_local_memory / (self.chunk_size * magazine_size);
+        self.cpu_depot_limit = max_local_memory.load() / (self.chunk_size * magazine_size.load());
         self.trim_depot = false;
 
         zone_list_lock.acquire();
@@ -486,7 +493,7 @@ pub const Zone = struct {
                     }
 
                     cpu.alloc = full_mag;
-                    cpu.alloc_rounds = magazine_size;
+                    cpu.alloc_rounds = magazine_size.load();
                     continue;
                 }
 
@@ -505,7 +512,7 @@ pub const Zone = struct {
                     }
 
                     cpu.alloc = full_mag;
-                    cpu.alloc_rounds = magazine_size;
+                    cpu.alloc_rounds = magazine_size.load();
                     continue;
                 }
 
@@ -574,7 +581,7 @@ pub const Zone = struct {
 
             cpu.lock.acquire_no_ipl();
             const freed = while (true) {
-                if (cpu.free != null and cpu.free_rounds < magazine_size) {
+                if (cpu.free != null and cpu.free_rounds < magazine_size.load()) {
                     // Fast path: push directly to free magazine.
                     if (is_poison_enabled) {
                         if (self.dtor) |dtor| {
@@ -721,11 +728,11 @@ pub const Zone = struct {
         cur = (3 * old + cur) / 4;
 
         if (self.use_magazines) {
-            if (self.cpu_depot_size < self.cpu_depot_limit and cur > depot_grow_level) {
+            if (self.cpu_depot_size < self.cpu_depot_limit and cur > depot_grow_level.load()) {
                 // We have room to grow the depot and we should.
                 // Put the new WMA at around midpoint between shrink and growth, so that
                 // we have time to check whether what we just did is good or not.
-                cur = (depot_grow_level + depot_shrink_level) / 2;
+                cur = (depot_grow_level.load() + depot_shrink_level.load()) / 2;
 
                 const size = if (self.cpu_depot_size == 0)
                     2
@@ -735,9 +742,9 @@ pub const Zone = struct {
 
                 // Clamp it.
                 self.cpu_depot_size = @min(size, self.cpu_depot_limit);
-            } else if (self.cpu_depot_size > 0 and cur <= depot_shrink_level) {
+            } else if (self.cpu_depot_size > 0 and cur <= depot_shrink_level.load()) {
                 // We should shrink the depot.
-                cur = (depot_grow_level + depot_shrink_level) / 2;
+                cur = (depot_grow_level.load() + depot_shrink_level.load()) / 2;
                 self.cpu_depot_size -= 1;
                 self.trim_depot = true;
             }
@@ -765,16 +772,16 @@ pub const Zone = struct {
 
         const empty = @min(self.depot.empty_mags.wma, self.depot.empty_mags.min * wma_unit);
 
-        if (empty > config.excess_magazines * wma_unit) {
+        if (empty > excess_magazines.load() * wma_unit) {
             // Too many excess magazines.
             return true;
         }
 
         const full = @min(self.depot.full_mags.wma, self.depot.full_mags.min * wma_unit);
 
-        const full_bytes = full * magazine_size * self.chunk_size;
+        const full_bytes = full * magazine_size.load() * self.chunk_size;
 
-        if (full >= 2 * wma_unit and full_bytes >= r.kib(16) * wma_unit) {
+        if (full >= 2 * wma_unit and full_bytes >= excess_memory.load() * wma_unit) {
             // We have at least 2 excess full magazines and they take up at least 16 KiB.
             return true;
         }
@@ -790,7 +797,7 @@ pub const Zone = struct {
         self.lock.acquire();
 
         self.trim_maglist(&self.depot.empty_mags, 0);
-        self.trim_maglist(&self.depot.full_mags, magazine_size);
+        self.trim_maglist(&self.depot.full_mags, magazine_size.load());
 
         if (trim_depot) {
             // The depot has size changed, trim the CPU depots.
@@ -801,7 +808,7 @@ pub const Zone = struct {
             }
 
             self.maglist_destroy(depot.empty_mags.list, 0);
-            self.maglist_destroy(depot.full_mags.list, magazine_size);
+            self.maglist_destroy(depot.full_mags.list, magazine_size.load());
         }
 
         self.lock.release();
@@ -830,7 +837,7 @@ pub const Zone = struct {
         }
 
         self.maglist_destroy(depot.empty_mags.list, 0);
-        self.maglist_destroy(depot.full_mags.list, magazine_size);
+        self.maglist_destroy(depot.full_mags.list, magazine_size.load());
 
         self.lock.release();
     }
@@ -1158,7 +1165,7 @@ pub fn early_init() linksection(r.init) void {
         zone.init(generic_zone_names[i], @as(usize, 1) << @intCast(i + 3), .{});
     }
 
-    magazine_zone.init("magazine", @sizeOf(Magazine) + magazine_size * @sizeOf(*anyopaque), .{
+    magazine_zone.init("magazine", @sizeOf(Magazine) + magazine_size.load() * @sizeOf(*anyopaque), .{
         .magazines = false,
     });
 }
