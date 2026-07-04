@@ -77,6 +77,13 @@ SECTIONS
         __percpu_end = .;
     } :data
 
+   .data.tunable : {
+        __tunables_start = .;
+        KEEP(*(.data.tunable .data.tunable.*))
+        __tunables_end = .;
+    } :data
+
+
     .data : {
         *(.data .data.*)
     } :data
