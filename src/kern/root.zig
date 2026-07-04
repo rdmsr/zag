@@ -20,6 +20,7 @@ pub const Event = p.event.Event;
 pub const Queue = p.queue.Queue;
 pub const Mutex = p.mutex.Mutex;
 pub const ShootdownState = p.shootdown.ShootdownState;
+pub const Tunable = p.tunable.Tunable;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;

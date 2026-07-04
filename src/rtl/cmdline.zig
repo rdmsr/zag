@@ -16,11 +16,11 @@ pub fn get_string(cmdline: []const u8, key: []const u8) ?[]const u8 {
     return null;
 }
 
-/// Get the integer value of `key` in `cmdline`.
-pub fn get_number(cmdline: []const u8, key: []const u8) ?i64 {
+/// Get the number value of `key` in `cmdline`.
+pub fn get_number(comptime T: type, cmdline: []const u8, key: []const u8) ?T {
     const str = get_string(cmdline, key);
     if (str) |s| {
-        const res = std.fmt.parseInt(i64, s, 10) catch return null;
+        const res = std.fmt.parseInt(T, s, 10) catch return null;
         return res;
     }
     return null;
