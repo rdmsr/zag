@@ -698,7 +698,7 @@ pub const Zone = struct {
 
     /// Periodic updates on the zone.
     /// Updates the working set and trims it if needed (for now, will do magazine resizing later...).
-    pub fn update(self: *Self) void {
+    fn update(self: *Self) void {
         const ipl = self.depot_lock.acquire();
 
         // Update the working set size.
@@ -782,7 +782,7 @@ pub const Zone = struct {
         return false;
     }
 
-    /// Called when memory needs to be reaped from this zone.
+    /// Called periodically to trim our magazines.
     /// This frees the excess magazines.
     fn trim(self: *Self, trim_depot: bool) void {
         // Note: we do all of this under the zone lock,
@@ -797,12 +797,40 @@ pub const Zone = struct {
             var depot = std.mem.zeroes(Depot);
 
             for (0..ke.ncpus) |i| {
-                self.trim_cpu(&self.cpus[i], &depot);
+                trim_cpu(&self.cpus[i], &depot, self.cpu_depot_size);
             }
 
             self.maglist_destroy(depot.empty_mags.list, 0);
             self.maglist_destroy(depot.full_mags.list, magazine_size);
         }
+
+        self.lock.release();
+    }
+
+    /// Called when memory is low and we need to make memory ASAP.
+    /// Drains all magazines from the depot.
+    fn drain(self: *Self) void {
+        if (!self.use_magazines) return;
+
+        // Note: we do all of this under the zone lock,
+        // but it *should* be a fairly quick operation, even though it is O(ncpus).
+        self.lock.acquire();
+
+        const ipl = self.depot_lock.acquire();
+
+        // Take all elements from the zone depot.
+        var depot = self.depot;
+        self.depot = std.mem.zeroes(Depot);
+
+        self.depot_lock.release(ipl);
+
+        // Trim all CPU depots to 0.
+        for (0..ke.ncpus) |i| {
+            trim_cpu(&self.cpus[i], &depot, 0);
+        }
+
+        self.maglist_destroy(depot.empty_mags.list, 0);
+        self.maglist_destroy(depot.full_mags.list, magazine_size);
 
         self.lock.release();
     }
@@ -844,15 +872,15 @@ pub const Zone = struct {
         self.maglist_destroy(removed_head, rounds);
     }
 
-    /// Trim a CPU's depot to `cpu_depot_size`.
-    fn trim_cpu(self: *Self, cpu: *Cpu, depot: *Depot) void {
+    /// Trim a CPU's depot to `target`.
+    fn trim_cpu(cpu: *Cpu, depot: *Depot, target: usize) void {
         const ipl = cpu.lock.acquire();
 
         // Split the target (cpu_depot_size) in 2 for each magazine type.
         // Bias towards full magazines because they are usually more useful
         // for us than empty magazines.
-        const full_target = (self.cpu_depot_size + 1) / 2;
-        const empty_target = self.cpu_depot_size / 2;
+        const full_target = (target + 1) / 2;
+        const empty_target = target / 2;
 
         if (cpu.depot.full_mags.num > full_target) {
             // Trim the excess full magazines.
@@ -1164,6 +1192,17 @@ pub fn late_init() linksection(r.init) void {
     magazines_initialized = true;
     update_work_item.init(.Normal, update, null);
     ex.workqueue.enqueue_in(&update_work_item, update_interval);
+}
+
+pub fn drain() void {
+    zone_list_lock.acquire();
+    var zone = all_zones;
+
+    while (zone) |z| : (zone = z.next) {
+        z.drain();
+    }
+
+    zone_list_lock.release();
 }
 
 // === Global general purpose allocator ===
