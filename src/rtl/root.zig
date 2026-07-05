@@ -15,6 +15,7 @@ pub const BitMap = @import("bitmap.zig").BitMap;
 pub const AtomicBitMap = @import("bitmap.zig").AtomicBitMap;
 pub const HandoffList = @import("handoff.zig").HandoffList;
 pub const LinkerSet = @import("linker_set.zig").LinkerSet;
+pub const CachePadded = @import("cache_padded.zig").CachePadded;
 
 /// Asserts that a given type `T` matches the schema declared by `I`.
 /// This includes public methods and fields.
