@@ -11,7 +11,8 @@ pub const ps = @import("proc/root.zig");
 const config = @import("config");
 
 pub const init = ".text.init";
-pub const percpu_init = ".percpu_init_array";
+
+pub const percpu_init_set = rtl.LinkerSet("percpu_init", *const fn () void);
 pub const percpu = ".data.percpu";
 
 pub const VAddr = usize;

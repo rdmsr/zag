@@ -6,6 +6,7 @@ const mm = r.mm;
 const ex = r.ex;
 const ps = r.ps;
 const exp = ex.private;
+const rtl = @import("rtl");
 
 // XXX
 const fbconsole = @import("../dev/fbconsole.zig");

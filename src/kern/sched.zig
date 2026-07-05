@@ -384,10 +384,8 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
 
 }
 
-export const sched_percpu_init linksection(r.percpu_init) = &init_cpu;
-
 /// Initialize a CPU for use by the scheduler.
-fn init_cpu() linksection(r.init) callconv(.c) void {
+fn init_cpu() linksection(r.init) void {
     var cpu = percpu.local();
 
     cpu.* = .{
@@ -419,6 +417,10 @@ fn init_cpu() linksection(r.init) callconv(.c) void {
     for (0..runqueues_n) |i| {
         cpu.realtime_queue.queues[i].init();
     }
+}
+
+comptime {
+    _ = r.percpu_init_set.insert(&init_cpu);
 }
 
 /// Called on CPU 0 to initialize load balancing mechanisms.

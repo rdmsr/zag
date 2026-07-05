@@ -124,10 +124,8 @@ const PerCpu = struct {
 
 const pcpu = ke.CpuLocal(PerCpu, undefined);
 
-export const qspinlock_percpu_init linksection(r.percpu_init) = &init_cpu;
-
 /// Initialize a CPU's MCS nodes.
-fn init_cpu() linksection(r.init) callconv(.c) void {
+fn init_cpu() linksection(r.init) void {
     var cpu = pcpu.local();
     cpu.curr_idx = 0;
 
@@ -135,6 +133,10 @@ fn init_cpu() linksection(r.init) callconv(.c) void {
         node.locked.raw = 0;
         node.next.raw = null;
     }
+}
+
+comptime {
+    _ = r.percpu_init_set.insert(&init_cpu);
 }
 
 /// Queued spin lock implementation.

@@ -40,10 +40,12 @@ const pcpu = ke.CpuLocal(PerCpu, .{
     .queue = undefined,
 });
 
-export const dpc_percpu_init linksection(r.percpu_init) = &pcpu_init;
-
-fn pcpu_init() linksection(r.init) callconv(.c) void {
+fn pcpu_init() linksection(r.init) void {
     pcpu.local().queue.init();
+}
+
+comptime {
+    _ = r.percpu_init_set.insert(&pcpu_init);
 }
 
 /// Enqueue a DPC.
