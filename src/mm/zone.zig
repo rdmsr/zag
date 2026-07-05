@@ -151,6 +151,7 @@ var all_zones: ?*Zone = null;
 var zone_list_lock: ke.Mutex = .init();
 
 var magazine_zone: Zone = undefined;
+var cpu_zone: Zone = undefined;
 
 const alloc_poison: u32 = 0xBADDC0DE;
 const free_poison: u32 = 0xDEADBEEF;
@@ -257,19 +258,20 @@ const Slab = struct {
     /// fact that the bitmap size grows with capacity (making this circular).
     /// We resolve the circular dependency by starting with an overestimate and
     /// shrinking until everything fits.
-    pub fn calc_capacity(chunk_size: usize, color: usize) usize {
-        const usable = mm.page_size - @sizeOf(Slab) - color;
-
+    pub fn calc_capacity(chunk_size: usize, alignment: usize, color: usize) usize {
         // Start with the largest possible capacity.
-        var capacity = (usable - 1) / chunk_size;
+        var capacity = (mm.page_size - @sizeOf(Slab)) / chunk_size;
 
         // Shrink capacity until both the objects and the bitmap fit.
         // Each iteration we recalculate the bitmap size for the new capacity,
         // since a smaller capacity means a smaller bitmap, which may then fit.
         while (capacity > 0) : (capacity -= 1) {
-            const obj_bytes = capacity * chunk_size;
-            const bytes = Slab.bitmap_bytes(capacity);
-            if (obj_bytes + bytes <= usable) break;
+            const objects_off =
+                std.mem.alignForward(usize, @sizeOf(Slab) + Slab.bitmap_bytes(capacity), alignment) + color;
+
+            if (objects_off + capacity * chunk_size <= mm.page_size) {
+                break;
+            }
         }
 
         return capacity;
@@ -414,6 +416,12 @@ inline fn wma_mix(old: usize, new: usize) usize {
     return (3 * old + new * wma_unit) / 4;
 }
 
+fn alloc_cpus() []rtl.CachePadded(Cpu) {
+    const ptr = cpu_zone.alloc(.{}) catch @panic("failed to allocate zone CPU state");
+    const raw: [*]rtl.CachePadded(Cpu) = @ptrCast(@alignCast(ptr));
+    return raw[0..ke.ncpus];
+}
+
 pub const Zone = struct {
     /// Name used for debugging purposes.
     name: []const u8,
@@ -451,7 +459,7 @@ pub const Zone = struct {
     trim_depot: bool,
 
     /// Per-CPU state.
-    cpus: []Cpu,
+    cpus: []rtl.CachePadded(Cpu),
 
     ctor: ?*const fn (obj: *anyopaque) void,
     dtor: ?*const fn (obj: *anyopaque) void,
@@ -518,15 +526,15 @@ pub const Zone = struct {
             return;
         }
 
-        self.cpus = gpa.alloc(Cpu, ke.ncpus) catch @panic("Failed to allocate per-CPU magazine state");
+        self.cpus = alloc_cpus();
 
         for (0..ke.ncpus) |i| {
-            self.cpus[i].lock = .init();
-            self.cpus[i].alloc = null;
-            self.cpus[i].free = null;
-            self.cpus[i].alloc_rounds = 0;
-            self.cpus[i].free_rounds = 0;
-            self.cpus[i].depot = std.mem.zeroes(Depot);
+            self.cpus[i].value.lock = .init();
+            self.cpus[i].value.alloc = null;
+            self.cpus[i].value.free = null;
+            self.cpus[i].value.alloc_rounds = 0;
+            self.cpus[i].value.free_rounds = 0;
+            self.cpus[i].value.depot = std.mem.zeroes(Depot);
         }
     }
 
@@ -539,7 +547,7 @@ pub const Zone = struct {
             @branchHint(.likely);
 
             const ipl = ke.ipl.raise(.Dispatch);
-            var cpu = &self.cpus[ke.cpu.current()];
+            var cpu = &self.cpus[ke.cpu.current()].value;
             cpu.lock.acquire_no_ipl();
             defer cpu.lock.release(ipl);
 
@@ -667,7 +675,7 @@ pub const Zone = struct {
             @branchHint(.likely);
 
             var ipl = ke.ipl.raise(.Dispatch);
-            var cpu = &self.cpus[ke.cpu.current()];
+            var cpu = &self.cpus[ke.cpu.current()].value;
 
             cpu.lock.acquire_no_ipl();
             const freed = while (true) {
@@ -733,7 +741,7 @@ pub const Zone = struct {
 
                 // Re-grab our current context.
                 ipl = ke.ipl.raise(.Dispatch);
-                cpu = &self.cpus[ke.cpu.current()];
+                cpu = &self.cpus[ke.cpu.current()].value;
                 cpu.lock.acquire_no_ipl();
 
                 if (new_mag) |m| {
@@ -894,7 +902,7 @@ pub const Zone = struct {
             var depot = std.mem.zeroes(Depot);
 
             for (0..ke.ncpus) |i| {
-                self.trim_cpu(&self.cpus[i], &depot, self.cpu_depot_size);
+                self.trim_cpu(&self.cpus[i].value, &depot, self.cpu_depot_size);
             }
 
             self.maglist_destroy(depot.empty_mags.head, 0);
@@ -923,7 +931,7 @@ pub const Zone = struct {
 
         // Trim all CPU depots to 0.
         for (0..ke.ncpus) |i| {
-            self.trim_cpu(&self.cpus[i], &depot, 0);
+            self.trim_cpu(&self.cpus[i].value, &depot, 0);
         }
 
         self.maglist_destroy(depot.empty_mags.head, 0);
@@ -1045,7 +1053,7 @@ pub const Zone = struct {
             self.color = 0;
         }
 
-        const capacity = Slab.calc_capacity(self.chunk_size, self.color);
+        const capacity = Slab.calc_capacity(self.chunk_size, self.alignment, self.color);
 
         // Slab info is located at the beginning of the page.
         var slab: *Slab = @ptrCast(@alignCast(buf));
@@ -1053,7 +1061,8 @@ pub const Zone = struct {
         slab.alloc_rr = 0;
         slab.refcount = 0;
         slab.capacity = @intCast(capacity);
-        slab.base = @intFromPtr(slab) + @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity) + self.color;
+        const meta_end = @intFromPtr(slab) + @sizeOf(Slab) + Slab.bitmap_bytes(capacity);
+        slab.base = std.mem.alignForward(usize, meta_end, self.alignment) + self.color;
 
         const bm = slab.bitmap();
         const full_words = capacity / 64;
@@ -1264,23 +1273,28 @@ pub fn early_init() linksection(r.init) void {
 
 /// Post-SMP initialization.
 pub fn late_init() linksection(r.init) void {
+    cpu_zone.init("cpus", @sizeOf(rtl.CachePadded(Cpu)) * ke.ncpus, .{
+        .magazines = false,
+        .alignment = std.atomic.cache_line,
+    });
+
     // Go through all caches with magazines enabled and initialize their per-CPU magazines.
     zone_list_lock.acquire();
     var zone = all_zones;
 
     while (zone) |z| {
         if (z.use_magazines) {
-            z.cpus = gpa.alloc(Cpu, ke.ncpus) catch @panic("Failed to allocate per-CPU magazine state");
+            z.cpus = alloc_cpus();
 
             for (0..ke.ncpus) |i| {
-                z.cpus[i] = .{
+                z.cpus[i] = .init(.{
                     .lock = .init(),
                     .alloc = null,
                     .free = null,
                     .alloc_rounds = 0,
                     .free_rounds = 0,
                     .depot = std.mem.zeroes(Depot),
-                };
+                });
             }
         }
         zone = z.next;
@@ -1330,7 +1344,7 @@ fn gpa_alloc(
         return @ptrCast(ptr);
     }
 
-    const zone = zone_for(len, ptr_align.toByteUnits()) orelse return null;
+    const zone = zone_for(len) orelse return null;
     const obj = zone.alloc(.{}) catch return null;
     return @ptrCast(obj);
 }
@@ -1382,15 +1396,13 @@ fn gpa_free(
         return;
     }
 
-    const zone = zone_for(buf.len, 1) orelse return;
+    const zone = zone_for(buf.len) orelse return;
     zone.free(@ptrCast(buf.ptr));
 }
 
-fn zone_for(size: usize, alignment: usize) ?*Zone {
-    const needed = @max(size, alignment);
-
+fn zone_for(size: usize) ?*Zone {
     for (&generic_zones) |*zone| {
-        if (zone.obj_size >= needed and zone.chunk_size % @max(alignment, 1) == 0) {
+        if (zone.obj_size >= size) {
             return zone;
         }
     }
