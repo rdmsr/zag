@@ -5,22 +5,16 @@ const r = @import("root");
 const ke = r.ke;
 const ki = r.ke.private;
 
-extern var __init_array_percpu_start: u8;
-extern var __init_array_percpu_end: u8;
-
 const id = CpuLocal(u32, 0);
 
 /// Initialize a CPU. Must be called on all CPUs.
 pub fn init_cpu(cpu_id: u32) void {
-    const start = @intFromPtr(&__init_array_percpu_start);
-    const end = @intFromPtr(&__init_array_percpu_end);
-    const count = (end - start) / @sizeOf(*const fn () void);
-    const funcs: [*]const *const fn () callconv(.c) void = @ptrFromInt(start);
+    const elems = r.percpu_init_set.elems();
 
     id.local().* = cpu_id;
 
-    for (0..count) |i| {
-        funcs[i]();
+    for (elems) |func| {
+        func();
     }
 }
 

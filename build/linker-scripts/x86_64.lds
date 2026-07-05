@@ -52,12 +52,6 @@ SECTIONS
     } :rodata
 
 
-    .percpu_init_array : {
-        __init_array_percpu_start = .;
-        KEEP(*(.percpu_init_array))
-        __init_array_percpu_end = .;
-    } :rodata
-
     /* Add a .note.gnu.build-id output section in case a build ID flag is added to the */
     /* linker command. */
     .note.gnu.build-id : {

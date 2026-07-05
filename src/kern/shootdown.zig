@@ -49,14 +49,16 @@ var sync_addr: r.VAddr = 0;
 var sync_count: usize = 0;
 var shootdown_lock: ke.SpinLock = .init();
 
-export const tlb_percpu_init linksection(r.percpu_init) = &pcpu_init;
-
-fn pcpu_init() linksection(r.init) callconv(.c) void {
+fn pcpu_init() linksection(r.init) void {
     const local = percpu.local();
 
     local.valid_states = @splat(.init(0));
     local.senders = .init(false);
     local.states = @splat(.{ .base = 0, .npages = 0, .state = .init(slot_free), .payload = undefined, .link = undefined });
+}
+
+comptime {
+    _ = r.percpu_init_set.insert(&pcpu_init);
 }
 
 /// Allocate an invalidation state slot on this CPU.

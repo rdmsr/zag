@@ -5,6 +5,8 @@ const rtl = @import("rtl");
 const r = @import("root");
 const pl = r.pl;
 
+const set = rtl.LinkerSet("tunables", *const Entry);
+
 const Entry = struct {
     name: []const u8,
     address: *anyopaque,
@@ -18,7 +20,7 @@ pub fn Tunable(comptime T: type, comptime default: T, comptime name: []const u8)
     return struct {
         var storage: T = default;
 
-        const metadata: Entry linksection(".data.tunable") =
+        const metadata: Entry =
             .{
                 .name = name,
                 .address = &storage,
@@ -30,33 +32,32 @@ pub fn Tunable(comptime T: type, comptime default: T, comptime name: []const u8)
                 },
             };
 
+        comptime {
+            _ = set.insert(&metadata);
+        }
+
         pub fn load() T {
-            _ = metadata;
             return storage;
         }
     };
 }
 
-extern var __tunables_start: u8;
-extern var __tunables_end: u8;
-
 pub fn init(boot_info: *pl.BootInfo) void {
     const cmdline = boot_info.cmdline orelse return;
 
-    const start = @intFromPtr(&__tunables_start);
-    const end = @intFromPtr(&__tunables_end);
-    const count = (end - start) / @sizeOf(Entry);
-    const entries: [*]Entry = @ptrFromInt(start);
+    const elems = set.elems();
 
-    for (0..count) |i| {
-        switch (entries[i].type) {
+    for (elems) |entry| {
+        switch (entry.type) {
             .num => |info| {
-                const a = entries[i].address;
+                const a = entry.address;
 
                 switch (info.signedness) {
                     .unsigned => {
-                        const value = rtl.cmdline.get_number(u64, cmdline, entries[i].name) orelse {
-                            std.log.warn("Invalid number value for '{s}', falling back.", .{entries[i].name});
+                        const value = rtl.cmdline.get_number(u64, cmdline, entry.name) catch |e| {
+                            if (e == error.Format) {
+                                std.log.warn("Invalid number value for '{s}', falling back.", .{entry.name});
+                            }
                             continue;
                         };
 
@@ -70,8 +71,11 @@ pub fn init(boot_info: *pl.BootInfo) void {
                     },
 
                     .signed => {
-                        const value = rtl.cmdline.get_number(i64, cmdline, entries[i].name) orelse {
-                            std.log.warn("Invalid number value for '{s}', falling back.", .{entries[i].name});
+                        const value = rtl.cmdline.get_number(i64, cmdline, entry.name) catch |e| {
+                            if (e == error.Format) {
+                                std.log.warn("Invalid number value for '{s}', falling back.", .{entry.name});
+                            }
+
                             continue;
                         };
 
@@ -87,15 +91,15 @@ pub fn init(boot_info: *pl.BootInfo) void {
             },
 
             .bool => {
-                const value = rtl.cmdline.get_string(cmdline, entries[i].name) orelse continue;
-                const ptr: *bool = @ptrCast(@alignCast(entries[i].address));
+                const value = rtl.cmdline.get_string(cmdline, entry.name) orelse continue;
+                const ptr: *bool = @ptrCast(@alignCast(entry.address));
 
                 if (std.mem.eql(u8, value, "true")) {
                     ptr.* = true;
                 } else if (std.mem.eql(u8, value, "false")) {
                     ptr.* = false;
                 } else {
-                    std.log.warn("Invalid cmdline boolean value for tunable '{s}'", .{entries[i].name});
+                    std.log.warn("Invalid cmdline boolean value for tunable '{s}'", .{entry.name});
                 }
             },
         }
