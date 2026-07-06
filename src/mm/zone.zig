@@ -1363,8 +1363,8 @@ fn gpa_resize(
         return new_pages <= old_pages;
     }
     // Can't resize in place. Only allow shrinking within the same zone.
-    const old_zone = zone_for(buf.len, 1) orelse return false;
-    const new_zone = zone_for(new_len, 1) orelse return false;
+    const old_zone = zone_for(buf.len) orelse return false;
+    const new_zone = zone_for(new_len) orelse return false;
     return old_zone == new_zone;
 }
 
