@@ -29,21 +29,15 @@ pub const Mutex = struct {
             return;
         }
 
-        // Fast path: if the owner is running, try to acquire without a turnstile by spinning a bit.
-        if (cur_owner.?.?.state.load(.monotonic) == .Running) {
-            for (0..optimistic_spins) |_| {
-                if (m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic)) |maybe_owner| {
-                    const owner = maybe_owner.?;
-                    if (owner.state.load(.monotonic) != .Running) break;
-
-                    std.atomic.spinLoopHint();
-
-                    continue;
-                }
-
-                ke.ipl.lower(ipl);
-                return;
+        // Fast path: Try to acquire without a turnstile by spinning a bit.
+        for (0..optimistic_spins) |_| {
+            if (m.owner.cmpxchgWeak(null, curtd, .acquire, .monotonic) != null) {
+                std.atomic.spinLoopHint();
+                continue;
             }
+
+            ke.ipl.lower(ipl);
+            return;
         }
 
         // Slow path: contended, block on a turnstile.
