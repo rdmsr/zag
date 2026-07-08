@@ -61,7 +61,9 @@ fn highest_waiter(ts: *Turnstile) ?u8 {
         var it = q.iterator();
         while (it.next()) : (it.advance()) {
             const w: *Waiter = @fieldParentPtr("link", it.get());
+            w.thread.lock.acquire_no_ipl();
             best = @max(best orelse 0, w.thread.priority);
+            w.thread.lock.release_no_ipl();
         }
     }
     return best;
@@ -151,44 +153,26 @@ fn propagate(curtd: *ke.Thread, root: *Chain) void {
         const obj = thread.waiting_on orelse break;
         const bucket = &chains[hash_obj(obj)];
 
-        // Lock `bucket` and confirm `thread` didn't move before we got it.
-        // If the trylock fails, drop root and restart from curtd.
-        // If validation fails, restart while still holding root.
-        const restart = blk: {
-            if (bucket != root) {
-                if (!bucket.lock.try_acquire_no_ipl()) {
-                    std.debug.assert(held == null);
+        if (bucket != root) {
+            if (!bucket.lock.try_acquire_no_ipl()) {
+                std.debug.assert(held == null);
 
-                    // Drop everything and try again. This avoids a livelock
-                    // between two PI walks holding different roots and trying to
-                    // acquire each other.
-                    thread.lock.release_no_ipl();
-                    root.lock.release_no_ipl();
-
-                    root.lock.acquire_no_ipl();
-                    curtd.lock.acquire_no_ipl();
-
-                    thread = curtd;
-                    donate = curtd.priority;
-                    continue;
-                }
-                held = bucket;
-            }
-            break :blk thread.waiting_on != obj;
-        };
-
-        // Try again.
-        if (restart) {
-            if (held) |h| h.lock.release_no_ipl();
-            held = null;
-            if (thread != curtd) {
+                // Drop everything and try again. This avoids a livelock
+                // between two PI walks holding different roots and trying to
+                // acquire each other.
                 thread.lock.release_no_ipl();
+                root.lock.release_no_ipl();
+
+                root.lock.acquire_no_ipl();
                 curtd.lock.acquire_no_ipl();
+
                 thread = curtd;
+                donate = curtd.priority;
+                continue;
             }
-            donate = curtd.priority;
-            continue;
+            held = bucket;
         }
+        std.debug.assert(thread.waiting_on == obj);
 
         const ts = thread.turnstile;
         const owner = ts.owner orelse break;
@@ -199,6 +183,10 @@ fn propagate(curtd: *ke.Thread, root: *Chain) void {
             owner.lock.release_no_ipl();
             break;
         }
+
+        // The next hop blocks owner, so lend the owner's priority
+        // down the chain.
+        donate = owner.priority;
 
         // Keep the owner locked, drop everything below it.
         thread.lock.release_no_ipl();
@@ -265,6 +253,15 @@ pub fn block(turnstile: ?*Turnstile, obj: *anyopaque, owner: *ke.Thread, queue: 
         curtd.turnstile.next_free = turn.next_free;
         turn.next_free = curtd.turnstile;
         curtd.turnstile = turn;
+
+        if (turn.owner) |cur| {
+            std.debug.assert(cur == owner);
+        } else {
+            // Owner might be null because of a partial wakeup
+            // where we cleared it, restore it here.
+            turn.owner = owner;
+            reboost(turn, owner);
+        }
     } else {
         // This is the first thread to block on this object.
         // Lend its turnstile and add it to the hash chain.
@@ -357,6 +354,9 @@ fn dequeue(ts: *Turnstile, td: *ke.Thread) void {
     std.debug.assert(td.turnstile_waiter != null);
     std.debug.assert(!ts.queues[0].is_empty() or !ts.queues[1].is_empty());
 
+    const waiter = td.turnstile_waiter.?;
+    waiter.link.remove();
+
     if (ts.next_free) |free| {
         // Steal a turnstile from the freelist.
         td.turnstile = free;
@@ -372,12 +372,12 @@ fn dequeue(ts: *Turnstile, td: *ke.Thread) void {
         ts.donated = null;
     }
 
-    const waiter = td.turnstile_waiter.?;
-    waiter.link.remove();
     td.turnstile_waiter = null;
     ts.waiters -= 1;
 
+    td.lock.acquire_no_ipl();
     td.waiting_on = null;
+    td.lock.release_no_ipl();
 
     waiter.event.signal();
 }

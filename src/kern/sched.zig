@@ -164,6 +164,7 @@ pub fn handle_preemption(cpu: *PerCpu) void {
     };
 
     cpu.next_thread = null;
+    cpu.current_thread_prio.store(next.priority, .monotonic);
 
     cpu.queues_lock.release_no_ipl();
     cur.lock.acquire_no_ipl();
@@ -295,6 +296,10 @@ pub fn yield_locked() void {
         sched_cpu.steal_work = true;
     }
 
+    // Publish the incoming thread's priority while the lock still
+    // orders us against priority writers.
+    sched_cpu.current_thread_prio.store(next.?.priority, .monotonic);
+
     sched_cpu.queues_lock.release_no_ipl();
 
     if (next != null and cur.? != next.?) {
@@ -340,13 +345,18 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
     std.debug.assert(td.lock.is_locked());
 
     const old_prio = td.priority;
-    td.priority = new_prio;
 
-    const c = td.cpu orelse return;
+    const c = td.cpu orelse {
+        td.priority = new_prio;
+        return;
+    };
+
     const cpu = percpu.remote(c);
 
     cpu.queues_lock.acquire_no_ipl();
     defer cpu.queues_lock.release_no_ipl();
+
+    td.priority = new_prio;
 
     const state = td.state.load(.monotonic);
 
@@ -354,6 +364,7 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
         // Remove it from its queue and add it back.
         remove_from_queue(cpu, td);
         insert_in_queue(cpu, td, false);
+        td.cpu = c;
     }
 
     if (state == .Running) {
@@ -380,8 +391,14 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
         }
     }
 
-    // XXX: handle selected threads?
+    if (state == .Selected or cpu.next_thread == td) {
+        // Thread is committed to run on `c` but not running yet,
+        // update the hint.
+        cpu.current_thread_prio.store(new_prio, .monotonic);
+        return;
+    }
 
+    // XXX: Handle Selected threads so that they are placed properly?
 }
 
 /// Initialize a CPU for use by the scheduler.
@@ -783,7 +800,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
 
     defer cpu.queues_lock.release_no_ipl();
 
-    if (cpu.current_thread == null or should_preempt(td, cpu.current_thread.?)) {
+    if (should_prio_preempt(td, cpu.current_thread_prio.load(.monotonic))) {
         // We can preempt the current thread, first check whether or not there
         // is already a next thread selected, and if we can preempt it.
 
@@ -807,6 +824,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
             cpu.next_thread = td;
             cpu.preemption_reason = .HigherPriority;
             td.cpu = c;
+            td.state.store(.Selected, .monotonic);
 
             ki.ipl.set_softint_pending(c, .Dispatch);
 
@@ -908,9 +926,6 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
     next.state.store(.Running, .monotonic);
     cpu.current_thread = next;
     next.last_cpu = ke.cpu.current();
-
-    // Stash thread status.
-    cpu.current_thread_prio.store(next.priority, .monotonic);
 
     // Do machine-dependent switch.
     cur.context.switch_to(&next.context);
