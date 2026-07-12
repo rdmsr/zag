@@ -26,12 +26,25 @@ pub fn LinkerSet(name: []const u8, comptime T: type) type {
             return arr[0..n];
         }
 
-        pub fn insert(elem: T) type {
+        pub fn insert(comptime elem: T) type {
             const U = struct {
-                var storage: T linksection("set_" ++ name) = elem;
+                var storage: T = elem;
+
+                fn Tag(comptime e: T) type {
+                    return struct {
+                        const tagged = e;
+                    };
+                }
 
                 comptime {
-                    _ = &storage;
+                    // What the fuck?
+                    @export(
+                        @as(*const usize, @ptrCast(&storage)),
+                        .{
+                            .name = "_set_elem_" ++ name ++ "_" ++ @typeName(Tag(elem)),
+                            .section = "set_" ++ name,
+                        },
+                    );
                 }
             };
 
