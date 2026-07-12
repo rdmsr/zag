@@ -89,6 +89,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "config", .module = config_module },
             .{ .name = "ksyms", .module = ksyms_module },
             .{ .name = "rtl", .module = rtl_module },
+            .{ .name = "arch", .module = arch_module },
         },
     });
 
