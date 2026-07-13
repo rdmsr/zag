@@ -18,10 +18,12 @@ pub const Thread = struct {
             Idle,
         };
 
-        pub const idle = 0;
+        /// Idle thread has the lowest priority.
+        pub const idle_low = 0;
+        pub const idle = 1;
 
-        /// Batch threads have priorities 1-23
-        pub const low_batch = 1;
+        /// Batch threads have priorities 2-23
+        pub const low_batch = 2;
         pub const high_batch = 23;
         pub const batch_range = high_batch - low_batch + 1;
 
@@ -39,7 +41,7 @@ pub const Thread = struct {
         pub fn class_from_prio(prio: u8) Class {
             if (prio >= low_realtime and prio <= max) return .Realtime;
             if (prio >= low_batch and prio < low_realtime) return .Batch;
-            if (prio == idle) return .Idle;
+            if (prio <= idle) return .Idle;
 
             unreachable;
         }
@@ -110,6 +112,8 @@ pub const Thread = struct {
     queue_item: ?*rtl.List.Entry,
     /// Base of the stack.
     stack: r.VAddr,
+    /// PELT load average,
+    avg: ki.sched.Average,
 
     /// Initialize a thread.
     /// - `stack`: Address of the **base** of the stack on which the initial context for the thread is built
@@ -145,6 +149,14 @@ pub const Thread = struct {
             .queue = null,
             .queue_item = null,
             .stack = stack,
+            .avg = .{
+                .last_update = 0,
+                // New threads are considered heavy until they prove themselves,
+                // this might allow for better balancing during bursts.
+                .load = ki.sched.pelt_load_avg_max,
+                .est = ki.sched.pelt_load_avg_max,
+                .period_contrib = 0,
+            },
         };
 
         thread.turnstiles_owned.init();
@@ -187,6 +199,7 @@ pub fn exit() void {
     // Reuse the runq linkage to put on reaper list.
     reaper_list.insert(@ptrCast(&curtd.runq_link.next));
 
+    ki.sched.detach_load_avg(ki.sched.percpu.local(), curtd);
     ki.sched.yield_locked();
 }
 

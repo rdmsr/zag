@@ -19,7 +19,7 @@ pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
     ki.turnstile.init_turnstiles();
     ki.shootdown.init();
 
-    thread0.init(@intFromPtr(&stack), r.kib(16), ke.Thread.Priority.idle, ki.sched.idle, null);
+    thread0.init(@intFromPtr(&stack), r.kib(16), ke.Thread.Priority.idle_low, ki.sched.idle, null);
     thread0.priority = 0;
     thread0.base_priority = 0;
     thread0.pinned = true;
