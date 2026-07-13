@@ -40,7 +40,7 @@ fn ap_entry(cpu_id: u32) callconv(.c) noreturn {
 fn make_thread(entrypoint: *const fn (?*anyopaque) void, stack: usize) *ke.Thread {
     const td = mm.zone.gpa.create(ke.Thread) catch @panic("Failed to allocate thread for AP");
 
-    td.init(stack, r.kib(32), ke.Thread.Priority.idle, entrypoint, null);
+    td.init(stack, r.kib(32), ke.Thread.Priority.idle_low, entrypoint, null);
 
     td.pinned = true;
     return td;
