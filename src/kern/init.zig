@@ -9,7 +9,7 @@ const ex = r.ex;
 var thread0: ke.Thread = undefined;
 var stack: [r.kib(16)]u8 align(16) = undefined;
 
-pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
+pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     ki.impl.early_init();
     ki.tunable.init(boot_info);
     std.log.info("Welcome to the machine", .{});

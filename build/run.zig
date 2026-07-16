@@ -8,7 +8,7 @@ const QemuArgs = struct {
     args: [][]u8,
 };
 
-pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, plat: config.Platform) void {
+pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, loader: *std.Build.Step.Compile, plat: config.Platform) void {
     const run_step = b.step("run", "Run the kernel");
     const uefi = b.option(bool, "uefi", "Boot with UEFI firmware") orelse false;
     const debug = b.option(bool, "debug", "Boot in debug mode") orelse false;
@@ -17,7 +17,7 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, plat: config.Platf
     if (plat.os == .freestanding) {
         const limine = b.dependency("limine", .{});
         const ovmf = b.dependency("ovmf", .{});
-        const iso_out = image.addIso(b, plat.arch, "myos", kernel, limine);
+        const iso_out = image.addIso(b, plat.arch, "myos", kernel, loader, limine);
 
         const qemu_bin = switch (plat.arch) {
             .x86_64 => "qemu-system-x86_64",
@@ -47,8 +47,8 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, plat: config.Platf
             qemu.addArgs(&.{
                 "-d",
                 "int",
-                "-s",
-                "-S",
+                //"-s",
+                //"-S",
                 "-D",
                 "qemu.log",
                 "-no-reboot",

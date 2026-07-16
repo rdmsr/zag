@@ -80,6 +80,9 @@ pub fn build(b: *std.Build) void {
     const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
     kernel.root_module.addAssemblyFile(ksyms_s);
 
+    const loader = addLoader(b, plat, optimize, config_module, rtl_module, arch_module);
+
+    b.default_step.dependOn(&b.addInstallArtifact(loader, .{}).step);
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
 
     const docs_module = b.createModule(.{
@@ -108,10 +111,10 @@ pub fn build(b: *std.Build) void {
     docs_step.dependOn(&install_docs.step);
 
     const iso_step = b.step("iso", "Build the ISO image");
-    const result = image.addIso(b, plat.arch, "myos", kernel, b.dependency("limine", .{}));
+    const result = image.addIso(b, plat.arch, "myos", kernel, loader, b.dependency("limine", .{}));
     iso_step.dependOn(result.step);
 
-    run.addRun(b, kernel, plat);
+    run.addRun(b, kernel, loader, plat);
 
     const rtl_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -173,6 +176,8 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
     kernel.root_module.addImport("ksyms", ksyms_module);
     kernel.root_module.addImport("rtl", rtl);
 
+    kernel.link_gc_sections = false;
+
     kernel.use_llvm = true;
     kernel.use_lld = true;
 
@@ -215,7 +220,65 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
         else => {},
     }
 
-    kernel.linker_script = b.path(b.fmt("build/linker-scripts/{s}.lds", .{@tagName(plat.arch)}));
+    kernel.linker_script = b.path(b.fmt("build/linker-scripts/kernel/{s}.lds", .{@tagName(plat.arch)}));
 
     return kernel;
+}
+
+fn addLoader(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, rtl: *std.Build.Module, arch_module: *std.Build.Module) *std.Build.Step.Compile {
+    const target = b.resolveTargetQuery(targetQueryForPlatform(plat));
+
+    const name = b.fmt("loader-{s}-{s}", .{ @tagName(plat.arch), @tagName(plat.bootloader) });
+
+    const loader = b.addExecutable(.{
+        .name = name,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/loader/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    loader.root_module.addImport("arch", arch_module);
+    loader.root_module.addImport("config", config_module);
+    loader.root_module.addImport("rtl", rtl);
+    loader.root_module.addAssemblyFile(b.path("src/loader/jump.s"));
+
+    loader.use_llvm = true;
+    loader.use_lld = true;
+
+    loader.root_module.omit_frame_pointer = false;
+
+    loader.entry = .{ .symbol_name = "loader_entry" };
+
+    const modules: []const *std.Build.Module = &.{ arch_module, config_module, rtl, loader.root_module };
+
+    loader.linkage = .static;
+    loader.pie = false;
+
+    for (modules) |m| {
+        m.pic = false;
+        m.strip = false;
+        m.stack_check = false;
+        m.stack_protector = false;
+        m.unwind_tables = .none;
+        m.omit_frame_pointer = false;
+
+        m.code_model = switch (plat.arch) {
+            .x86_64 => .kernel,
+            .riscv64 => .medium,
+            else => .large,
+        };
+
+        switch (plat.arch) {
+            .x86_64 => {
+                m.red_zone = false;
+            },
+            else => {},
+        }
+    }
+
+    loader.linker_script = b.path(b.fmt("build/linker-scripts/loader/{s}.lds", .{@tagName(plat.arch)}));
+
+    return loader;
 }

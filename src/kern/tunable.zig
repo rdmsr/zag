@@ -42,7 +42,7 @@ pub fn Tunable(comptime T: type, comptime default: T, comptime name: []const u8)
     };
 }
 
-pub fn init(boot_info: *pl.BootInfo) void {
+pub fn init(boot_info: *r.BootInfo) void {
     const cmdline = boot_info.cmdline orelse return;
 
     const elems = set.elems();

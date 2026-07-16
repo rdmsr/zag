@@ -2,6 +2,7 @@
 //! To add a new platform, create a new file and implement all required functions.
 
 const config = @import("config");
+const r = @import("root");
 
 pub const impl = switch (config.arch) {
     .amd64 => @import("pc/impl.zig"),
@@ -11,13 +12,13 @@ pub const impl = switch (config.arch) {
 pub const acpi = @import("acpi/root.zig");
 
 /// Early platform-specific initialization, called before anything else.
-pub inline fn early_init(boot_info: *BootInfo) void {
+pub inline fn early_init(boot_info: *r.BootInfo) void {
     return impl.early_init(boot_info);
 }
 
 /// Late platform init. Memory allocator is available at this point.
 /// SMP bringup must be done after this returns.
-pub inline fn late_init(boot_info: *BootInfo) void {
+pub inline fn late_init(boot_info: *r.BootInfo) void {
     return impl.late_init(boot_info);
 }
 
@@ -38,53 +39,3 @@ pub inline fn arm_timer(ns: u64) void {
 
 /// Pretty name for the platform.
 pub const name = impl.name;
-
-/// A generic struct representing information passed from the bootloader.
-pub const BootInfo = struct {
-    /// Represents the system memory map.
-    pub const MemMap = struct {
-        /// A memory map entry.
-        pub const Entry = struct {
-            pub const Type = enum {
-                Free,
-                Reserved,
-                LoaderReclaimable,
-                AcpiNvs,
-                AcpiReclaimable,
-                Kernel,
-            };
-
-            type: Type,
-            base: usize,
-            size: usize,
-        };
-
-        entry_count: usize,
-        entries: [256]Entry,
-    };
-
-    pub const Framebuffer = struct {
-        address: usize,
-        width: u32,
-        height: u32,
-        pitch: u32,
-        bpp: u8,
-    };
-
-    pub const KernelAddress = struct { physical_base: usize, virtual_base: usize };
-
-    /// RSDP on ACPI machines
-    rsdp: ?usize,
-
-    /// Kernel command-line arguments
-    cmdline: ?[]const u8,
-
-    /// Memory map
-    memory_map: MemMap,
-
-    /// Framebuffer info, if available
-    framebuffer: ?Framebuffer,
-
-    /// Kernel address
-    kernel_address: KernelAddress,
-};

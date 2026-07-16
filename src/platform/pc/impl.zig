@@ -32,7 +32,7 @@ fn com1_write(c: u8) void {
     amd64.outb(com1, c);
 }
 
-pub fn early_init(boot_info: *pl.BootInfo) linksection(r.init) void {
+pub fn early_init(boot_info: *r.BootInfo) linksection(r.init) void {
     com1_init();
 
     const f = amd64.cpu_features;
@@ -79,7 +79,7 @@ pub fn init_ap() void {
     apic.init_local();
 }
 
-pub fn late_init(boot_info: *pl.BootInfo) linksection(r.init) void {
+pub fn late_init(boot_info: *r.BootInfo) linksection(r.init) void {
     if (amd64.hypervisor.info) |hv| {
         init_hypervisor(hv);
     }
@@ -87,6 +87,7 @@ pub fn late_init(boot_info: *pl.BootInfo) linksection(r.init) void {
     pl.acpi.init(boot_info);
 
     tsc.init();
+
     apic.init();
 
     if (apic.apics.items.len != 0) {

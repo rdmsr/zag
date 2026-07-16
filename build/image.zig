@@ -21,20 +21,24 @@ pub fn addIso(
     arch: Arch,
     image_name: []const u8,
     kernel: *std.Build.Step.Compile,
+    loader: *std.Build.Step.Compile,
     limine: *std.Build.Dependency,
 ) IsoResult {
     const limine_tool = addLimineTool(b, limine);
     const kernel_bin = kernel.getEmittedBin();
+    const loader_bin = loader.getEmittedBin();
 
     const prep_script =
         \\set -euo pipefail
         \\kernel="$1"
-        \\iso_root="$2"
-        \\limine_conf="$3"
-        \\limine_dir="$4"
-        \\arch="$5"
+        \\loader="$2"
+        \\iso_root="$3"
+        \\limine_conf="$4"
+        \\limine_dir="$5"
+        \\arch="$6"
         \\rm -rf "$iso_root"
         \\mkdir -p "$iso_root/boot/limine" "$iso_root/EFI/BOOT"
+        \\cp "$loader" "$iso_root/boot/loader"
         \\cp "$kernel" "$iso_root/boot/kernel"
         \\cp "$limine_conf" "$iso_root/boot/limine/limine.conf"
         \\case "$arch" in
@@ -62,6 +66,7 @@ pub fn addIso(
     const prep = b.addSystemCommand(&.{ "bash", "-ceu", prep_script, "--" });
 
     prep.addFileArg(kernel_bin);
+    prep.addFileArg(loader_bin);
     prep.addDirectoryArg(iso_root.getDirectory());
     prep.addFileArg(b.path("build/limine.conf"));
     prep.addDirectoryArg(limine.path("."));

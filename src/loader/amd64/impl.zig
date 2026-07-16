@@ -1,28 +1,15 @@
 const amd64 = @import("arch");
 const r = @import("root");
-const mm = r.mm;
-const mi = mm.private;
+const pmap = @import("../pmap.zig");
 
-pub const hhdm_minimum_max_address = r.gib(4);
-
-pub fn phys_to_virt(addr: r.PAddr) r.VAddr {
-    return addr + 0xffff800000000000;
-}
-
-pub fn virt_to_phys(vaddr: r.VAddr) usize {
-    return vaddr - 0xffff800000000000;
-}
-
-pub const hhdm_base = 0xffff800000000000;
-pub const kernel_heap_base = 0xffffe00000000000;
-pub const pfndb_base = 0xffffff0000000000;
-
-pub const levels = [_]mi.PMapLevel{
+pub const levels = [_]pmap.PMapLevel{
     .{ .shift = 12, .mask = 0x1ff, .leaf = true }, // 4K
     .{ .shift = 21, .mask = 0x1ff, .leaf = true }, // 2M
     .{ .shift = 30, .mask = 0x1ff, .leaf = true }, // 1G
     .{ .shift = 39, .mask = 0x1ff, .leaf = false }, // root
 };
+
+pub const virtual_bits: usize = 48;
 
 pub const Pte = packed struct(u64) {
     present: bool,
@@ -39,8 +26,8 @@ pub const Pte = packed struct(u64) {
     ignored_2: u11,
     nx: bool,
 
-    pub fn address(self: Pte) r.PAddr {
-        return @as(r.PAddr, self.addr) << 12;
+    pub fn address(self: Pte) usize {
+        return @as(usize, self.addr) << 12;
     }
 
     pub fn is_present(self: Pte) bool {
@@ -70,7 +57,7 @@ pub const Pte = packed struct(u64) {
     }
 };
 
-pub inline fn make_table_pte(pa: r.PAddr) Pte {
+pub inline fn make_table_pte(pa: usize) Pte {
     return Pte{
         .present = true,
         .writable = true,
@@ -88,7 +75,7 @@ pub inline fn make_table_pte(pa: r.PAddr) Pte {
     };
 }
 
-pub inline fn make_leaf_pte(pa: r.PAddr, flags: mm.MapFlags, level: usize) Pte {
+pub inline fn make_leaf_pte(pa: usize, flags: r.mem.MapFlags, level: usize) Pte {
     return Pte{
         .present = true,
         .writable = flags.write,
@@ -106,7 +93,7 @@ pub inline fn make_leaf_pte(pa: r.PAddr, flags: mm.MapFlags, level: usize) Pte {
     };
 }
 
-pub inline fn activate(root_pa: r.PAddr) void {
+pub inline fn activate(root_pa: usize) void {
     amd64.write_cr(3, root_pa);
 }
 
@@ -116,6 +103,6 @@ pub fn is_leaf_level_enabled(level: usize) bool {
     return true;
 }
 
-pub fn init_kernel() void {
-    mi.kernel_space.pmap.root_pa = amd64.read_cr(3);
+pub fn debug_write(c: u8) void {
+    amd64.outb(0xe9, c);
 }

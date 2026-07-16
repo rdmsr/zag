@@ -20,7 +20,7 @@ pub var high_memory_threshold: usize = 0;
 
 var bootstrapped = false;
 var early_alloc_entry_idx: usize = 0;
-var memory_map: *pl.BootInfo.MemMap = undefined;
+var memory_map: *r.BootInfo.MemMap = undefined;
 var early_allocs: usize = 0;
 var list_lock: ke.SpinLock = .init();
 var free_list: rtl.List = undefined;
@@ -162,7 +162,7 @@ pub fn free_batch(head: *mm.Page, tail: *mm.Page, count: usize) void {
     list_lock.release(ipl);
 }
 
-pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
+pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     memory_map = &boot_info.memory_map;
     free_list.init();
     free_page_event.init(.Notification);
