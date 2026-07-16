@@ -322,7 +322,7 @@ fn enumerate_tables() void {
     }
 }
 
-pub fn init(boot_info: *pl.BootInfo) linksection(r.init) void {
+pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     const rsdp_addr = boot_info.rsdp orelse return;
 
     const rsdp: *Rsdp = @ptrFromInt(rsdp_addr);

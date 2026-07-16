@@ -9,8 +9,7 @@ pub const Bootloader = enum {
 pub const Platform = struct {
     arch: std.Target.Cpu.Arch,
     os: std.Target.Os.Tag,
-
-    bootloader: ?Bootloader = null,
+    bootloader: Bootloader = .Limine,
 };
 
 const ArchEnum = enum {

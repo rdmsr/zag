@@ -7,6 +7,7 @@ pub const ksyms = @import("ksyms");
 pub const arch = @import("arch");
 pub const mm = @import("mm/root.zig");
 pub const ps = @import("proc/root.zig");
+pub const BootInfo = @import("loader/info.zig");
 
 const config = @import("config");
 
@@ -59,5 +60,5 @@ pub const panic = std.debug.FullPanic(ke.panic);
 
 comptime {
     // Ensure the entry point is linked in.
-    _ = @import("boot/limine/entry.zig");
+    _ = @import("kern/entry.zig");
 }

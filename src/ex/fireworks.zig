@@ -217,7 +217,7 @@ fn explodeable(_: ?*anyopaque) void {
 }
 
 pub fn start(param: ?*anyopaque) void {
-    const boot_info: *r.pl.BootInfo = @ptrCast(@alignCast(param));
+    const boot_info: *r.BootInfo = @ptrCast(@alignCast(param));
 
     rand_gen ^= rand_tsc_based();
 

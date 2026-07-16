@@ -11,7 +11,7 @@ const rtl = @import("rtl");
 // XXX
 const fbconsole = @import("../dev/fbconsole.zig");
 
-pub fn init(boot_info: *pl.BootInfo) void {
+pub fn init(boot_info: *r.BootInfo) void {
     mm.init(boot_info);
     ps.init();
 

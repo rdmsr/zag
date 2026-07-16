@@ -416,7 +416,7 @@ inline fn wma_mix(old: usize, new: usize) usize {
     return (3 * old + new * wma_unit) / 4;
 }
 
-fn alloc_cpus() []rtl.CachePadded(Cpu) {
+fn cpus_alloc() []rtl.CachePadded(Cpu) {
     const ptr = cpu_zone.alloc(.{}) catch @panic("failed to allocate zone CPU state");
     const raw: [*]rtl.CachePadded(Cpu) = @ptrCast(@alignCast(ptr));
     return raw[0..ke.ncpus];
@@ -526,7 +526,7 @@ pub const Zone = struct {
             return;
         }
 
-        self.cpus = alloc_cpus();
+        self.cpus = cpus_alloc();
 
         for (0..ke.ncpus) |i| {
             self.cpus[i].value.lock = .init();
@@ -1284,7 +1284,7 @@ pub fn late_init() linksection(r.init) void {
 
     while (zone) |z| {
         if (z.use_magazines) {
-            z.cpus = alloc_cpus();
+            z.cpus = cpus_alloc();
 
             for (0..ke.ncpus) |i| {
                 z.cpus[i] = .init(.{

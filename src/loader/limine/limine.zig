@@ -155,3 +155,71 @@ pub const Framebuffer = extern struct {
     edid_size: u64,
     edid: ?*anyopaque,
 };
+
+pub const hhdm_request_id: [4]u64 = .{
+    common_magic[0],
+    common_magic[1],
+    0x48dcf1cb8ad2b852,
+    0x63984e959a98244b,
+};
+
+pub const HHDMResponse = extern struct {
+    revision: u64,
+    offset: u64,
+};
+
+pub const HHDMRequest = extern struct {
+    id: [4]u64,
+    revision: u64,
+    response: ?*HHDMResponse,
+};
+
+pub const module_request_id: [4]u64 = .{
+    common_magic[0],
+    common_magic[1],
+    0x3e7e279702be32af,
+    0xca1c4f3bd1280cee,
+};
+
+pub const Uuid = extern struct {
+    a: u32,
+    b: u16,
+    c: u16,
+    d: [8]u8,
+};
+
+pub const MediaType = enum(u32) {
+    generic = 0,
+    optical = 1,
+    tftp = 2,
+    _,
+};
+
+const File = extern struct {
+    revision: u64,
+    address: *anyopaque,
+    size: u64,
+    path: [*:0]u8,
+    string: [*:0]u8,
+    media_type: MediaType,
+    unused: u32,
+    tftp_ip: u32,
+    tftp_port: u32,
+    partition_index: u32,
+    mbr_disk_id: u32,
+    gpt_disk_uuid: Uuid,
+    gpt_part_uuid: Uuid,
+    part_uuid: Uuid,
+};
+
+pub const ModuleResponse = extern struct {
+    revision: u64,
+    module_count: u64,
+    modules: ?[*]*File,
+};
+
+pub const ModuleRequest = extern struct {
+    id: [4]u64,
+    revision: u64,
+    response: ?*ModuleResponse,
+};
