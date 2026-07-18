@@ -24,6 +24,8 @@ pub const Nanoseconds = u64;
 pub var kernel_heap_base: usize = 0;
 pub var kernel_pfndb_base: usize = 0;
 
+pub var boot_info: *BootInfo = undefined;
+
 /// Return N kibibytes in bytes.
 pub fn kib(comptime N: u32) usize {
     return N * 1024;
