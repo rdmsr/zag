@@ -6,6 +6,7 @@ pub const MemMap = struct {
             Free,
             Reserved,
             LoaderReclaimable,
+            LoaderData,
             AcpiNvs,
             AcpiReclaimable,
         };
@@ -16,6 +17,7 @@ pub const MemMap = struct {
     };
 
     entry_count: usize,
+    loader_memory_used: usize,
     entries: [128]Entry,
 };
 
@@ -26,6 +28,9 @@ pub const Framebuffer = struct {
     pitch: u32,
     bpp: u8,
 };
+
+// Kept in sync with the kernel
+pub const page_struct_size = 16;
 
 pub const KernelAddress = struct { physical_base: usize, virtual_base: usize };
 

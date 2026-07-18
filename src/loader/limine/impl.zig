@@ -65,8 +65,6 @@ pub fn get_image_layout() r.ImageLayout {
 export fn loader_entry() callconv(.c) void {
     const mmap = memmap_request.response.?;
 
-    std.log.info("hi", .{});
-
     for (0..mmap.entry_count) |i| {
         const entry = mmap.entries.?[i];
 

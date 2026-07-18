@@ -18,8 +18,6 @@ pub var low_memory_threshold: usize = 0;
 /// Threshold at which reclamation stops.
 pub var high_memory_threshold: usize = 0;
 
-var bootstrapped = false;
-var early_alloc_entry_idx: usize = 0;
 var memory_map: *r.BootInfo.MemMap = undefined;
 var early_allocs: usize = 0;
 var list_lock: ke.SpinLock = .init();
@@ -30,27 +28,6 @@ var free_page_event: ke.Event = undefined;
 var free_pages: usize = 0;
 
 pub var usable_memory: std.atomic.Value(usize) = .init(0);
-
-pub fn early_alloc() usize {
-    while (early_alloc_entry_idx < memory_map.entry_count) {
-        const entry = &memory_map.entries[early_alloc_entry_idx];
-
-        if (entry.type != .Free or entry.size < mm.page_size) {
-            early_alloc_entry_idx += 1;
-            continue;
-        }
-
-        const addr = entry.base;
-
-        entry.base += mm.page_size;
-        entry.size -= mm.page_size;
-        early_allocs += mm.page_size;
-
-        return addr;
-    }
-
-    @panic("mm/phys: Out of memory for early allocation");
-}
 
 // Wait for pages to be available.
 // List lock is held.
@@ -167,7 +144,7 @@ pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     free_list.init();
     free_page_event.init(.Notification);
 
-    var total_usable_memory: usize = 0;
+    var total_usable_memory: usize = boot_info.memory_map.loader_memory_used;
     log.info("physical memory map:", .{});
 
     for (0..boot_info.memory_map.entry_count) |i| {
@@ -175,49 +152,17 @@ pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
 
         log.info("[{x:0>16}-{x:0>16}] {s}", .{ entry.base, entry.base + entry.size, @tagName(entry.type) });
 
-        if (entry.type == .Free) {
+        if (entry.type == .Free or entry.type == .LoaderReclaimable) {
             total_usable_memory += entry.size;
         }
     }
 
     const pfndb_size_required = @sizeOf(mm.Page) * (std.math.divCeil(usize, total_usable_memory, mm.page_size) catch unreachable);
-
     log.info("using {} KiB for pfndb ({} bytes per page)", .{ pfndb_size_required / 1024, @sizeOf(mm.Page) });
 
-    // Create the kernel pagemap from the early allocator.
+    // Get the kernel pagemap from the loader,
+    // we are already in it so no need to activate it.
     mi.impl.init_kernel();
-
-    // Now map the PFN database.
-    for (0..boot_info.memory_map.entry_count) |i| {
-        const entry = boot_info.memory_map.entries[i];
-
-        if (entry.type != .Free or entry.size < mm.page_size) {
-            continue;
-        }
-
-        const npages = std.math.divCeil(usize, entry.size, mm.page_size) catch unreachable;
-
-        // 1. Calculate the exact virtual address range needed for this region's page structs.
-        const start_pfn: usize = mm.page_to_pfn(entry.base);
-        const exact_start = mi.impl.pfndb_base + (start_pfn * @sizeOf(mm.Page));
-        const exact_end = exact_start + (npages * @sizeOf(mm.Page));
-
-        // 2. Ensure the addresses are aligned on page boundaries.
-        const map_start = std.mem.alignBackward(usize, exact_start, mm.page_size);
-        const map_end = std.mem.alignForward(usize, exact_end, mm.page_size);
-
-        // 3. Map the virtual pages.
-        mi.kernel_space.pmap.map_range_allocating(
-            map_start,
-            map_end - map_start,
-            .{
-                .read = true,
-                .write = true,
-                .global = true,
-            },
-            .Boot,
-        );
-    }
 
     // Calculate the minimum amount of free memory we accept,
     // this formula is from Linux and does not grow linearly; it would be wasteful
@@ -232,13 +177,12 @@ pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
 
     low_memory_threshold = min_memory_threshold + gap;
     high_memory_threshold = low_memory_threshold + gap;
-}
 
-pub fn init_pfndb() void {
+    // Initialize the free list from the PFNDB linkage.
     for (0..memory_map.entry_count) |i| {
         const entry = memory_map.entries[i];
 
-        if (entry.type != .Free or entry.size < mm.page_size) {
+        if ((entry.type != .Free and entry.type != .LoaderReclaimable) or entry.size < mm.page_size) {
             continue;
         }
 
@@ -253,6 +197,4 @@ pub fn init_pfndb() void {
             _ = usable_memory.fetchAdd(mm.page_size, .monotonic);
         }
     }
-
-    bootstrapped = true;
 }
