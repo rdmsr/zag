@@ -31,8 +31,12 @@ pub const Mutex = struct {
 
         // Fast path: Try to acquire without a turnstile by spinning a bit.
         for (0..optimistic_spins) |_| {
-            if (m.owner.cmpxchgWeak(null, curtd, .acquire, .monotonic) != null) {
+            if (m.owner.load(.monotonic) != null) {
                 std.atomic.spinLoopHint();
+                continue;
+            }
+
+            if (m.owner.cmpxchgWeak(null, curtd, .acquire, .monotonic) != null) {
                 continue;
             }
 
