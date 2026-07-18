@@ -14,7 +14,7 @@ pub const ShootdownState = struct {
     /// This is used as a counter when the request is outstanding,
     /// otherwise it is set to the `slot_*` values below.
     state: std.atomic.Value(u16),
-    link: rtl.List.Entry,
+    link: ?*anyopaque,
     /// Base virtual address of the shootdown.
     base: r.VAddr,
     /// Number of pages to flush.
@@ -42,7 +42,7 @@ const slot_free: u16 = std.math.maxInt(u16);
 const slot_reserved: u16 = std.math.maxInt(u16) - 1;
 const percpu = ke.CpuLocal(PerCpu, undefined);
 
-pub var shootdowns: ke.Queue = undefined;
+pub var shootdowns: rtl.HandoffList = undefined;
 
 var sync_counter: std.atomic.Value(usize) = .init(0);
 var sync_addr: r.VAddr = 0;
@@ -149,7 +149,7 @@ pub fn process_shootdowns() void {
                 flush_range(state.base, state.npages);
 
                 if (state.state.fetchSub(1, .release) == 1) {
-                    shootdowns.insert(&state.link, .Tail);
+                    shootdowns.insert(&state.link);
                 }
             }
         }
@@ -188,8 +188,4 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
         // Tell him we have something for him.
         percpu.remote(@truncate(bit)).senders.set(curcpu, .release);
     }
-}
-
-pub fn init() void {
-    shootdowns.init(ke.ncpus);
 }

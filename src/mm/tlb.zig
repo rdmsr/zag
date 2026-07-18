@@ -2,19 +2,26 @@
 
 const r = @import("root");
 const std = @import("std");
+const rtl = @import("rtl");
 
 const ke = r.ke;
 const mm = r.mm;
 const mi = mm.private;
 const ps = r.ps;
+const ex = r.ex;
 
 pub var sync_shootdowns: std.atomic.Value(usize) = .init(0);
 pub var async_shootdowns: std.atomic.Value(usize) = .init(0);
 pub var sent_shootdowns: std.atomic.Value(usize) = .init(0);
 
+var work_item: ex.WorkItem = undefined;
+
 /// Reclaim the memory associated with a state.
 /// This can only be done when all CPUs have flushed their TLB.
-fn reclaim_state(state: *ke.ShootdownState) void {
+fn reclaim_state(obj: *anyopaque, _: ?*anyopaque) void {
+    const link: *?*anyopaque = @ptrCast(@alignCast(obj));
+    const state: *ke.ShootdownState = @fieldParentPtr("link", link);
+
     const space: *mm.Space = @ptrFromInt(state.payload[0]);
     const pfn_list: mi.PfnList = @bitCast(state.payload[1]);
     const base = state.base;
@@ -36,13 +43,8 @@ fn reclaim_state(state: *ke.ShootdownState) void {
     state.release();
 }
 
-fn worker_thread(_: ?*anyopaque) void {
-    while (true) {
-        const entry = ke.shootdown.shootdowns.remove();
-        const state: *ke.ShootdownState = @fieldParentPtr("link", entry);
-
-        reclaim_state(state);
-    }
+fn reap_pages(_: ?*anyopaque) void {
+    ke.shootdown.shootdowns.process(reclaim_state, null);
 }
 
 /// Unmap and flush a virtual range on the given space.
@@ -86,7 +88,11 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
     };
 }
 
+fn activation(_: *rtl.HandoffList) void {
+    ex.workqueue.enqueue(&work_item);
+}
+
 pub fn init() void {
-    const td = ps.thread.create_kernel(ke.Thread.Priority.default, worker_thread, null) catch unreachable;
-    ke.sched.enqueue(&td.kern);
+    ke.shootdown.shootdowns.* = .init(activation);
+    work_item.init(.High, reap_pages, null);
 }
