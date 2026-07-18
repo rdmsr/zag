@@ -93,6 +93,10 @@ export fn loader_entry() callconv(.c) void {
         r.loader_info.rsdp = @intFromPtr(resp.rsdp);
     }
 
+    if (cmdline_request.response) |resp| {
+        r.loader_info.cmdline = std.mem.span(resp.cmdline);
+    }
+
     var kernel: ?*anyopaque = null;
 
     if (module_request.response) |resp| {
