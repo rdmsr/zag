@@ -107,7 +107,7 @@ var initial_offsets: [1]usize = .{0};
 extern var __percpu_start: u8;
 
 pub fn early_init() linksection(r.init) void {
-    amd64.detect_cpu_features();
+    amd64.cpu_features = r.boot_info.arch_info.cpu_features;
     early_cpu_init();
 
     impl.cpu_offsets = &initial_offsets;

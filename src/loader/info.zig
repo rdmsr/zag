@@ -1,3 +1,5 @@
+const arch = @import("arch");
+
 /// Represents the system memory map.
 pub const MemMap = struct {
     /// A memory map entry.
@@ -32,8 +34,6 @@ pub const Framebuffer = struct {
 // Kept in sync with the kernel
 pub const page_struct_size = 16;
 
-pub const KernelAddress = struct { physical_base: usize, virtual_base: usize };
-
 /// RSDP on ACPI machines
 rsdp: ?usize,
 
@@ -46,5 +46,4 @@ memory_map: MemMap,
 /// Framebuffer info, if available
 framebuffer: ?Framebuffer,
 
-/// Kernel address
-kernel_address: KernelAddress,
+arch_info: arch.BootInfo,

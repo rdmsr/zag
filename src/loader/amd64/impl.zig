@@ -113,4 +113,5 @@ pub fn debug_write(c: u8) void {
 
 pub fn init() void {
     amd64.detect_cpu_features();
+    r.loader_info.arch_info.cpu_features = amd64.cpu_features;
 }
