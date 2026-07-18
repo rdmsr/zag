@@ -139,16 +139,16 @@ pub fn free_batch(head: *mm.Page, tail: *mm.Page, count: usize) void {
     list_lock.release(ipl);
 }
 
-pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
-    memory_map = &boot_info.memory_map;
+pub fn init() linksection(r.init) void {
+    memory_map = &r.boot_info.memory_map;
     free_list.init();
     free_page_event.init(.Notification);
 
-    var total_usable_memory: usize = boot_info.memory_map.loader_memory_used;
+    var total_usable_memory: usize = memory_map.loader_memory_used;
     log.info("physical memory map:", .{});
 
-    for (0..boot_info.memory_map.entry_count) |i| {
-        const entry = boot_info.memory_map.entries[i];
+    for (0..memory_map.entry_count) |i| {
+        const entry = memory_map.entries[i];
 
         log.info("[{x:0>16}-{x:0>16}] {s}", .{ entry.base, entry.base + entry.size, @tagName(entry.type) });
 
@@ -157,7 +157,9 @@ pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
         }
     }
 
-    const pfndb_size_required = @sizeOf(mm.Page) * (std.math.divCeil(usize, total_usable_memory, mm.page_size) catch unreachable);
+    const pfndb_size_required = @sizeOf(mm.Page) *
+        (std.math.divCeil(usize, total_usable_memory, mm.page_size) catch unreachable);
+
     log.info("using {} KiB for pfndb ({} bytes per page)", .{ pfndb_size_required / 1024, @sizeOf(mm.Page) });
 
     // Get the kernel pagemap from the loader,
@@ -168,7 +170,12 @@ pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     // this formula is from Linux and does not grow linearly; it would be wasteful
     // to take a fixed percentage of memory from a large server.
     // We clamp this between 128 KiB and 256 MiB.
-    const min_free_kb = std.math.clamp(std.math.sqrt((usable_memory.load(.monotonic) / 1024) * 16), 128, 256 * 1024);
+    const min_free_kb = std.math.clamp(
+        std.math.sqrt((usable_memory.load(.monotonic) / 1024) * 16),
+        128,
+        256 * 1024,
+    );
+
     min_memory_threshold = min_free_kb / 4;
 
     const total_usable_pages = total_usable_memory / mm.page_size;

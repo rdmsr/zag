@@ -13,10 +13,10 @@ const fbconsole = @import("../dev/fbconsole.zig");
 
 export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     ke.init(boot_info);
-    mm.init(boot_info);
+    mm.init();
     ps.init();
 
-    pl.late_init(boot_info);
+    pl.late_init();
     mm.late_init();
     ke.sched.late_init();
     exp.workqueue.init() catch @panic("e");
