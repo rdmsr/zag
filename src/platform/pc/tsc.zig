@@ -17,9 +17,7 @@ pub var tsc_timer: ke.TimeCounter = .{
 };
 
 pub fn init() linksection(r.init) void {
-    const features = amd64.cpu_features;
-
-    if (!features.invariant_tsc) {
+    if (!amd64.cpu_features.invariant_tsc) {
         log.info("invariant TSC not supported (get a new PC), using fallback", .{});
         if (ke.time.best()) |best| {
             log.info("using {s} as timecounter source", .{best.name});

@@ -10,6 +10,7 @@ var thread0: ke.Thread = undefined;
 var stack: [r.kib(16)]u8 align(16) = undefined;
 
 pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
+    ke.ncpus = 1;
     ki.impl.early_init();
     ki.tunable.init(boot_info);
     std.log.info("Welcome to the machine", .{});
@@ -27,6 +28,4 @@ pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     ki.sched.percpu.local().current_thread = &thread0;
 
     std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{ pl.name, arch.name, boot_info.cmdline });
-
-    ex.private.init(boot_info);
 }

@@ -60,5 +60,5 @@ pub const panic = std.debug.FullPanic(ke.panic);
 
 comptime {
     // Ensure the entry point is linked in.
-    _ = @import("kern/entry.zig");
+    _ = @import("ex/init.zig");
 }

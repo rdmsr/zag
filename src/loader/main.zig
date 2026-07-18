@@ -57,8 +57,8 @@ extern fn jump_to_kernel(loader_info: usize, stack: usize, entry: usize) void;
 pub fn loader_main(kernel: *anyopaque) void {
     r.mem.init();
     const entry = load_kernel(kernel);
-    const stack = r.mem.alloc(1024 * 32);
+    const stack = r.mem.alloc(1024 * 16);
 
     std.log.info("jumping to {x} with stack {x}", .{ entry, stack });
-    jump_to_kernel(@intFromPtr(&r.loader_info), stack + (1024 * 32), entry);
+    jump_to_kernel(@intFromPtr(&r.loader_info), stack + (1024 * 16), entry);
 }
