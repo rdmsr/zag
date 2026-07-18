@@ -11,7 +11,8 @@ const rtl = @import("rtl");
 // XXX
 const fbconsole = @import("../dev/fbconsole.zig");
 
-pub fn init(boot_info: *r.BootInfo) void {
+export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
+    ke.init(boot_info);
     mm.init(boot_info);
     ps.init();
 

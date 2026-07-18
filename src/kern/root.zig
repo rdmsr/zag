@@ -24,6 +24,7 @@ pub const Tunable = p.tunable.Tunable;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
+pub const init = p.init;
 
 pub const ipl = struct {
     pub const raise = p.ipl.raise;
