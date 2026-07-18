@@ -75,23 +75,23 @@ fn LockTemplate(comptime T: type) type {
 
 /// Simple Spin lock implementation.
 pub const SpinLock = LockTemplate(struct {
-    locked: u8,
+    locked: std.atomic.Value(u8),
 
     const Self = @This();
 
     pub fn init() Self {
         return .{
-            .locked = 0,
+            .locked = .init(0),
         };
     }
 
     /// Acquire the lock without changing the IPL.
     pub fn acquire_no_ipl(self: *Self) void {
         while (true) {
-            if (@cmpxchgWeak(u8, &self.locked, 0, 1, .acquire, .monotonic) == null)
+            if (self.locked.cmpxchgWeak(0, 1, .acquire, .monotonic) == null)
                 return;
 
-            while (@atomicLoad(u8, &self.locked, .monotonic) != 0) {
+            while (self.locked.load(.monotonic) != 0) {
                 std.atomic.spinLoopHint();
             }
         }
@@ -99,16 +99,16 @@ pub const SpinLock = LockTemplate(struct {
 
     /// Release the lock without changing the IPL.
     pub fn release_no_ipl(self: *Self) void {
-        @atomicStore(u8, &self.locked, 0, .release);
+        self.locked.store(0, .release);
     }
 
     /// Try to acquire the lock. Return true if lock was acquired.
     pub fn try_acquire_no_ipl(self: *Self) bool {
-        return @cmpxchgStrong(u8, &self.locked, 0, 1, .acquire, .monotonic) == null;
+        return self.locked.cmpxchgStrong(0, 1, .acquire, .monotonic) == null;
     }
 
     pub fn is_locked(self: *Self) bool {
-        return @atomicLoad(u8, &self.locked, .monotonic) == 1;
+        return self.locked.load(.monotonic) == 1;
     }
 });
 
