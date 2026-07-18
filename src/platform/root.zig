@@ -12,14 +12,14 @@ pub const impl = switch (config.arch) {
 pub const acpi = @import("acpi/root.zig");
 
 /// Early platform-specific initialization, called before anything else.
-pub inline fn early_init(boot_info: *r.BootInfo) void {
-    return impl.early_init(boot_info);
+pub inline fn early_init() void {
+    return impl.early_init();
 }
 
 /// Late platform init. Memory allocator is available at this point.
 /// SMP bringup must be done after this returns.
-pub inline fn late_init(boot_info: *r.BootInfo) void {
-    return impl.late_init(boot_info);
+pub inline fn late_init() void {
+    return impl.late_init();
 }
 
 /// Write a single character to the debug console.

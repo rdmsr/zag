@@ -11,12 +11,11 @@ var stack: [r.kib(16)]u8 align(16) = undefined;
 
 pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     r.boot_info = boot_info;
-
     ke.ncpus = 1;
     ki.impl.early_init();
-    ki.tunable.init(boot_info);
+    ki.tunable.init();
     std.log.info("Welcome to the machine", .{});
-    pl.early_init(boot_info);
+    pl.early_init();
     ki.log.init();
     ki.cpu.init_cpu(0);
     ki.turnstile.init_turnstiles();

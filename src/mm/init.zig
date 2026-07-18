@@ -4,8 +4,8 @@ const mm = r.mm;
 const mi = mm.private;
 const config = @import("config");
 
-pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
-    mi.phys.init(boot_info);
+pub fn init() linksection(r.init) void {
+    mi.phys.init();
     mi.zone.early_init();
     mi.vmem.init();
     mi.heap.init();
