@@ -1,3 +1,6 @@
+//! Generic page map manipulation code.
+//! Part of the code is duplicated from the kernel :(
+
 const r = @import("root");
 const mem = r.mem;
 
@@ -165,11 +168,6 @@ pub const PMap = struct {
                 self.top_level -= 1;
                 current_level -= 1;
             }
-        }
-
-        pub fn walk_down_resolve(self: *Cursor, target_level: usize) bool {
-            self.walk_down(target_level, false, false) catch return false;
-            return true;
         }
 
         /// Choose the largest page size that satisfies the alignment and

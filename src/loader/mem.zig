@@ -1,11 +1,13 @@
 const r = @import("root");
 const config = @import("config");
 const pmap = @import("pmap.zig");
+const std = @import("std");
 
 var memory_map: *r.BootInfo.MemMap = &r.loader_info.memory_map;
 var alloc_idx: usize = 0;
 var bump_base: usize = 0;
 var map_loaded: bool = false;
+var last_data_idx: ?usize = null;
 
 const MemoryLayout = struct {
     /// Kernel direct map (if applicable)
@@ -40,6 +42,19 @@ pub fn p2v(pa: usize) usize {
     return r.impl.p2v(pa);
 }
 
+fn record_loader_data(addr: usize) void {
+    if (last_data_idx) |i| {
+        const e = &memory_map.entries[i];
+        if (e.base + e.size == addr) {
+            e.size += r.page_size;
+            return;
+        }
+    }
+
+    last_data_idx = memory_map.entry_count;
+    add_entry(addr, r.page_size, .LoaderData);
+}
+
 pub fn alloc_page() usize {
     while (alloc_idx < memory_map.entry_count) {
         const entry = &memory_map.entries[alloc_idx];
@@ -53,6 +68,8 @@ pub fn alloc_page() usize {
 
         entry.base += r.page_size;
         entry.size -= r.page_size;
+        memory_map.loader_memory_used += r.page_size;
+        record_loader_data(addr);
 
         const a: [*]u64 = @ptrFromInt(p2v(addr));
 
@@ -205,6 +222,41 @@ fn map_self() void {
     }
 }
 
+fn map_pfndb() void {
+    const size = r.BootInfo.page_struct_size;
+
+    // Now map the PFN database.
+    for (0..memory_map.entry_count) |i| {
+        const entry = memory_map.entries[i];
+
+        if ((entry.type != .Free and entry.type != .LoaderReclaimable) or entry.size < r.page_size) {
+            continue;
+        }
+
+        const npages = std.math.divCeil(usize, entry.size, r.page_size) catch unreachable;
+
+        // 1. Calculate the exact virtual address range needed for this region's page structs.
+        const start_pfn: usize = entry.base / r.page_size;
+        const exact_start = memory_layout.pfndb + (start_pfn * size);
+        const exact_end = exact_start + (npages * size);
+
+        // 2. Ensure the addresses are aligned on page boundaries.
+        const map_start = std.mem.alignBackward(usize, exact_start, r.page_size);
+        const map_end = std.mem.alignForward(usize, exact_end, r.page_size);
+
+        // 3. Map the virtual pages.
+        pagemap.map_range_allocating(
+            map_start,
+            map_end - map_start,
+            .{
+                .read = true,
+                .write = true,
+                .global = true,
+            },
+        );
+    }
+}
+
 pub fn init() void {
     const vbits = r.arch.virtual_bits;
 
@@ -240,6 +292,7 @@ pub fn init() void {
     }
 
     map_self();
+    map_pfndb();
 
     map_loaded = true;
     r.arch.activate(pagemap.root_pa);

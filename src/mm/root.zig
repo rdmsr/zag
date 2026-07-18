@@ -2,6 +2,7 @@ pub const private = @import("private.zig");
 
 const std = @import("std");
 const rtl = @import("rtl");
+const r = @import("root");
 
 pub const page_size = 4096;
 
@@ -29,6 +30,17 @@ pub const Page = extern union {
         slab_data: zone.Page,
     },
 };
+
+comptime {
+    if (@sizeOf(Page) != r.BootInfo.page_struct_size) {
+        @compileError(
+            std.fmt.comptimePrint(
+                "'Page' size mismatch between loader and kernel: kernel={} loader={}",
+                .{ @sizeOf(Page), r.BootInfo.page_struct_size },
+            ),
+        );
+    }
+}
 
 pub const MapFlags = packed struct {
     read: bool = true,

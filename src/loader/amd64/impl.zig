@@ -97,6 +97,10 @@ pub inline fn activate(root_pa: usize) void {
     amd64.write_cr(3, root_pa);
 }
 
+pub inline fn flush(va: usize) void {
+    amd64.invlpg(va);
+}
+
 pub fn is_leaf_level_enabled(level: usize) bool {
     if (!levels[level].leaf) return false;
     if (level == 2) return amd64.cpu_features.gib_pages;
@@ -105,4 +109,8 @@ pub fn is_leaf_level_enabled(level: usize) bool {
 
 pub fn debug_write(c: u8) void {
     amd64.outb(0xe9, c);
+}
+
+pub fn init() void {
+    amd64.detect_cpu_features();
 }

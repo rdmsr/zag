@@ -1,28 +1,4 @@
-//! Generic radix-tree page map implementation.
-//!
-//! `RadixPmap` is a comptime-parameterized page table walker that implements
-//! virtual-to-physical address mapping over a multi-level radix tree (e.g.
-//! x86-64's four-level PT). The caller supplies an
-//! `Impl` type that describes the tree's level structure and provides
-//! platform-specific PTE constructors.
-//!
-//! The `Impl` type passed to `RadixPmap` must provide:
-//!
-//!   - `levels: []const Level`: ordered from the leaf up to the root,
-//!     each entry carrying the VA index shift and whether that level can
-//!     hold a leaf (large-page) mapping.
-//!   - `is_leaf_level_enabled(level: usize) bool`:runtime gate that
-//!     controls whether large pages are used at a given level (e.g. to
-//!     disable 1 GiB pages on hardware that lacks them).
-//!   - `Pte`: the PTE type. Must be zero-initializable and expose a
-//!     `present: bool` field and an `address() PAddr` method.
-//!   - `make_table_pte(pa: PAddr) Pte`: construct a non-leaf PTE pointing
-//!     to a child page table at `pa`.
-//!   - `make_leaf_pte(pa: PAddr, flags: MapFlags, level: usize) Pte`:
-//!     construct a leaf PTE mapping `pa` with the given flags at the
-//!     chosen level.
-//!   - `activate(root_pa: PAddr) void`: install the root page table into
-//!     the CPU (e.g. write CR3 or satp).
+//! Generic page map manipulation code.
 
 const r = @import("root");
 const rtl = @import("rtl");
@@ -35,11 +11,6 @@ const MapItem = struct {
     pa: r.PAddr,
     len: usize,
     flags: mm.MapFlags,
-};
-
-const Allocator = enum {
-    Boot,
-    Normal,
 };
 
 /// A mapping source that maps a single contiguous virtual-to-physical region.
@@ -55,22 +26,6 @@ const ContiguousSource = struct {
         return .{
             .pa = self.base_pa,
             .len = self.size,
-            .flags = self.flags,
-        };
-    }
-};
-
-/// A mapping source that allocates physical pages on demand. Each call to `next`
-/// returns a single page, so this is intended to be consumed by `map_from` in a loop until the entire range is mapped.
-const AllocatingSource = struct {
-    flags: mm.MapFlags,
-    allocator: Allocator,
-
-    pub fn next(self: *const AllocatingSource, _: r.VAddr) MapItem {
-        const pa = if (self.allocator == .Boot) mi.phys.early_alloc() else mi.phys.alloc();
-        return .{
-            .pa = pa,
-            .len = mm.page_size,
             .flags = self.flags,
         };
     }
@@ -121,19 +76,19 @@ pub const PMap = struct {
         mi.impl.activate(self.root_pa);
     }
 
-    pub fn map_from(self: *Self, va: r.VAddr, size: usize, source: anytype, comptime allocator: Allocator) void {
+    pub fn map_from(self: *Self, va: r.VAddr, size: usize, source: anytype) void {
         var c = self.cursor(va);
         var remain = size;
 
         while (remain > 0) {
             const item = source.next(c.va);
-            c.map_range(item.pa, item.len, item.flags, allocator);
+            c.map_range(item.pa, item.len, item.flags);
             remain -|= item.len;
         }
     }
 
     /// Map a contiguous virtual address range to a contiguous physical address range.
-    pub fn map_contiguous_range(self: *Self, va: r.VAddr, pa: r.PAddr, size: usize, flags: mm.MapFlags, comptime allocator: Allocator) void {
+    pub fn map_contiguous_range(self: *Self, va: r.VAddr, pa: r.PAddr, size: usize, flags: mm.MapFlags) void {
         const src = ContiguousSource{
             .flags = flags,
             .size = size,
@@ -141,17 +96,7 @@ pub const PMap = struct {
             .base_pa = pa,
         };
 
-        self.map_from(va, size, src, allocator);
-    }
-
-    /// Map a virtual address range to physical addresses allocated on demand by the boot allocator.
-    pub fn map_range_allocating(self: *Self, va: r.VAddr, size: usize, flags: mm.MapFlags, comptime allocator: Allocator) void {
-        const src = AllocatingSource{
-            .allocator = allocator,
-            .flags = flags,
-        };
-
-        self.map_from(va, size, src, allocator);
+        self.map_from(va, size, src);
     }
 
     pub fn query(self: *Self, va: r.VAddr) ?r.PAddr {
@@ -164,7 +109,7 @@ pub const PMap = struct {
 
             if (!pte.present) return null;
 
-            if (level == 0 or (leaf_level_enabled(level) and pte.huge_page)) {
+            if (level == 0) {
                 return pte.address() + (va & (page_size(level) - 1));
             }
 
@@ -232,7 +177,7 @@ pub const PMap = struct {
         /// Reset upward in `advance` when the VA crosses a level boundary.
         top_level: usize,
 
-        fn walk_down(self: *Cursor, target_level: usize, allocate: bool, comptime allocator: Allocator) error{PageNotMapped}!void {
+        fn walk_down(self: *Cursor, target_level: usize, allocate: bool) error{PageNotMapped}!void {
             var current_level = self.top_level;
 
             while (current_level > target_level) {
@@ -244,7 +189,7 @@ pub const PMap = struct {
                         return error.PageNotMapped;
                     }
 
-                    const new_table_pa = if (allocator == .Boot) mi.phys.early_alloc() else mi.phys.alloc();
+                    const new_table_pa = mi.phys.alloc();
 
                     const table_ptr: [*]mi.impl.Pte = @ptrFromInt(mm.p2v(new_table_pa));
                     @memset(table_ptr[0..entries_per_table], std.mem.zeroes(mi.impl.Pte));
@@ -261,41 +206,18 @@ pub const PMap = struct {
         }
 
         pub fn walk_down_resolve(self: *Cursor, target_level: usize) bool {
-            self.walk_down(target_level, false, .Normal) catch return false;
+            self.walk_down(target_level, false) catch return false;
             return true;
         }
 
-        /// Choose the largest page size that satisfies the alignment and
-        /// size constraints of the current VA, PA, and remaining byte count.
-        /// Tries large pages first; falls back to 4K.
-        fn choose_target_level(self: *Cursor, pa: usize, remain: usize) usize {
-            var level: usize = num_levels;
-            while (level > 0) {
-                level -= 1;
-                if (!leaf_level_enabled(level)) continue;
-
-                const pg_size = page_size(level);
-                const align_mask = pg_size - 1;
-
-                if (remain >= pg_size and
-                    (self.va & align_mask) == 0 and
-                    (pa & align_mask) == 0)
-                {
-                    return level;
-                }
-            }
-
-            @panic("no leaf level can map current alignment/size");
-        }
-
-        pub fn map_range(self: *Cursor, pa: r.PAddr, size: usize, flags: mm.MapFlags, comptime allocator: Allocator) void {
+        pub fn map_range(self: *Cursor, pa: r.PAddr, size: usize, flags: mm.MapFlags) void {
             var remain = size;
             var current_pa = pa;
 
             while (remain > 0) {
-                const target_level = self.choose_target_level(current_pa, remain);
+                const target_level = 0;
 
-                self.walk_down(target_level, true, allocator) catch @panic("walk_down failed during map_range");
+                self.walk_down(target_level, true) catch @panic("walk_down failed during map_range");
 
                 const table = self.tables[target_level];
                 table[index_for_level(self.va, target_level)] =
