@@ -19,7 +19,7 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     pl.late_init();
     mm.late_init();
     ke.sched.late_init();
-    exp.workqueue.init() catch @panic("e");
+    exp.work.init() catch @panic("e");
     exp.console.init();
 
     if (boot_info.framebuffer != null) {

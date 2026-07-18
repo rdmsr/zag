@@ -89,7 +89,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
 }
 
 fn activation(_: *rtl.HandoffList) void {
-    ex.workqueue.enqueue(&work_item);
+    ex.work.enqueue(&work_item);
 }
 
 pub fn init() void {

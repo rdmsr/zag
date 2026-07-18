@@ -3,12 +3,12 @@ pub const private = @import("private.zig");
 
 const p = private;
 
-pub const WorkItem = p.workqueue.WorkItem;
+pub const WorkItem = p.work.WorkItem;
 pub const Console = p.console.Console;
 
-pub const workqueue = struct {
-    pub const enqueue = p.workqueue.enqueue;
-    pub const enqueue_in = p.workqueue.enqueue_in;
+pub const work = struct {
+    pub const enqueue = p.work.enqueue;
+    pub const enqueue_in = p.work.enqueue_in;
 };
 
 pub const console = struct {

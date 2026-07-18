@@ -1227,7 +1227,7 @@ fn update(_: ?*anyopaque) void {
     zone_list_lock.release();
 
     // Do it again.
-    ex.workqueue.enqueue_in(&update_work_item, update_interval);
+    ex.work.enqueue_in(&update_work_item, update_interval);
 }
 
 /// Parameterized version of Zone, useful for object caches.
@@ -1304,7 +1304,7 @@ pub fn late_init() linksection(r.init) void {
 
     magazines_initialized = true;
     update_work_item.init(.Normal, update, null);
-    ex.workqueue.enqueue_in(&update_work_item, update_interval);
+    ex.work.enqueue_in(&update_work_item, update_interval);
 }
 
 pub fn drain() void {

@@ -37,7 +37,7 @@ fn reaper_fn(_: ?*anyopaque) void {
 }
 
 fn activation(_: *rtl.HandoffList) void {
-    ex.workqueue.enqueue(&reaper_item);
+    ex.work.enqueue(&reaper_item);
 }
 
 pub fn init() void {
