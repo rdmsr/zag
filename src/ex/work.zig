@@ -160,7 +160,7 @@ pub fn enqueue(item: *WorkItem) void {
     pool.queue.insert(&item.link, .Tail);
 }
 
-/// Initialize the workqueue subsystem.
+/// Initialize the work subsystem.
 pub fn init() !void {
     for (0..ke.ncpus) |cpu| {
         const c = percpu.remote(@intCast(cpu));
