@@ -60,6 +60,22 @@ pub inline fn mb() void {
     }
 }
 
+/// Acquire Barrier (Load/Load - Load/Store)
+pub inline fn acq() void {
+    switch (builtin.cpu.arch) {
+        .x86, .x86_64 => {
+            asm volatile ("" ::: .{ .memory = true });
+        },
+        .aarch64, .arm => {
+            asm volatile ("dmb ishld" ::: .{ .memory = true });
+        },
+        .riscv64, .riscv32 => {
+            asm volatile ("fence r,rw" ::: .{ .memory = true });
+        },
+        else => @compileError("unsupported architecture"),
+    }
+}
+
 /// Copy to dest from src with atomic loads.
 /// Both addresses need to be aligned.
 pub fn atomic_load_memcpy(dest: anytype, src: anytype, comptime ordering: std.builtin.AtomicOrder) void {
