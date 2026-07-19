@@ -90,3 +90,4 @@ pub const mutex = @import("mutex.zig");
 pub const queue = @import("queue.zig");
 pub const shootdown = @import("shootdown.zig");
 pub const tunable = @import("tunable.zig");
+pub const smr = @import("smr.zig");
