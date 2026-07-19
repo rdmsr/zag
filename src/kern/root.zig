@@ -85,5 +85,19 @@ pub const shootdown = struct {
     pub const shootdowns = &p.shootdown.shootdowns;
 };
 
+pub const smr = struct {
+    pub const advance = p.smr.advance;
+    pub const exit = p.smr.exit;
+    pub const enter = p.smr.enter;
+    pub const poll = p.smr.poll;
+
+    pub const seq_invalid = p.smr.seq_invalid;
+
+    // These are under the smr namespace because SMR is small subsystem itself.
+    pub const Domain = p.smr.Domain;
+    pub const Cpu = p.smr.Cpu;
+    pub const Sequence = p.smr.Sequence;
+};
+
 /// Number of CPUs on the system
 pub var ncpus: usize = 0;
