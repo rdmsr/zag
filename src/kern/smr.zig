@@ -8,7 +8,7 @@ const config = @import("config");
 
 const ke = r.ke;
 
-const Sequence = u64;
+pub const Sequence = u64;
 
 pub const seq_invalid: Sequence = 0;
 const seq_init: Sequence = 1;
@@ -139,6 +139,15 @@ pub fn poll(dom: *Domain, goal: Sequence, wait: bool) bool {
 
     clk.write_seq.raw = dom.clock.write_seq.load(.monotonic);
 
+    if (goal > clk.write_seq.raw) {
+        // The goal is a deferred advance that was never committed,
+        // there is nothing to wait for unless we commit it ourselves.
+        if (!wait) return false;
+
+        deferred_advance_commit(dom, goal);
+        clk.write_seq.raw = goal;
+    }
+
     const oldest = scan(dom, goal, clk, wait);
 
     if (goal <= oldest) {
@@ -153,6 +162,22 @@ pub fn poll(dom: *Domain, goal: Sequence, wait: bool) bool {
 /// the calling thread are visible.
 pub fn advance(dom: *Domain) Sequence {
     return dom.clock.write_seq.fetchAdd(seq_incr, .release) + seq_incr;
+}
+
+/// Pretend-advance the write sequence and return the value for use as a wait goal.
+/// It is guaranteed that all previous memory writes made by
+/// the calling thread are visible. The global clock isn't advanced unlike `advance`,
+/// it is only when commit() is called.
+pub fn deferred_advance(dom: *Domain) Sequence {
+    rtl.barrier.mb();
+
+    return dom.clock.write_seq.load(.monotonic) + seq_incr;
+}
+
+/// Actually advance the global clock to a value previously returned by
+/// deferred_advance().
+pub fn deferred_advance_commit(dom: *Domain, seq: Sequence) void {
+    _ = dom.clock.write_seq.cmpxchgStrong(seq - seq_incr, seq, .monotonic, .monotonic);
 }
 
 /// Enter a read section.

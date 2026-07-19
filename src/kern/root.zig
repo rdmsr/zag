@@ -87,6 +87,8 @@ pub const shootdown = struct {
 
 pub const smr = struct {
     pub const advance = p.smr.advance;
+    pub const deferred_advance = p.smr.deferred_advance;
+    pub const deferred_advance_commit = p.smr.deferred_advance_commit;
     pub const exit = p.smr.exit;
     pub const enter = p.smr.enter;
     pub const poll = p.smr.poll;
