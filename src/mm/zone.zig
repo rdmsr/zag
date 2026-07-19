@@ -5,7 +5,7 @@
 //! the Slab Allocator to Many CPUs and Arbitrary Resources", both from Solaris.
 //!
 //! ## Structure
-//! ----------------
+//! ------------
 //! The allocator is split in three layers:
 //! 1. Per-CPU layer
 //! 2. Zone depot layer
@@ -18,10 +18,9 @@
 //! ## Per-CPU layer
 //! ----------------
 //! Each CPU has an `alloc` and `free` magazine, where objects are allocated
-//! from and freed to, respectively. This separation avoids hysteresis and might
-//! prove useful in the future for safe memory reclamation mechanisms (see
-//! FreeBSD GUS or XNU SMR). When one side runs dry/full, the magazines may be
-//! swapped.
+//! from and freed to, respectively. This separation avoids hysteresis and is useful
+//! for safe memory reclamation (see below).
+//! When one side runs dry/full, the magazines may be swapped, if SMR is disabled.
 //! Each CPU also has its own depot, from which it allocates and frees its
 //! magazines to first. If there is no magazine in the local depot, the magazine
 //! will be provided from the zone depot layer. We keep track of the size of the
@@ -77,11 +76,35 @@
 //! that the poison data is still intact inside an object, detecting
 //! use-after-free bugs.
 //!
+//! ## SMR zones
+//! ------------
+//! A zone may be tied to a SMR domain, in which case freed objects may not
+//! be reused until a given sequence has been observed by all CPUs. The magazine
+//! layer is used to amortize and batch this operation; instead of tracking a
+//! per-object sequence, whole magazines are stamped.
+//!
+//! When the free magazine becomes full, it is stamped with a *deferred* advance
+//! of the domain's write sequence, this advance is only committed once the
+//! magazine actually reaches the zone depot. This is meant to pace commits with
+//! regards to the per-CPU depot size, where a larger size will lead to less
+//! commits. When alloc needs a full magazine, it first polls the sequence of
+//! the head of the depot magazine list (since SMR zones are forced
+//! FIFO and stamps are taken in monotonic order, the head always carries the
+//! minimum sequence). If the local head has not expired, the local full magazines
+//! are moved and appended to the zone depot to age, and their sequences
+//! are committed, while expired magazines from the zone depot are pulled back in
+//! to satisfy the request.
+//!
+//! All this machinery is to avoid expensive scans during SMR polling,
+//! growing the per-CPU depots widens the window between a stamp and its poll
+//! until the fast path (which is a single load) is all that runs.
+//!
 //! ## Extra notes
-//! ---------------------
+//! --------------
 //! With poisoning enabled, constructors run when an object is allocated and
-//! destructors run when it is freed. Without poisoning, constructors run once
-//! when the slab is created and destructors run when the slab is destroyed.
+//! destructors run when it is freed. Without poisoning, constructors run when
+//! an object leaves the slab layer and destructors run when it returns to it,
+//! slabs hold raw objects while magazines hold constructed ones.
 
 const rtl = @import("rtl");
 const r = @import("root");
@@ -152,6 +175,9 @@ var zone_list_lock: ke.Mutex = .init();
 
 var magazine_zone: Zone = undefined;
 var cpu_zone: Zone = undefined;
+
+var smr_zone: TypedZone(ke.smr.Domain) = undefined;
+var smr_cpu_zone: Zone = undefined;
 
 const alloc_poison: u32 = 0xBADDC0DE;
 const free_poison: u32 = 0xDEADBEEF;
@@ -282,6 +308,8 @@ const Slab = struct {
 const Magazine = struct {
     /// Next magazine in the list.
     next: ?*Magazine,
+    /// Stamped sequence if the zone is SMR.
+    seq: ke.smr.Sequence,
     /// Rounds follow in memory after the struct.
     pub fn rounds_ptr(self: *Magazine) [*]*anyopaque {
         return @ptrFromInt(@intFromPtr(self) + @sizeOf(Magazine));
@@ -329,7 +357,9 @@ const Depot = struct {
 
             list.tail = mag;
         } else {
+            mag.next = list.head;
             list.head = mag;
+            if (list.tail == null) list.tail = mag;
         }
     }
 
@@ -433,8 +463,6 @@ pub const Zone = struct {
     slab_size: usize,
     /// Size of a chunk.
     chunk_size: usize,
-    /// Offset for buf-to-bufctl conversion.
-    offset: usize,
     /// Max color for slab coloring.
     max_color: u16,
     /// Current color for slab coloring.
@@ -468,6 +496,8 @@ pub const Zone = struct {
 
     reuse_policy: ReusePolicy,
 
+    smr: ?*ke.smr.Domain,
+
     const Self = @This();
 
     const InitOptions = struct {
@@ -476,6 +506,7 @@ pub const Zone = struct {
         dtor: ?*const fn (*anyopaque) void = null,
         magazines: bool = true,
         reuse_policy: ReusePolicy = .FIFO,
+        smr: ?*ke.smr.Domain = null,
     };
 
     /// Initialize a zone.
@@ -512,7 +543,11 @@ pub const Zone = struct {
         self.cpu_depot_size = 0;
         self.cpu_depot_limit = max_local_memory.load() / (self.chunk_size * magazine_size.load());
         self.trim_depot = false;
-        self.reuse_policy = options.reuse_policy;
+
+        // SMR zones have to be FIFO so that the minimum sequence can be
+        // obtained by checking the list head.
+        self.reuse_policy = if (options.smr != null) .FIFO else options.reuse_policy;
+        self.smr = options.smr;
 
         zone_list_lock.acquire();
 
@@ -572,7 +607,7 @@ pub const Zone = struct {
                     return buf;
                 }
 
-                if (cpu.free_rounds > 0) {
+                if (cpu.free_rounds > 0 and self.smr == null) {
                     std.debug.assert(cpu.free != null);
 
                     // Alloc magazine is empty. If the free magazine has items, swap them.
@@ -584,12 +619,15 @@ pub const Zone = struct {
 
                 // Both magazines are empty.
                 // Try to get a full magazine from the CPU-local depot.
-                if (Depot.alloc(&cpu.depot.full_mags)) |full_mag| {
+                if (self.full_mags_ready(&cpu.depot.full_mags)) {
+                    const full_mag = Depot.alloc(&cpu.depot.full_mags).?;
+
                     // Discard our empty alloc magazine to the depot.
                     if (cpu.alloc) |empty_mag| {
                         Depot.free(empty_mag, &cpu.depot.empty_mags, self.reuse_policy);
                     }
 
+                    self.magazine_reuse(full_mag);
                     cpu.alloc = full_mag;
                     cpu.alloc_rounds = magazine_size.load();
                     continue;
@@ -603,12 +641,15 @@ pub const Zone = struct {
                 self.alloc_depot_rebalance(n, cpu);
 
                 // Try getting a full magazine from the CPU-local depot again.
-                if (Depot.alloc(&cpu.depot.full_mags)) |full_mag| {
+                if (self.full_mags_ready(&cpu.depot.full_mags)) {
+                    const full_mag = Depot.alloc(&cpu.depot.full_mags).?;
+
                     // Discard our empty alloc magazine to the depot.
                     if (cpu.alloc) |empty_mag| {
                         Depot.free(empty_mag, &cpu.depot.empty_mags, self.reuse_policy);
                     }
 
+                    self.magazine_reuse(full_mag);
                     cpu.alloc = full_mag;
                     cpu.alloc_rounds = magazine_size.load();
                     continue;
@@ -659,10 +700,10 @@ pub const Zone = struct {
             }
 
             fill_with_poison(buf, self.obj_size, alloc_poison);
+        }
 
-            if (self.ctor) |ctor| {
-                ctor(buf);
-            }
+        if (self.ctor) |ctor| {
+            ctor(buf);
         }
 
         self.lock.release();
@@ -681,7 +722,9 @@ pub const Zone = struct {
             const freed = while (true) {
                 if (cpu.free != null and cpu.free_rounds < magazine_size.load()) {
                     // Fast path: push directly to free magazine.
-                    if (is_poison_enabled) {
+                    // For SMR zones the dtor and poisoning are deferred until
+                    // the magazine is reused, readers may still hold the object.
+                    if (is_poison_enabled and self.smr == null) {
                         if (self.dtor) |dtor| {
                             dtor(obj);
                         }
@@ -691,10 +734,16 @@ pub const Zone = struct {
 
                     cpu.free.?.rounds_ptr()[cpu.free_rounds] = obj;
                     cpu.free_rounds += 1;
+
+                    if (self.smr != null and cpu.free_rounds == magazine_size.load()) {
+                        // Stamp the now-full magazine.
+                        cpu.free.?.seq = ke.smr.deferred_advance(self.smr.?);
+                    }
+
                     break true;
                 }
 
-                if (cpu.alloc_rounds == 0 and cpu.alloc != null) {
+                if (cpu.alloc_rounds == 0 and cpu.alloc != null and self.smr == null) {
                     // Free magazine is full. If the alloc magazine is completely empty, swap them.
                     // The empty alloc magazine becomes our new free magazine.
                     std.mem.swap(?*Magazine, &cpu.alloc, &cpu.free);
@@ -745,6 +794,8 @@ pub const Zone = struct {
                 cpu.lock.acquire_no_ipl();
 
                 if (new_mag) |m| {
+                    m.seq = ke.smr.seq_invalid;
+
                     // Got one, try again.
                     Depot.free(m, &cpu.depot.empty_mags, self.reuse_policy);
                     continue;
@@ -758,16 +809,24 @@ pub const Zone = struct {
             if (freed) return;
         }
 
+        if (self.smr) |smr| {
+            // Direct frees must synchronize, the object is instantly reusable.
+            _ = ke.smr.poll(smr, ke.smr.advance(smr), true);
+        }
+
         self.lock.acquire();
         self.slab_free(obj, true);
         self.lock.release();
     }
 
     fn slab_free(self: *Self, obj: *anyopaque, poison: bool) void {
-        if (is_poison_enabled and poison) {
+        if (!is_poison_enabled or poison) {
             if (self.dtor) |dtor| {
                 dtor(obj);
             }
+        }
+
+        if (is_poison_enabled and poison) {
             fill_with_poison(obj, self.obj_size, free_poison);
         }
 
@@ -961,6 +1020,10 @@ pub const Zone = struct {
             } else break;
         }
 
+        if (maglist.head == null) {
+            maglist.tail = null;
+        }
+
         if (last_removed) |last| {
             last.next = null;
         } else {
@@ -1020,9 +1083,21 @@ pub const Zone = struct {
 
     /// Destroy a magazine.
     fn magazine_destroy(self: *Self, magazine: *Magazine, rounds: usize) void {
+        if (rounds != 0) {
+            if (self.smr) |smr| {
+                // The stamp may still be uncommitted if the magazine never
+                // reached the zone depot.
+                ke.smr.deferred_advance_commit(smr, magazine.seq);
+
+                // Wait until we can destroy the magazine.
+                _ = ke.smr.poll(smr, magazine.seq, true);
+            }
+        }
+
         // Free its rounds to the slab layer.
+        // For SMR zones the free-time work was deferred, do it now.
         for (0..rounds) |i| {
-            self.slab_free(magazine.rounds_ptr()[i], false);
+            self.slab_free(magazine.rounds_ptr()[i], self.smr != null);
         }
 
         // Free the magazine.
@@ -1076,8 +1151,6 @@ pub const Zone = struct {
             const obj: *anyopaque = @ptrFromInt(slab.base + i * self.chunk_size);
             if (is_poison_enabled) {
                 fill_with_poison(obj, self.obj_size, free_poison);
-            } else {
-                if (self.ctor) |ctor| ctor(obj);
             }
         }
 
@@ -1121,8 +1194,6 @@ pub const Zone = struct {
 
             if (is_poison_enabled) {
                 fill_with_poison(obj, self.obj_size, free_poison);
-            } else {
-                if (self.ctor) |ctor| ctor(obj);
             }
         }
 
@@ -1138,15 +1209,6 @@ pub const Zone = struct {
     }
 
     fn slab_destroy(self: *Self, slab: *Slab) void {
-        if (!is_poison_enabled) {
-            if (self.dtor) |dtor| {
-                for (0..slab.capacity) |i| {
-                    const obj: *anyopaque = @ptrFromInt(slab.base + i * self.chunk_size);
-                    dtor(obj);
-                }
-            }
-        }
-
         if (self.obj_size > small_slab_size) {
             const alloc_size = @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity);
             gpa.free(@as([*]u8, @ptrCast(slab))[0..alloc_size]);
@@ -1155,6 +1217,56 @@ pub const Zone = struct {
         } else {
             free_page(@ptrFromInt(std.mem.alignBackward(usize, @intFromPtr(slab), mm.page_size)));
         }
+    }
+
+    /// Check that a full magazine can be taken from the list head.
+    fn full_mags_ready(self: *Self, list: *MagazineList) bool {
+        const head = list.head orelse return false;
+        const smr = self.smr orelse return true;
+
+        return ke.smr.poll(smr, head.seq, false);
+    }
+
+    /// Deferred free-time work for SMR zones, ran when a full magazine
+    /// is reused after its grace period expired.
+    fn magazine_reuse(self: *Self, mag: *Magazine) void {
+        if (!is_poison_enabled or self.smr == null) return;
+
+        for (0..magazine_size.load()) |i| {
+            const obj = mag.rounds_ptr()[i];
+
+            if (self.dtor) |dtor| {
+                dtor(obj);
+            }
+
+            fill_with_poison(obj, self.obj_size, free_poison);
+        }
+    }
+
+    /// Move all local full magazines to the zone depot so their sequences
+    /// can age, committing their deferred advances. Depot lock is held.
+    fn smr_rotate_full(self: *Self, smr: *ke.smr.Domain, cpu: *Cpu) void {
+        const src = &cpu.depot.full_mags;
+        const dst = &self.depot.full_mags;
+        const tail = src.tail orelse return;
+
+        // Splice the whole list onto the zone depot.
+        if (dst.tail) |t| {
+            t.next = src.head;
+        } else {
+            dst.head = src.head;
+        }
+
+        dst.tail = tail;
+        dst.num += src.num;
+
+        src.head = null;
+        src.tail = null;
+        src.num = 0;
+        src.min = 0;
+
+        // The last magazine has the newest stamp, committing it covers them all.
+        ke.smr.deferred_advance_commit(smr, tail.seq);
     }
 
     /// Try to rebalance the zone and cpu depots w.r.t to each other after an allocation.
@@ -1176,10 +1288,23 @@ pub const Zone = struct {
             }
         }
 
+        if (self.smr) |smr| {
+            // We got here because the local head hasn't expired or there is
+            // no local magazine at all, rotate the local magazines through the
+            // zone depot to let their sequences age.
+            // We then hope that the head of the zone depot has expired, otherwise we just return
+            // and fall back to the slab layer.
+            self.smr_rotate_full(smr, cpu);
+        }
+
         // Grab a batch of full magazines from the zone depot.
-        const n = @min(target - cpu.depot.empty_mags.num, self.depot.full_mags.num);
-        for (0..n) |_| {
-            Depot.free(Depot.alloc(&self.depot.full_mags).?, &cpu.depot.full_mags, self.reuse_policy);
+        // Exchange at least one magazine even when the depot size is 0.
+        const n = @min(@max(target, 1) - cpu.depot.empty_mags.num, self.depot.full_mags.num);
+
+        if (n != 0 and self.full_mags_ready(&self.depot.full_mags)) {
+            for (0..n) |_| {
+                Depot.free(Depot.alloc(&self.depot.full_mags).?, &cpu.depot.full_mags, self.reuse_policy);
+            }
         }
 
         self.depot_lock.release_no_ipl();
@@ -1196,16 +1321,31 @@ pub const Zone = struct {
         }
 
         if (cpu.depot.full_mags.num >= target) {
-            // We have excess empty magazines, move them to the zone depot.
-            const n = cpu.depot.full_mags.num - target / 2;
+            if (self.smr) |smr| {
+                // Rotate all full magazines through the zone depot so their
+                // sequences age, then try pulling back expired ones.
+                self.smr_rotate_full(smr, cpu);
 
-            for (0..n) |_| {
-                Depot.free(Depot.alloc(&cpu.depot.full_mags).?, &self.depot.full_mags, self.reuse_policy);
+                const n = @min(target / 2, self.depot.full_mags.num);
+
+                if (n != 0 and self.full_mags_ready(&self.depot.full_mags)) {
+                    for (0..n) |_| {
+                        Depot.free(Depot.alloc(&self.depot.full_mags).?, &cpu.depot.full_mags, self.reuse_policy);
+                    }
+                }
+            } else {
+                // We have excess full magazines, move them to the zone depot.
+                const n = cpu.depot.full_mags.num - target / 2;
+
+                for (0..n) |_| {
+                    Depot.free(Depot.alloc(&cpu.depot.full_mags).?, &self.depot.full_mags, self.reuse_policy);
+                }
             }
         }
 
         // Grab a batch of empty magazines from the zone depot.
-        const n = @min(target - cpu.depot.full_mags.num, self.depot.empty_mags.num);
+        // Exchange at least one magazine even when the depot size is 0.
+        const n = @min(@max(target, 1) - cpu.depot.full_mags.num, self.depot.empty_mags.num);
         for (0..n) |_| {
             Depot.free(Depot.alloc(&self.depot.empty_mags).?, &cpu.depot.empty_mags, self.reuse_policy);
         }
@@ -1305,6 +1445,17 @@ pub fn late_init() linksection(r.init) void {
     magazines_initialized = true;
     update_work_item.init(.Normal, update, null);
     ex.work.enqueue_in(&update_work_item, update_interval);
+
+    smr_zone.init("SMR", .{});
+    smr_cpu_zone.init("SMR CPU", @sizeOf(ke.smr.Cpu) * ke.ncpus, .{});
+}
+
+pub fn smr_domain_create() !*ke.smr.Domain {
+    var dom: *ke.smr.Domain = try smr_zone.create();
+    dom.cpus = @ptrCast(@alignCast(try smr_cpu_zone.alloc(.{})));
+    dom.init();
+
+    return dom;
 }
 
 pub fn drain() void {
