@@ -54,7 +54,7 @@ pub const Queue = struct {
 
     /// Remove the item at the head.
     /// This blocks until an item is actually popped.
-    pub fn remove(self: *Queue) *rtl.List.Entry {
+    pub fn remove(self: *Queue, timeout: ?r.Nanoseconds) !*rtl.List.Entry {
         const ipl = self.hdr.lock.acquire();
         const td = ki.sched.percpu.local().current_thread.?;
 
@@ -75,7 +75,7 @@ pub const Queue = struct {
         self.hdr.lock.release(ipl);
 
         // Wait until the queue has something for us.
-        _ = ke.wait.wait_one(&self.hdr, null) catch unreachable;
+        _ = try ke.wait.wait_one(&self.hdr, timeout);
 
         // Grab the queue item and set it to null.
         const ret = td.queue_item orelse unreachable;
