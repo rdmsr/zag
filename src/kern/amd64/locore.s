@@ -149,9 +149,13 @@ do_context_switch:
     /* Load new stack pointer. */
     mov (%rsi), %rsp
 
+	/* Set switching to false. */
+    xorl %eax, %eax
+    xchgb %al, (%rcx)
+
     /* Unlock passed lock. */
-    xorl %ecx, %ecx
-    xchgb %cl, (%rdx)
+    xorl %eax, %eax
+    xchgb %al, (%rdx)
 
     /* Restore callee-saved registers. */
     pop %rbp

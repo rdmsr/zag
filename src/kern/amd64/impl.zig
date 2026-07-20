@@ -25,7 +25,7 @@ const ThreadFrame = extern struct {
 
 extern fn asm_thread_entry() void;
 
-extern fn do_context_switch(old: *ThreadContext, new: *ThreadContext, lock: *u8) callconv(.c) void;
+extern fn do_context_switch(old: *ThreadContext, new: *ThreadContext, lock: *u8, switching: *bool) callconv(.c) void;
 
 pub const ThreadContext = extern struct {
     rsp: u64 align(1),
@@ -60,7 +60,7 @@ pub const ThreadContext = extern struct {
 
     pub fn switch_to(self: *ThreadContext, new: *ThreadContext) callconv(.c) void {
         const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", self));
-        do_context_switch(self, new, &thread.lock.inner.locked.raw);
+        do_context_switch(self, new, &thread.lock.inner.locked.raw, &thread.switching.raw);
     }
 };
 
