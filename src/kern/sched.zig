@@ -355,6 +355,8 @@ pub fn handle_preemption(cpu: *PerCpu) void {
     cpu.queues_lock.release_no_ipl();
     cur.lock.acquire_no_ipl();
 
+    cur.switching.store(true, .monotonic);
+
     if (cur != cpu.idle_thread and cur.state.load(.monotonic) != .Blocked) {
         // Put it back in the queue.
         cpu.queues_lock.acquire_no_ipl();
@@ -363,8 +365,9 @@ pub fn handle_preemption(cpu: *PerCpu) void {
         cpu.queues_lock.release_no_ipl();
     }
 
-    next.lock.acquire_no_ipl();
-    next.lock.release_no_ipl();
+    while (next.switching.load(.monotonic) == true) {
+        std.atomic.spinLoopHint();
+    }
 
     do_switch(cpu, cur, next);
 
@@ -435,6 +438,7 @@ pub fn yield() void {
     const td = percpu.local().current_thread.?;
 
     td.lock.acquire_no_ipl();
+    td.switching.store(true, .monotonic);
 
     const cpu = percpu.local();
     if (td != cpu.idle_thread and td.state.load(.monotonic) == .Running) {
@@ -512,14 +516,16 @@ pub fn yield_locked() void {
     sched_cpu.queues_lock.release_no_ipl();
 
     if (next != null and cur.? != next.?) {
-        // Switch into the thread. Take its lock here to ensure it is not still on its stack.
-        next.?.lock.acquire_no_ipl();
-        next.?.lock.release_no_ipl();
+        // Switch into the thread. Ensure it's not switching.
+        while (next.?.switching.load(.monotonic) == true) {
+            std.atomic.spinLoopHint();
+        }
 
         do_switch(sched_cpu, cur.?, next.?);
     } else {
         // Ensure curthread is not marked as selected.
         cur.?.state.store(.Running, .monotonic);
+        cur.?.switching.store(false, .monotonic);
         cur.?.lock.release_no_ipl();
     }
 

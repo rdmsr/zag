@@ -114,6 +114,10 @@ pub const Thread = struct {
     stack: r.VAddr,
     /// PELT load average,
     avg: ki.sched.Average,
+    /// Set whenever the thread is switching off its stack.
+    /// This is used to avoid taking thread next lock to wait for switch off
+    /// to complete.
+    switching: std.atomic.Value(bool),
 
     /// Initialize a thread.
     /// - `stack`: Address of the **base** of the stack on which the initial context for the thread is built
@@ -149,6 +153,7 @@ pub const Thread = struct {
             .queue = null,
             .queue_item = null,
             .stack = stack,
+            .switching = .init(false),
             .avg = .{
                 .last_update = 0,
                 // New threads are considered heavy until they prove themselves,
