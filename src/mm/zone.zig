@@ -191,10 +191,8 @@ const Slab = struct {
     /// Reference count indicating how many objects are in use.
     refcount: u16,
     capacity: u16,
-    /// Base address of the slab + its color.
+    /// Base address of the slab.
     base: usize,
-    /// Color that was added to the base.
-    color: u16,
 
     /// Round-robin cursor that is used to allocate objects from.
     /// This is used to avoid predictable heap behavior; an attacker
@@ -244,7 +242,11 @@ const Slab = struct {
     /// Free a bit to the bitmap.
     pub fn bitmap_free(self: *Slab, idx: usize) void {
         const bm = self.bitmap();
-        bm[idx / 64] |= @as(u64, 1) << @intCast(idx % 64);
+
+        const bit = @as(u64, 1) << @intCast(idx % 64);
+        std.debug.assert(bm[idx / 64] & (bit) == 0);
+
+        bm[idx / 64] |= bit;
     }
 
     /// Check whether or not the slab is completely empty.
@@ -284,7 +286,7 @@ const Slab = struct {
     /// fact that the bitmap size grows with capacity (making this circular).
     /// We resolve the circular dependency by starting with an overestimate and
     /// shrinking until everything fits.
-    pub fn calc_capacity(chunk_size: usize, alignment: usize, color: usize) usize {
+    pub fn calc_capacity(chunk_size: usize, alignment: usize) usize {
         // Start with the largest possible capacity.
         var capacity = (mm.page_size - @sizeOf(Slab)) / chunk_size;
 
@@ -293,7 +295,7 @@ const Slab = struct {
         // since a smaller capacity means a smaller bitmap, which may then fit.
         while (capacity > 0) : (capacity -= 1) {
             const objects_off =
-                std.mem.alignForward(usize, @sizeOf(Slab) + Slab.bitmap_bytes(capacity), alignment) + color;
+                std.mem.alignForward(usize, @sizeOf(Slab) + Slab.bitmap_bytes(capacity), alignment);
 
             if (objects_off + capacity * chunk_size <= mm.page_size) {
                 break;
@@ -463,10 +465,6 @@ pub const Zone = struct {
     slab_size: usize,
     /// Size of a chunk.
     chunk_size: usize,
-    /// Max color for slab coloring.
-    max_color: u16,
-    /// Current color for slab coloring.
-    color: u16,
     /// Zone lock.
     lock: ke.Mutex,
     /// List of full slabs in this zone.
@@ -514,13 +512,7 @@ pub const Zone = struct {
         const obj_align = if (options.alignment == 0) slab_align else options.alignment;
         const chunk_size = std.mem.alignForward(usize, size, obj_align);
 
-        const slab_size, const max_color = if (size <= small_slab_size) blk: {
-            const ss = mm.page_size;
-            break :blk .{ ss, @rem(ss - @sizeOf(Slab), chunk_size) };
-        } else blk: {
-            const ss = Slab.calc_slab_size(chunk_size);
-            break :blk .{ ss, @rem(ss, chunk_size) };
-        };
+        const slab_size = if (size <= small_slab_size) mm.page_size else Slab.calc_slab_size(chunk_size);
 
         self.full_slabs.init();
         self.partial_slabs.init();
@@ -530,8 +522,6 @@ pub const Zone = struct {
         self.alignment = obj_align;
         self.slab_size = slab_size;
         self.chunk_size = chunk_size;
-        self.max_color = @intCast(max_color);
-        self.color = 0;
         self.ctor = options.ctor;
         self.dtor = options.dtor;
         self.lock = .init();
@@ -1118,17 +1108,7 @@ pub const Zone = struct {
     fn slab_create_small(self: *Self, policy: mm.WaitPolicy) mm.Error!*Slab {
         const buf = try alloc_page(policy);
 
-        // We employ a simple coloring scheme; every time a slab is created,
-        // the color is shifted by the alignment. This is done until we reach the
-        // max color (which is when there is no space left in the slab buffer).
-        // This ensures uniform buffer address distribution.
-        self.color += self.alignment;
-
-        if (self.color > self.max_color) {
-            self.color = 0;
-        }
-
-        const capacity = Slab.calc_capacity(self.chunk_size, self.alignment, self.color);
+        const capacity = Slab.calc_capacity(self.chunk_size, self.alignment);
 
         // Slab info is located at the beginning of the page.
         var slab: *Slab = @ptrCast(@alignCast(buf));
@@ -1137,7 +1117,7 @@ pub const Zone = struct {
         slab.refcount = 0;
         slab.capacity = @intCast(capacity);
         const meta_end = @intFromPtr(slab) + @sizeOf(Slab) + Slab.bitmap_bytes(capacity);
-        slab.base = std.mem.alignForward(usize, meta_end, self.alignment) + self.color;
+        slab.base = std.mem.alignForward(usize, meta_end, self.alignment);
 
         const bm = slab.bitmap();
         const full_words = capacity / 64;
@@ -1158,13 +1138,7 @@ pub const Zone = struct {
     }
 
     fn slab_create_large(self: *Self, policy: mm.WaitPolicy) mm.Error!*Slab {
-        self.color += self.alignment;
-
-        if (self.color > self.max_color) {
-            self.color = 0;
-        }
-
-        const capacity = (self.slab_size - self.color) / self.chunk_size;
+        const capacity = (self.slab_size) / self.chunk_size;
         const buf = try mi.heap.alloc(self.slab_size, policy);
 
         var ret: *Slab = @ptrCast(@alignCast(try gpa.alloc(u8, @sizeOf(Slab) + Slab.bitmap_bytes(capacity))));
@@ -1177,8 +1151,8 @@ pub const Zone = struct {
         const rem = capacity % 64;
         if (rem > 0) bm[full_words] = (@as(u64, 1) << @intCast(rem)) - 1;
 
-        ret.base = @intFromPtr(buf) + self.color;
-        ret.color = self.color;
+        ret.link = undefined;
+        ret.base = @intFromPtr(buf);
         ret.capacity = @intCast(capacity);
         ret.refcount = 0;
         ret.alloc_rr = 0;
@@ -1213,7 +1187,7 @@ pub const Zone = struct {
             const alloc_size = @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity);
             gpa.free(@as([*]u8, @ptrCast(slab))[0..alloc_size]);
 
-            mm.heap.free(slab.base - slab.color, self.slab_size);
+            mm.heap.free(slab.base, self.slab_size);
         } else {
             free_page(@ptrFromInt(std.mem.alignBackward(usize, @intFromPtr(slab), mm.page_size)));
         }
