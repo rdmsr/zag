@@ -985,7 +985,7 @@ fn recompute_priority(td: *ke.Thread) void {
             @as(i32, cpu_range / 2),
         );
 
-        const raw = @as(i32, ke.Thread.Priority.low_batch) +
+        const raw = @as(i32, ke.Thread.Priority.high_batch) -
             @as(i32, cpu_pri_off) +
             nice_off;
 
