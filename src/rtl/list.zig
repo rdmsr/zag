@@ -33,7 +33,7 @@ pub const List = struct {
     }
 
     /// Return whether the list is empty.
-    pub fn is_empty(self: *List) bool {
+    pub fn is_empty(self: *const List) bool {
         return self.head.next == &self.head;
     }
 
@@ -63,12 +63,12 @@ pub const List = struct {
         return self.head.prev;
     }
 
-    pub fn iterator(self: *List) Iterator {
+    pub fn iterator(self: *const List) Iterator {
         return .{ .head = &self.head, .current = self.head.next };
     }
 
     pub const Iterator = struct {
-        head: *Entry,
+        head: *const Entry,
         current: *Entry,
 
         pub fn next(self: *Iterator) bool {
