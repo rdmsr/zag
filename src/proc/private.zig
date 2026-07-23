@@ -12,14 +12,11 @@ fn turnstile_ctor(ts: *ki.turnstile.Turnstile) void {
         .link = undefined,
         .next_free = null,
         .obj = undefined,
-        .owner = null,
-        .boost_link = undefined,
-        .donated = null,
         .queues = undefined,
         .waiters = 0,
+        .owners = .none,
     };
-    ts.queues[0].init();
-    ts.queues[1].init();
+    ts.reset();
 }
 
 /// Initialize the process subsystem.
