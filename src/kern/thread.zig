@@ -118,6 +118,7 @@ pub const Thread = struct {
     /// This is used to avoid taking thread next lock to wait for switch off
     /// to complete.
     switching: std.atomic.Value(bool),
+    smr_sections: rtl.List,
 
     /// Initialize a thread.
     /// - `stack`: Address of the **base** of the stack on which the initial context for the thread is built
@@ -162,11 +163,12 @@ pub const Thread = struct {
                 .est = ki.sched.pelt_load_avg_max,
                 .period_contrib = 0,
             },
+            .smr_sections = undefined,
         };
 
         thread.turnstiles_owned.init();
-
         thread.timer.init();
+        thread.smr_sections.init();
     }
 
     pub fn priority_class(self: *Thread) Priority.Class {

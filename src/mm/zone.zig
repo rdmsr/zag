@@ -1424,10 +1424,10 @@ pub fn late_init() linksection(r.init) void {
     smr_cpu_zone.init("SMR CPU", @sizeOf(ke.smr.Cpu) * ke.ncpus, .{});
 }
 
-pub fn smr_domain_create() !*ke.smr.Domain {
+pub fn smr_domain_create(preempt: bool) !*ke.smr.Domain {
     var dom: *ke.smr.Domain = try smr_zone.create();
     dom.cpus = @ptrCast(@alignCast(try smr_cpu_zone.alloc(.{})));
-    dom.init();
+    dom.init(preempt);
 
     return dom;
 }
