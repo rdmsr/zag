@@ -7,6 +7,7 @@ const std = @import("std");
 const config = @import("config");
 
 const ke = r.ke;
+const ki = ke.private;
 
 pub const Sequence = u64;
 
@@ -26,17 +27,29 @@ const Clock = struct {
 pub const Domain = struct {
     clock: Clock,
     cpus: [*]Cpu,
+    preempt: bool,
 
     fn cpu(dom: *Domain) *Cpu {
         return &dom.cpus[ke.cpu.current()];
     }
 
-    pub fn init(self: *Domain) void {
+    pub fn init(self: *Domain, preempt: bool) void {
         self.clock.read_seq = .init(seq_init);
         self.clock.write_seq = .init(seq_init);
+        self.preempt = preempt;
 
         for (0..ke.ncpus) |i| {
-            self.cpus[i].current_seq = .init(seq_invalid);
+            self.cpus[i] = .{
+                .current_seq = .init(seq_invalid),
+                .stall_lock = .init(),
+                .stall_seq = .init(seq_invalid),
+                .stalled = undefined,
+                .stalled_owners = undefined,
+                .stall_goal = seq_invalid,
+            };
+
+            self.cpus[i].stalled.init();
+            self.cpus[i].stalled_owners.init();
         }
     }
 };
@@ -45,15 +58,39 @@ pub const Domain = struct {
 pub const Cpu = struct {
     /// Current observed sequence.
     current_seq: std.atomic.Value(Sequence),
+    /// Lock protecting stalled readers.
+    stall_lock: ke.SpinLock,
+    /// Stalled readers.
+    stalled: rtl.List,
+    /// Stalled owner list.
+    stalled_owners: rtl.List,
+    /// Oldest active stalled sequence.
+    stall_seq: std.atomic.Value(Sequence),
+    stall_goal: Sequence,
 };
 
+/// Tracker for preemptible SMR
+pub const Tracker = struct {
+    link: rtl.List.Entry,
+    td_link: rtl.List.Entry,
+    dom: *Domain,
+    seq: Sequence,
+    cpu: ?*Cpu,
+    owner: ki.turnstile.Owner,
+};
+
+/// Used by tests.
+pub var full_scans: std.atomic.Value(usize) = .init(0);
+
 /// Scan all CPUs and return the minimum observed value.
-/// If `wait` is true, this will spinloop until all CPUs have reached the given goal.
+/// If `wait` is true, this will spinloop (or block) until all CPUs have reached the given goal.
 fn scan(dom: *Domain, goal: Sequence, clock: Clock, wait: bool) Sequence {
     rtl.barrier.mb();
 
     const clk_write = clock.write_seq.raw;
     const clk_read = clock.read_seq.raw;
+
+    _ = full_scans.fetchAdd(1, .monotonic);
 
     // Current minimum value.
     var read_seq = clk_write;
@@ -90,6 +127,57 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, wait: bool) Sequence {
         if (seq != seq_invalid) {
             // Update the minimum read sequence.
             read_seq = @min(read_seq, seq);
+        }
+    }
+
+    if (dom.preempt) {
+        rtl.barrier.mb();
+
+        // Preemption is enabled, check stalled readers.
+        for (0..ke.ncpus) |i| {
+            const cpu = &dom.cpus[i];
+
+            var seq = cpu.stall_seq.load(.monotonic);
+
+            while (seq != seq_invalid) {
+                if (seq < clk_read) {
+                    seq = clk_read;
+                }
+
+                if (goal <= seq) {
+                    // The goal has been reached.
+                    break;
+                }
+
+                if (!wait) break;
+
+                const ipl = ke.ipl.raise(.Dispatch);
+
+                cpu.stall_lock.acquire_no_ipl();
+                cpu.stall_goal = goal;
+                cpu.stall_lock.release_no_ipl();
+
+                const ts = ki.turnstile.lookup(cpu);
+
+                seq = cpu.stall_seq.load(.monotonic);
+
+                // Re-check under the chain lock.
+                if (seq == seq_invalid or goal <= seq) {
+                    ki.turnstile.exit(cpu);
+                    ke.ipl.lower(ipl);
+                    break;
+                }
+
+                ki.turnstile.block(ts, cpu, .{ .shared = &cpu.stalled_owners }, .Exclusive);
+                ke.ipl.lower(ipl);
+
+                seq = cpu.stall_seq.load(.monotonic);
+            }
+
+            if (seq != seq_invalid) {
+                // Update the minimum read sequence.
+                read_seq = @min(read_seq, seq);
+            }
         }
     }
 
@@ -139,13 +227,21 @@ pub fn poll(dom: *Domain, goal: Sequence, wait: bool) bool {
 
     clk.write_seq.raw = dom.clock.write_seq.load(.monotonic);
 
-    if (goal > clk.write_seq.raw) {
+    if (goal == clk.write_seq.raw + seq_incr) {
         // The goal is a deferred advance that was never committed,
         // there is nothing to wait for unless we commit it ourselves.
         if (!wait) return false;
 
-        deferred_advance_commit(dom, goal);
-        clk.write_seq.raw = goal;
+        if (dom.clock.write_seq.cmpxchgStrong(
+            clk.write_seq.raw,
+            goal,
+            .monotonic,
+            .monotonic,
+        )) |val| {
+            clk.write_seq.raw = val;
+        } else {
+            clk.write_seq.raw = goal;
+        }
     }
 
     const oldest = scan(dom, goal, clk, wait);
@@ -181,8 +277,7 @@ pub fn deferred_advance_commit(dom: *Domain, seq: Sequence) void {
 }
 
 /// Enter a read section.
-pub fn enter(dom: *Domain) ke.Ipl {
-    const ipl = ke.ipl.raise(.Dispatch);
+fn enter_internal(dom: *Domain) Sequence {
     const cpu = dom.cpu();
 
     // Store the currently observed write sequence into our CPU state.
@@ -201,12 +296,23 @@ pub fn enter(dom: *Domain) ke.Ipl {
     // poll declared reclaimable. See scan().
     std.debug.assert(cpu.current_seq.load(.monotonic) == seq_invalid);
 
+    const wr_seq = dom.clock.write_seq.load(.monotonic);
+
     if (config.arch == .amd64) {
-        _ = cpu.current_seq.fetchAdd(dom.clock.write_seq.load(.monotonic), .seq_cst);
+        _ = cpu.current_seq.fetchAdd(wr_seq, .seq_cst);
     } else {
-        cpu.current_seq.store(dom.clock.write_seq.load(.monotonic), .monotonic);
+        cpu.current_seq.store(wr_seq, .monotonic);
         rtl.barrier.mb();
     }
+
+    return wr_seq;
+}
+
+/// Enter a read section.
+pub fn enter(dom: *Domain) ke.Ipl {
+    const ipl = ke.ipl.raise(.Dispatch);
+
+    _ = enter_internal(dom);
 
     return ipl;
 }
@@ -217,6 +323,112 @@ pub fn exit(dom: *Domain, ipl: ke.Ipl) void {
 
     // Ensure all previous memory ops complete.
     cpu.current_seq.store(seq_invalid, .release);
+
+    ke.ipl.lower(ipl);
+}
+
+// Called by the scheduler when a thread in an SMR section got preempted.
+pub fn mark_thread_stalled(td: *ke.Thread) void {
+    var it = td.smr_sections.iterator();
+    while (it.next()) : (it.advance()) {
+        const tracker: *Tracker = @fieldParentPtr("td_link", it.get());
+
+        if (tracker.cpu == null) {
+            const cpu = tracker.dom.cpu();
+
+            cpu.stall_lock.acquire_no_ipl();
+
+            if (cpu.stalled.is_empty()) {
+                cpu.stall_seq.store(tracker.seq, .monotonic);
+            }
+
+            tracker.cpu = cpu;
+
+            cpu.current_seq.store(seq_invalid, .release);
+
+            const turnstile = ki.turnstile.lookup(cpu);
+
+            cpu.stalled_owners.insert_tail(&tracker.owner.link);
+
+            if (turnstile) |ts| {
+                ki.turnstile.owner_enter(ts, &tracker.owner);
+            }
+
+            ki.turnstile.exit(cpu);
+
+            cpu.stalled.insert_tail(&tracker.link);
+            cpu.stall_lock.release_no_ipl();
+        }
+    }
+}
+
+/// Enter a preemptible read section.
+pub fn enter_preempt(dom: *Domain, tracker: *Tracker) void {
+    const ipl = ke.ipl.raise(.Dispatch);
+    const curtd = ke.thread.current();
+
+    const s = enter_internal(dom);
+
+    tracker.* = .{
+        .cpu = null,
+        .dom = dom,
+        .link = undefined,
+        .td_link = undefined,
+        .seq = s,
+        .owner = .{
+            .thread = curtd,
+            .link = undefined,
+            .boost = .{ .link = undefined, .donated = null },
+        },
+    };
+
+    curtd.smr_sections.insert_tail(&tracker.td_link);
+    ke.ipl.lower(ipl);
+}
+
+/// Exit a preemptible read section.
+pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
+    const ipl = ke.ipl.raise(.Dispatch);
+
+    tracker.td_link.remove();
+
+    if (tracker.cpu == null) {
+        // We didn't get preempted, simply exit as we would normally.
+        exit(dom, ipl);
+        return;
+    }
+
+    const cpu = tracker.cpu.?;
+
+    // We got preempted.
+    cpu.stall_lock.acquire_no_ipl();
+
+    // Remove ourselves from the stalled list.
+    tracker.link.remove();
+
+    const turnstile = ki.turnstile.lookup(cpu);
+
+    tracker.owner.link.remove();
+
+    ki.turnstile.owner_leave(&tracker.owner);
+
+    var wake = false;
+
+    if (cpu.stalled.is_empty()) {
+        cpu.stall_seq.store(seq_invalid, .release);
+        wake = true;
+    } else {
+        const first: *Tracker = @fieldParentPtr("link", cpu.stalled.first());
+        cpu.stall_seq.store(first.seq, .release);
+        wake = cpu.stall_goal <= first.seq;
+    }
+
+    if (wake) {
+        if (turnstile) |ts| ki.turnstile.wakeup(ts, .Exclusive, ts.waiters, null);
+    }
+
+    ki.turnstile.exit(cpu);
+    cpu.stall_lock.release_no_ipl();
 
     ke.ipl.lower(ipl);
 }

@@ -126,6 +126,12 @@ fn dispatch_queue(cpu: u32) void {
     ki.shootdown.process_shootdowns();
 
     if (sched_cpu.next_thread != null) {
+        const curtd = sched_cpu.current_thread.?;
+
+        if (!curtd.smr_sections.is_empty()) {
+            ki.smr.mark_thread_stalled(curtd);
+        }
+
         ki.sched.handle_preemption(sched_cpu);
     }
 
