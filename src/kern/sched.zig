@@ -591,8 +591,19 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
 
         cpu.current_thread_prio.store(new_prio, .monotonic);
 
-        // Do nothing else on promotion.
-        if (new_prio >= old_prio) return;
+        // On promotion, check if a thread was already selection for preemption,
+        // if we now preempt that thread, then insert it back into its queue.
+        if (new_prio > old_prio) {
+            if (cpu.next_thread) |n| {
+                if (should_prio_preempt(td, n.priority, false)) {
+                    cpu.next_thread = null;
+                    insert_in_queue(cpu, n, true);
+                    n.cpu = c;
+                    cpu.preemption_reason = .None;
+                }
+            }
+            return;
+        }
 
         // Demotion: try to preempt the thread if possible.
         if (cpu.next_thread != null) return;
