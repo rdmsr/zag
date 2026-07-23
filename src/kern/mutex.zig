@@ -59,7 +59,7 @@ pub const Mutex = struct {
             }
 
             // Block until woken.
-            ki.turnstile.block(ts, m, owner.?, .Exclusive);
+            ki.turnstile.block(ts, m, .{ .single = owner.? }, .Exclusive);
 
             // Re-try acquisition after wakeup.
             if (m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic) == null) {
@@ -87,6 +87,7 @@ pub const Mutex = struct {
         // has been shown to be better because this avoids lock convoys, see this mysterious 70s paper:
         // https://dl.acm.org/doi/pdf/10.1145/850657.850659
         ki.turnstile.wakeup(ts.?, .Exclusive, ts.?.waiters, null);
+        ki.turnstile.exit(m);
 
         ke.ipl.lower(ipl);
     }
