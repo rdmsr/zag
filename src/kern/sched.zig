@@ -403,6 +403,7 @@ pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
 
         clamp_time(curtd);
         recompute_priority(curtd);
+        cpu.current_thread_prio.store(curtd.priority, .monotonic);
     }
 
     pelt_update_td(curtd, cpu, true);
