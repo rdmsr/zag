@@ -22,11 +22,20 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     exp.work.init() catch @panic("e");
     exp.console.init();
 
+    if (boot_info.cmdline) |cline| {
+        if (rtl.cmdline.get_string(cline, "test")) |tst| {
+            // Run a test if specified.
+            if (r.tests.tests.get(tst)) |func| {
+                const t = ps.thread.create_kernel(ke.Thread.Priority.default, func, boot_info) catch @panic("oom");
+                ke.sched.enqueue(&t.kern);
+            } else {
+                std.log.info("invalid test: \"{s}\"", .{tst});
+            }
+        }
+    }
+
     if (boot_info.framebuffer != null) {
         //   fbconsole.init(boot_info);
-
-        const t = ps.thread.create_kernel(ke.Thread.Priority.default, ex.fireworks.start, boot_info) catch @panic("oom");
-        ke.sched.enqueue(&t.kern);
     }
 
     while (true) {
