@@ -8,6 +8,7 @@ pub const arch = @import("arch");
 pub const mm = @import("mm/root.zig");
 pub const ps = @import("proc/root.zig");
 pub const BootInfo = @import("loader/info.zig");
+pub const tests = @import("tests/root.zig");
 
 const config = @import("config");
 
