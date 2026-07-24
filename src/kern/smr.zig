@@ -44,12 +44,10 @@ pub const Domain = struct {
                 .stall_lock = .init(),
                 .stall_seq = .init(seq_invalid),
                 .stalled = undefined,
-                .stalled_owners = undefined,
                 .stall_goal = seq_invalid,
             };
 
             self.cpus[i].stalled.init();
-            self.cpus[i].stalled_owners.init();
         }
     }
 };
@@ -62,8 +60,6 @@ pub const Cpu = struct {
     stall_lock: ke.SpinLock,
     /// Stalled readers.
     stalled: rtl.List,
-    /// Stalled owner list.
-    stalled_owners: rtl.List,
     /// Oldest active stalled sequence.
     stall_seq: std.atomic.Value(Sequence),
     stall_goal: Sequence,
@@ -71,8 +67,6 @@ pub const Cpu = struct {
 
 /// Tracker for preemptible SMR
 pub const Tracker = struct {
-    link: rtl.List.Entry,
-    td_link: rtl.List.Entry,
     dom: *Domain,
     seq: Sequence,
     cpu: ?*Cpu,
@@ -168,7 +162,7 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, wait: bool) Sequence {
                     break;
                 }
 
-                ki.turnstile.block(ts, cpu, .{ .shared = &cpu.stalled_owners }, .Exclusive);
+                ki.turnstile.block(ts, cpu, .{ .shared = &cpu.stalled }, .Exclusive);
                 ke.ipl.lower(ipl);
 
                 seq = cpu.stall_seq.load(.monotonic);
@@ -330,8 +324,14 @@ pub fn exit(dom: *Domain, ipl: ke.Ipl) void {
 // Called by the scheduler when a thread in an SMR section got preempted.
 pub fn mark_thread_stalled(td: *ke.Thread) void {
     var it = td.smr_sections.iterator();
-    while (it.next()) : (it.advance()) {
-        const tracker: *Tracker = @fieldParentPtr("td_link", it.get());
+    while (it.next()) {
+        // Advance here because we change the stalled_sections linkage thruogh
+        // owner.link.
+        const entry = it.get();
+        it.advance();
+
+        const owner: *ki.turnstile.Owner = @fieldParentPtr("link", entry);
+        const tracker: *Tracker = @fieldParentPtr("owner", owner);
 
         if (tracker.cpu == null) {
             const cpu = tracker.dom.cpu();
@@ -348,7 +348,8 @@ pub fn mark_thread_stalled(td: *ke.Thread) void {
 
             const turnstile = ki.turnstile.lookup(cpu);
 
-            cpu.stalled_owners.insert_tail(&tracker.owner.link);
+            entry.remove();
+            cpu.stalled.insert_tail(&tracker.owner.link);
 
             if (turnstile) |ts| {
                 ki.turnstile.owner_enter(ts, &tracker.owner);
@@ -356,7 +357,6 @@ pub fn mark_thread_stalled(td: *ke.Thread) void {
 
             ki.turnstile.exit(cpu);
 
-            cpu.stalled.insert_tail(&tracker.link);
             cpu.stall_lock.release_no_ipl();
         }
     }
@@ -372,8 +372,6 @@ pub fn enter_preempt(dom: *Domain, tracker: *Tracker) void {
     tracker.* = .{
         .cpu = null,
         .dom = dom,
-        .link = undefined,
-        .td_link = undefined,
         .seq = s,
         .owner = .{
             .thread = curtd,
@@ -382,7 +380,7 @@ pub fn enter_preempt(dom: *Domain, tracker: *Tracker) void {
         },
     };
 
-    curtd.smr_sections.insert_tail(&tracker.td_link);
+    curtd.smr_sections.insert_tail(&tracker.owner.link);
     ke.ipl.lower(ipl);
 }
 
@@ -390,9 +388,8 @@ pub fn enter_preempt(dom: *Domain, tracker: *Tracker) void {
 pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
     const ipl = ke.ipl.raise(.Dispatch);
 
-    tracker.td_link.remove();
-
     if (tracker.cpu == null) {
+        tracker.owner.link.remove();
         // We didn't get preempted, simply exit as we would normally.
         exit(dom, ipl);
         return;
@@ -403,11 +400,9 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
     // We got preempted.
     cpu.stall_lock.acquire_no_ipl();
 
-    // Remove ourselves from the stalled list.
-    tracker.link.remove();
-
     const turnstile = ki.turnstile.lookup(cpu);
 
+    // Remove ourselves from the stalled list.
     tracker.owner.link.remove();
 
     ki.turnstile.owner_leave(&tracker.owner);
@@ -418,7 +413,12 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
         cpu.stall_seq.store(seq_invalid, .release);
         wake = true;
     } else {
-        const first: *Tracker = @fieldParentPtr("link", cpu.stalled.first());
+        const first_owner: *ki.turnstile.Owner = @fieldParentPtr(
+            "link",
+            cpu.stalled.first(),
+        );
+
+        const first: *Tracker = @fieldParentPtr("owner", first_owner);
         cpu.stall_seq.store(first.seq, .release);
         wake = cpu.stall_goal <= first.seq;
     }
