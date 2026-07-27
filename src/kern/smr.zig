@@ -77,8 +77,8 @@ pub const Tracker = struct {
 pub var full_scans: std.atomic.Value(usize) = .init(0);
 
 /// Scan all CPUs and return the minimum observed value.
-/// If `wait` is true, this will spinloop (or block) until all CPUs have reached the given goal.
-fn scan(dom: *Domain, goal: Sequence, clock: Clock, wait: bool) Sequence {
+/// If `should_wait` is true, this will spinloop (or block) until all CPUs have reached the given goal.
+fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence {
     rtl.barrier.mb();
 
     const clk_write = clock.write_seq.raw;
@@ -109,7 +109,7 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, wait: bool) Sequence {
                 break;
             }
 
-            if (!wait) break;
+            if (!should_wait) break;
 
             // Wait until the current sequence is changed,
             // this does not guarantee that we've reached the goal yet, but
@@ -143,7 +143,7 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, wait: bool) Sequence {
                     break;
                 }
 
-                if (!wait) break;
+                if (!should_wait) break;
 
                 const ipl = ke.ipl.raise(.Dispatch);
 
@@ -206,7 +206,7 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, wait: bool) Sequence {
 /// Poll to determine whether all CPUs have reached `goal`.
 /// If wait is true then this will spinloop until the goal is met.
 /// This will advance the domain read sequence if applicable.
-pub fn poll(dom: *Domain, goal: Sequence, wait: bool) bool {
+pub fn poll(dom: *Domain, goal: Sequence, should_wait: bool) bool {
     var clk: Clock = undefined;
 
     // Load read_seq and write_seq in the right order
@@ -224,7 +224,7 @@ pub fn poll(dom: *Domain, goal: Sequence, wait: bool) bool {
     if (goal == clk.write_seq.raw + seq_incr) {
         // The goal is a deferred advance that was never committed,
         // there is nothing to wait for unless we commit it ourselves.
-        if (!wait) return false;
+        if (!should_wait) return false;
 
         if (dom.clock.write_seq.cmpxchgStrong(
             clk.write_seq.raw,
@@ -238,7 +238,7 @@ pub fn poll(dom: *Domain, goal: Sequence, wait: bool) bool {
         }
     }
 
-    const oldest = scan(dom, goal, clk, wait);
+    const oldest = scan(dom, goal, clk, should_wait);
 
     if (goal <= oldest) {
         return true;
@@ -323,7 +323,7 @@ pub fn exit(dom: *Domain, ipl: ke.Ipl) void {
 
 /// Wait for a given goal to happen.
 pub fn wait(dom: *Domain, goal: Sequence) void {
-    poll(dom, goal, true);
+    _ = poll(dom, goal, true);
 }
 
 /// Wait until all readers have left their read sections.
