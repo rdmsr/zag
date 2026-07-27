@@ -92,6 +92,8 @@ pub const smr = struct {
     pub const exit = p.smr.exit;
     pub const enter = p.smr.enter;
     pub const poll = p.smr.poll;
+    pub const wait = p.smr.wait;
+    pub const synchronize = p.smr.synchronize;
 
     pub const seq_invalid = p.smr.seq_invalid;
 

@@ -321,6 +321,16 @@ pub fn exit(dom: *Domain, ipl: ke.Ipl) void {
     ke.ipl.lower(ipl);
 }
 
+/// Wait for a given goal to happen.
+pub fn wait(dom: *Domain, goal: Sequence) void {
+    poll(dom, goal, true);
+}
+
+/// Wait until all readers have left their read sections.
+pub fn synchronize(dom: *Domain) void {
+    wait(dom, advance(dom));
+}
+
 // Called by the scheduler when a thread in an SMR section got preempted.
 pub fn mark_thread_stalled(td: *ke.Thread) void {
     var it = td.smr_sections.iterator();

@@ -801,7 +801,7 @@ pub const Zone = struct {
 
         if (self.smr) |smr| {
             // Direct frees must synchronize, the object is instantly reusable.
-            _ = ke.smr.poll(smr, ke.smr.advance(smr), true);
+            _ = ke.smr.synchronize(smr);
         }
 
         self.lock.acquire();
@@ -1080,7 +1080,7 @@ pub const Zone = struct {
                 ke.smr.deferred_advance_commit(smr, magazine.seq);
 
                 // Wait until we can destroy the magazine.
-                _ = ke.smr.poll(smr, magazine.seq, true);
+                _ = ke.smr.wait(smr, magazine.seq);
             }
         }
 
