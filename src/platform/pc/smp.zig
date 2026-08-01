@@ -113,7 +113,7 @@ pub fn init() linksection(r.init) void {
 
         start_thread.remote(@intCast(cpu_id)).* = make_thread(@ptrCast(&ap_entry), stack_top - r.kib(32));
 
-        rtl.barrier.wmb();
+        rtl.barrier.fence(.release);
 
         // Send the INIT-SIPI-SIPI sequence to start the AP.
         apic.send_init(apic_id);

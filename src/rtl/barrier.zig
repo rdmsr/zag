@@ -4,51 +4,24 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-/// Read Memory Barrier (Load-Load)
-/// Ensures all loads before the barrier complete before any loads after it.
-pub inline fn rmb() void {
-    switch (builtin.cpu.arch) {
-        .x86, .x86_64 => {
-            asm volatile ("" ::: .{ .memory = true });
-        },
-        .aarch64 => {
-            asm volatile ("dmb ishld" ::: .{ .memory = true });
-        },
-        .arm => {
-            asm volatile ("dmb ish" ::: .{ .memory = true });
-        },
-        .riscv64, .riscv32 => {
-            asm volatile ("fence r,r" ::: .{ .memory = true });
-        },
-        else => @compileError("unsupported architecture"),
+pub inline fn fence(comptime ordering: std.builtin.AtomicOrder) void {
+    switch (ordering) {
+        .seq_cst, .acq_rel => mb(),
+        .acquire => acq(),
+        .release => rel(),
+        else => @compileError("Unsupported ordering"),
     }
 }
 
-/// Write Memory Barrier (Store-Store)
-/// Ensures all stores before the barrier complete before any stores after it.
-pub inline fn wmb() void {
+// Full memory barrier
+inline fn mb() void {
     switch (builtin.cpu.arch) {
-        .x86, .x86_64 => {
-            asm volatile ("" ::: .{ .memory = true });
+        .x86_64 => {
+            // Faster than mfence
+            asm volatile ("lock addl $0, (%%rsp)" ::: .{ .memory = true });
         },
-        .aarch64 => {
-            asm volatile ("dmb ishst" ::: .{ .memory = true });
-        },
-        .arm => {
-            asm volatile ("dmb ish" ::: .{ .memory = true });
-        },
-        .riscv64, .riscv32 => {
-            asm volatile ("fence w,w" ::: .{ .memory = true });
-        },
-        else => @compileError("unsupported architecture"),
-    }
-}
-
-/// Full Memory Barrier (Load/Store - Load/Store)
-pub inline fn mb() void {
-    switch (builtin.cpu.arch) {
-        .x86, .x86_64 => {
-            asm volatile ("mfence" ::: .{ .memory = true });
+        .x86 => {
+            asm volatile ("lock addl $0, (%%esp)" ::: .{ .memory = true });
         },
         .aarch64, .arm => {
             asm volatile ("dmb ish" ::: .{ .memory = true });
@@ -60,8 +33,8 @@ pub inline fn mb() void {
     }
 }
 
-/// Acquire Barrier (Load/Load - Load/Store)
-pub inline fn acq() void {
+// Acquire barrier
+inline fn acq() void {
     switch (builtin.cpu.arch) {
         .x86, .x86_64 => {
             asm volatile ("" ::: .{ .memory = true });
@@ -71,6 +44,22 @@ pub inline fn acq() void {
         },
         .riscv64, .riscv32 => {
             asm volatile ("fence r,rw" ::: .{ .memory = true });
+        },
+        else => @compileError("unsupported architecture"),
+    }
+}
+
+// Release barrier
+inline fn rel() void {
+    switch (builtin.cpu.arch) {
+        .x86, .x86_64 => {
+            asm volatile ("" ::: .{ .memory = true });
+        },
+        .aarch64, .arm => {
+            asm volatile ("dmb ish" ::: .{ .memory = true });
+        },
+        .riscv64, .riscv32 => {
+            asm volatile ("fence rw,w" ::: .{ .memory = true });
         },
         else => @compileError("unsupported architecture"),
     }

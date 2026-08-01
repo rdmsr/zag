@@ -264,7 +264,8 @@ pub const QSpinLock = LockTemplate(struct {
         }
 
         // Store cpu + 1 so that we can distinguish from an empty tail field.
-        rtl.barrier.wmb();
+        rtl.barrier.fence(.release);
+
         const tail: u16 = @bitCast(Tail{ .cpu = @intCast(ke.cpu.current() + 1), .idx = @intCast(idx) });
         const old: Tail = @bitCast(self.data.split.tail.swap(tail, .acq_rel));
 

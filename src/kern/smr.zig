@@ -79,7 +79,7 @@ pub var full_scans: std.atomic.Value(usize) = .init(0);
 /// Scan all CPUs and return the minimum observed value.
 /// If `should_wait` is true, this will spinloop (or block) until all CPUs have reached the given goal.
 fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence {
-    rtl.barrier.mb();
+    rtl.barrier.fence(.seq_cst);
 
     const clk_write = clock.write_seq.raw;
     const clk_read = clock.read_seq.raw;
@@ -125,7 +125,7 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence 
     }
 
     if (dom.preempt) {
-        rtl.barrier.mb();
+        rtl.barrier.fence(.seq_cst);
 
         // Preemption is enabled, check stalled readers.
         for (0..ke.ncpus) |i| {
@@ -181,7 +181,7 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence 
     // (1) is done by the acquire fence below, and (2) is done by the release
     // success ordering in the CAS. This pairs with the load acquire in poll().
     // It would also be valid to relax the CAS and have a full fence here.
-    rtl.barrier.acq();
+    rtl.barrier.fence(.acquire);
 
     // Advance the global read sequence.
     var dom_rd_seq = dom.clock.read_seq.load(.acquire);
@@ -259,7 +259,7 @@ pub fn advance(dom: *Domain) Sequence {
 /// the calling thread are visible. The global clock isn't advanced unlike `advance`,
 /// it is only when commit() is called.
 pub fn deferred_advance(dom: *Domain) Sequence {
-    rtl.barrier.mb();
+    rtl.barrier.fence(.seq_cst);
 
     return dom.clock.write_seq.load(.monotonic) + seq_incr;
 }
@@ -296,7 +296,7 @@ fn enter_internal(dom: *Domain) Sequence {
         _ = cpu.current_seq.fetchAdd(wr_seq, .seq_cst);
     } else {
         cpu.current_seq.store(wr_seq, .monotonic);
-        rtl.barrier.mb();
+        rtl.barrier.fence(.seq_cst);
     }
 
     return wr_seq;

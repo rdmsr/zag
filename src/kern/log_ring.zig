@@ -220,7 +220,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             result.seq = info.sequence;
 
             // Ensure the copy is finished before the state load.
-            rtl.barrier.rmb();
+            rtl.barrier.fence(.acquire);
 
             state_var = desc.state.load(.acquire);
             result.state = get_desc_state(id, state_var);

@@ -26,7 +26,7 @@ pub fn SeqLock(comptime T: type) type {
                 rtl.barrier.atomic_load_memcpy(&ret, &self.raw, .monotonic);
 
                 // Ensure the sequence read happens *after* the data is fully loaded.
-                rtl.barrier.rmb();
+                rtl.barrier.fence(.acquire);
 
                 if (self.sequence.load(.monotonic) == seq)
                     break;
@@ -43,7 +43,7 @@ pub fn SeqLock(comptime T: type) type {
             self.sequence.store(seq + 1, .monotonic);
 
             // Ensure the data write happens *after* the sequence is incremented.
-            rtl.barrier.wmb();
+            rtl.barrier.fence(.release);
 
             // Relaxed store memcpy is needed here since data races are UB.
             rtl.barrier.atomic_store_memcpy(&self.raw, &data, .monotonic);
