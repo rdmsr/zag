@@ -179,10 +179,15 @@ var cpu_zone: Zone = undefined;
 var smr_zone: TypedZone(ke.smr.Domain) = undefined;
 var smr_cpu_zone: Zone = undefined;
 
+pub var smr_sys_domain: *ke.smr.Domain = undefined;
+pub var smr_sys_preempt_domain: *ke.smr.Domain = undefined;
+
 const alloc_poison: u32 = 0xBADDC0DE;
 const free_poison: u32 = 0xDEADBEEF;
 const is_poison_enabled = config.slab_poison;
 const should_check_poison = config.slab_check_poison;
+
+const AllocOpts = struct { policy: mm.WaitPolicy = .WaitForMemory };
 
 /// A slab is a contiguous memory region that holds multiple objects of the same type.
 const Slab = struct {
@@ -495,6 +500,7 @@ pub const Zone = struct {
     reuse_policy: ReusePolicy,
 
     smr: ?*ke.smr.Domain,
+    smr_reclaim: ?*const fn (obj: *anyopaque) void,
 
     const Self = @This();
 
@@ -505,6 +511,7 @@ pub const Zone = struct {
         magazines: bool = true,
         reuse_policy: ReusePolicy = .FIFO,
         smr: ?*ke.smr.Domain = null,
+        smr_reclaim: ?*const fn (obj: *anyopaque) void = null,
     };
 
     /// Initialize a zone.
@@ -538,6 +545,7 @@ pub const Zone = struct {
         // obtained by checking the list head.
         self.reuse_policy = if (options.smr != null) .FIFO else options.reuse_policy;
         self.smr = options.smr;
+        self.smr_reclaim = options.smr_reclaim;
 
         zone_list_lock.acquire();
 
@@ -564,7 +572,7 @@ pub const Zone = struct {
     }
 
     /// Allocate an object from the zone.
-    pub fn alloc(self: *Self, opts: struct { policy: mm.WaitPolicy = .WaitForMemory }) mm.Error!*anyopaque {
+    pub fn alloc(self: *Self, opts: AllocOpts) mm.Error!*anyopaque {
         var buf: *anyopaque = undefined;
 
         // Try grabbing an object from the magazine layer.
@@ -802,6 +810,7 @@ pub const Zone = struct {
         if (self.smr) |smr| {
             // Direct frees must synchronize, the object is instantly reusable.
             _ = ke.smr.synchronize(smr);
+            if (self.smr_reclaim) |reclaim| reclaim(obj);
         }
 
         self.lock.acquire();
@@ -1087,7 +1096,11 @@ pub const Zone = struct {
         // Free its rounds to the slab layer.
         // For SMR zones the free-time work was deferred, do it now.
         for (0..rounds) |i| {
-            self.slab_free(magazine.rounds_ptr()[i], self.smr != null);
+            const obj = magazine.rounds_ptr()[i];
+            if (self.smr_reclaim) |reclaim| {
+                reclaim(obj);
+            }
+            self.slab_free(obj, self.smr != null);
         }
 
         // Free the magazine.
@@ -1204,16 +1217,17 @@ pub const Zone = struct {
     /// Deferred free-time work for SMR zones, ran when a full magazine
     /// is reused after its grace period expired.
     fn magazine_reuse(self: *Self, mag: *Magazine) void {
-        if (!is_poison_enabled or self.smr == null) return;
+        if (self.smr == null) return;
 
         for (0..magazine_size.load()) |i| {
             const obj = mag.rounds_ptr()[i];
 
-            if (self.dtor) |dtor| {
-                dtor(obj);
-            }
+            if (self.smr_reclaim) |reclaim| reclaim(obj);
 
-            fill_with_poison(obj, self.obj_size, free_poison);
+            if (is_poison_enabled) {
+                if (self.dtor) |dtor| dtor(obj);
+                fill_with_poison(obj, self.obj_size, free_poison);
+            }
         }
     }
 
@@ -1354,6 +1368,8 @@ pub fn TypedZone(comptime T: type) type {
         pub const InitOptions = struct {
             ctor: ?*const fn (*T) void = null,
             dtor: ?*const fn (*T) void = null,
+            smr: ?*ke.smr.Domain = null,
+            smr_reclaim: ?*const fn (*T) void = null,
         };
 
         pub fn init(self: *@This(), name: []const u8, options: InitOptions) void {
@@ -1361,11 +1377,18 @@ pub fn TypedZone(comptime T: type) type {
                 .alignment = @alignOf(T),
                 .ctor = @ptrCast(options.ctor),
                 .dtor = @ptrCast(options.dtor),
+                .smr = options.smr,
+                .smr_reclaim = @ptrCast(options.smr_reclaim),
             });
         }
 
         pub fn create(self: *Self) mm.Error!*T {
             const ret = try self.zone.alloc(.{});
+            return @ptrCast(@alignCast(ret));
+        }
+
+        pub fn create_opts(self: *Self, opts: AllocOpts) mm.Error!*T {
+            const ret = try self.zone.alloc(opts);
             return @ptrCast(@alignCast(ret));
         }
 
@@ -1422,6 +1445,9 @@ pub fn late_init() linksection(r.init) void {
 
     smr_zone.init("SMR", .{});
     smr_cpu_zone.init("SMR CPU", @sizeOf(ke.smr.Cpu) * ke.ncpus, .{});
+
+    smr_sys_domain = smr_domain_create(false) catch @panic("Failed to create smr domain");
+    smr_sys_preempt_domain = smr_domain_create(true) catch @panic("Failed to create smr domain");
 }
 
 pub fn smr_domain_create(preempt: bool) !*ke.smr.Domain {
