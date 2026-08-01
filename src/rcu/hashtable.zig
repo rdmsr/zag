@@ -1,6 +1,7 @@
 //! Implementation of a scalable, lock-free hash table.
 //! The table is lock-free for read operations and has fine-grained locking on
 //! the buckets for write operations.
+//! The general design is inspired by XNU's smr_shash.
 
 const std = @import("std");
 const rtl = @import("rtl");
@@ -236,6 +237,7 @@ const Core = struct {
         }
     }
 
+    /// Called in worker thread context when the table needs rehashing.
     fn rehash(ptr: ?*anyopaque) void {
         const self: *Self = @ptrCast(@alignCast(ptr.?));
 
@@ -246,12 +248,21 @@ const Core = struct {
             const state = self.state.load(.monotonic);
             const size = size_for_shift(state.current_shift);
 
-            if (self.should_grow(elems, size) or self.should_shrink(elems, size)) {
+            // Growing and shrinking are both under the same 'rehashing_resize'
+            // operation, as this function figures out itself whether or not
+            // it should grow or shrink. We still need a marker to catch
+            // a pending resize operation however (by failing the CAS).
+            const grow = self.should_grow(elems, size);
+            const shrink = self.should_shrink(elems, size);
+
+            if (grow or shrink) {
                 self.resize(self.target_shift_for(elems));
             } else if (reason & rehashing_reseed != 0) {
                 self.resize(state.current_shift);
             }
 
+            // If we loop again, this means that someone enqueued a new rehash
+            // operation, so work on that.
             _ = self.rehashing_state.cmpxchgStrong(
                 rehashing_running,
                 rehashing_none,
@@ -261,6 +272,7 @@ const Core = struct {
         }
     }
 
+    /// Resize (and re-seed) the hash table to a given target shift.
     fn resize(self: *Self, new_shift: u5) void {
         var state = self.state.load(.monotonic);
         state.new_shift = new_shift;
@@ -392,6 +404,10 @@ const Core = struct {
         };
     }
 
+    /// Find the appropriate shift for the current number of items.
+    /// This avoids going through multiple steps when resizing a busy table,
+    /// i.e instead of doubling the size and doing 16 -> 32 -> 64,
+    /// we can just do 16 -> 64 in a single resize.
     fn target_shift_for(self: *Self, elems: u32) u5 {
         const depth = ResizePolicy.depth_for(self.policy);
         const needed = std.math.divCeil(usize, elems, depth) catch unreachable;
