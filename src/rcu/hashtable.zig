@@ -147,7 +147,12 @@ const Core = struct {
 
     const Self = @This();
 
-    fn init(self: *Self, policy: ResizePolicy, min_size: u32) !void {
+    fn init(
+        self: *Self,
+        smr: *ke.smr.Domain,
+        policy: ResizePolicy,
+        min_size: u32,
+    ) !void {
         const min: u32 = if (policy == .Compact) @max(2, min_size) else @max(16, min_size);
 
         const start_size = min;
@@ -174,6 +179,7 @@ const Core = struct {
 
         self.rehashing_state = .init(rehashing_none);
         self.elems = .init(0);
+        self.smr = smr;
 
         self.buckets[0] = .init(@ptrCast(arr));
         self.seeds[0] = .init(0);
@@ -436,17 +442,28 @@ pub fn Table(comptime T: type, comptime link_field: []const u8, comptime Context
             _ = obj;
             unreachable;
         }
+
+        pub fn is_alive(obj: *T) bool {
+            _ = obj;
+            unreachable;
+        }
     });
 
     return struct {
         core: Core,
         const Self = @This();
 
+        const Options = struct {
+            smr: *ke.smr.Domain,
+            policy: ResizePolicy = .Balanced,
+            min_size: u32 = 0,
+        };
+
         /// Initialize a new table, `min_size` provides the minimum count of
         /// buckets. If `min_size` is 0, it will get clamped to sane defaults
         /// depending on the chosen policy.
-        pub fn init(self: *Self, policy: ResizePolicy, min_size: u32) !void {
-            try self.core.init(policy, min_size);
+        pub fn init(self: *Self, opts: Options) !void {
+            try self.core.init(opts.smr, opts.policy, opts.min_size);
             self.core.hash_link = hash_link;
         }
 
@@ -511,6 +528,10 @@ pub fn Table(comptime T: type, comptime link_field: []const u8, comptime Context
                 const link: *rcu.SList.Entry = @ptrFromInt(word);
                 const obj = link_to_obj(link);
                 if (Context.eql(Context.key_of(obj), key)) {
+                    // Found it, if it is still alive then return it, otherwise
+                    // replace it.
+                    if (!Context.is_alive(obj)) break;
+
                     b.unlock_no_changes();
                     return obj;
                 }
