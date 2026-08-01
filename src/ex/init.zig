@@ -21,6 +21,7 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     ke.sched.late_init();
     exp.work.init() catch @panic("e");
     exp.console.init();
+    exp.string.init();
 
     if (boot_info.cmdline) |cline| {
         if (rtl.cmdline.get_string(cline, "test")) |tst| {
