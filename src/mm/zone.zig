@@ -119,7 +119,7 @@ const mi = mm.private;
 /// Interval at which we do housekeeping (working set update, reaping, etc.)
 const update_interval_s = 15;
 const update_interval = std.time.ns_per_s * update_interval_s;
-var update_work_item: ex.WorkItem = undefined;
+var update_work_item: ex.DelayedWorkItem = undefined;
 
 /// Fixed point conversion for WMA computation.
 const wma_unit = 256;

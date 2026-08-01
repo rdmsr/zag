@@ -3,6 +3,7 @@ pub const private = @import("private.zig");
 const p = private;
 
 pub const WorkItem = p.work.WorkItem;
+pub const DelayedWorkItem = p.work.DelayedWorkItem;
 pub const Console = p.console.Console;
 
 pub const work = struct {

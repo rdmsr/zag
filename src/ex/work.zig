@@ -40,8 +40,6 @@ pub const WorkItem = struct {
     link: rtl.List.Entry,
     enqueued: std.atomic.Value(bool),
     priority: Priority,
-    dpc: ke.Dpc,
-    timer: ke.Timer,
 
     pub const Priority = enum {
         /// Low priority background work.
@@ -67,10 +65,29 @@ pub const WorkItem = struct {
             .link = undefined,
             .enqueued = .init(false),
             .priority = priority,
+        };
+    }
+};
+
+/// Represents a work item that will be enqueued in a given amount of time.
+pub const DelayedWorkItem = struct {
+    item: WorkItem,
+    dpc: ke.Dpc,
+    timer: ke.Timer,
+
+    pub fn init(
+        self: *DelayedWorkItem,
+        priority: WorkItem.Priority,
+        func: *const fn (arg: ?*anyopaque) void,
+        arg: ?*anyopaque,
+    ) void {
+        self.* = .{
+            .item = undefined,
             .dpc = .init(work_dpc),
             .timer = undefined,
         };
 
+        self.item.init(priority, func, arg);
         self.timer.init();
     }
 };
@@ -196,14 +213,14 @@ fn work_loop(p: ?*anyopaque) void {
     }
 }
 
-/// Called when a work timer expires.
+/// Called when a delayed work timer expires.
 fn work_dpc(dpc: *ke.Dpc, _: ?*anyopaque) void {
-    const item: *WorkItem = @fieldParentPtr("dpc", dpc);
-    enqueue(item);
+    const item: *DelayedWorkItem = @fieldParentPtr("dpc", dpc);
+    enqueue(&item.item);
 }
 
 /// Enqueue a work item in `time`.
-pub fn enqueue_in(item: *WorkItem, time: r.Nanoseconds) void {
+pub fn enqueue_in(item: *DelayedWorkItem, time: r.Nanoseconds) void {
     ke.timer.set(&item.timer, time, &item.dpc);
 }
 
