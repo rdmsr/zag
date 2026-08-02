@@ -683,7 +683,11 @@ comptime {
 /// Called on CPU 0 to initialize load balancing mechanisms.
 pub fn late_init() linksection(r.init) void {
     balance_timer.init();
-    ke.timer.set(&balance_timer, balance_interval * std.time.ns_per_ms, &balance_dpc);
+    ke.timer.set(
+        &balance_timer,
+        balance_interval * std.time.ns_per_ms,
+        .{ .dpc = &balance_dpc },
+    );
 }
 
 fn calendar_queue_increment(cpu: *PerCpu) void {
@@ -1451,5 +1455,5 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
     const offset = lcg.next() % balance_interval;
     const ms = (balance_interval) + offset;
 
-    ke.timer.set(&balance_timer, ms * std.time.ns_per_ms, &balance_dpc);
+    ke.timer.set(&balance_timer, ms * std.time.ns_per_ms, .{ .dpc = &balance_dpc });
 }

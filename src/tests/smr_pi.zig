@@ -63,7 +63,7 @@ fn seed_from(param: ?*anyopaque) u64 {
 fn delay_ms(ms: usize) void {
     var timer: ke.Timer = undefined;
     timer.init();
-    ke.timer.set(&timer, std.time.ns_per_ms * ms, null);
+    ke.timer.set(&timer, std.time.ns_per_ms * ms, .{});
     _ = ke.wait.wait_one(&timer.hdr, null) catch unreachable;
 }
 
