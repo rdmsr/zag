@@ -97,24 +97,32 @@ pub const Status = enum(u8) {
     Satisfied,
 };
 
+const Options = struct {
+    timeout: ?r.Nanoseconds = null,
+    waitblocks: ?[*]WaitBlock = null,
+};
+
 /// Wait for the provided object to be signaled.
-pub fn wait_one(object: *DispatchHeader, timeout: ?r.Nanoseconds) !usize {
+/// This will only return an error if `timeout` is provided and
+/// the wait times out.
+pub fn wait_one(object: *DispatchHeader, opts: Options) !usize {
     var objects = [_]*DispatchHeader{object};
-    return wait_any(&objects, timeout, null);
+    return wait_any(&objects, opts);
 }
 
 /// Wait for any of the provided objects to be signaled.
-/// Returns the index of the object that was signaled, or an error.
+/// Returns the index of the object that was signaled, or an error
+/// in the case of timeout.
 /// If `timeout` is not provided, it will wait indefinitely.
 /// If `waitblocks` is specified, then the wait will use those waitblocks for the operation.
 /// Note that if `timeout` is provided, then one additional waitblock must be allocated.
-pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks: ?[*]WaitBlock) !usize {
+pub fn wait_any(objects: []*DispatchHeader, opts: Options) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
     const curtd = ki.sched.percpu.local().current_thread.?;
     const obj_count = objects.len;
-    const has_timeout = timeout != null;
-    const blocks = waitblocks orelse blk: {
+    const has_timeout = opts.timeout != null;
+    const blocks = opts.waitblocks orelse blk: {
         std.debug.assert(obj_count <= curtd.waitblocks.len - @intFromBool(has_timeout));
         break :blk &curtd.waitblocks;
     };
@@ -158,7 +166,7 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
     }
 
     // Wait was already satisfied, back out.
-    if (satisfier != null or (has_timeout and timeout.? == 0)) {
+    if (satisfier != null or (has_timeout and opts.timeout.? == 0)) {
         if (satisfier != null) {
             std.debug.assert(curtd.wait_status.load(.acquire) == .Satisfied);
         }
@@ -182,8 +190,8 @@ pub fn wait_any(objects: []*DispatchHeader, timeout: ?r.Nanoseconds, waitblocks:
         return satisfier orelse error.Timeout;
     }
 
-    if (has_timeout) {
-        ke.timer.set(timer, timeout.?, null);
+    if (opts.timeout) |timeout| {
+        ke.timer.set(timer, timeout, .{});
     }
 
     curtd.lock.acquire_no_ipl();
