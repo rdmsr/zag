@@ -105,9 +105,9 @@ const Options = struct {
 /// Wait for the provided object to be signaled.
 /// This will only return an error if `timeout` is provided and
 /// the wait times out.
-pub fn wait_one(object: *DispatchHeader, opts: Options) !usize {
+pub fn wait_one(object: *DispatchHeader, reason: []const u8, opts: Options) !usize {
     var objects = [_]*DispatchHeader{object};
-    return wait_any(&objects, opts);
+    return wait_any(&objects, reason, opts);
 }
 
 /// Wait for any of the provided objects to be signaled.
@@ -116,7 +116,7 @@ pub fn wait_one(object: *DispatchHeader, opts: Options) !usize {
 /// If `timeout` is not provided, it will wait indefinitely.
 /// If `waitblocks` is specified, then the wait will use those waitblocks for the operation.
 /// Note that if `timeout` is provided, then one additional waitblock must be allocated.
-pub fn wait_any(objects: []*DispatchHeader, opts: Options) !usize {
+pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
     const curtd = ki.sched.percpu.local().current_thread.?;
@@ -206,6 +206,7 @@ pub fn wait_any(objects: []*DispatchHeader, opts: Options) !usize {
             }
         }
 
+        curtd.wait_reason = reason;
         // We're good, now actually block.
         ki.sched.block_locked(curtd);
     } else {
@@ -220,6 +221,8 @@ pub fn wait_any(objects: []*DispatchHeader, opts: Options) !usize {
     if (has_timeout) {
         ke.timer.cancel(timer);
     }
+
+    curtd.wait_reason = null;
 
     // Find the object that satisfied us.
     for (0..total_count) |i| {

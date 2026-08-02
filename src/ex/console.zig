@@ -87,7 +87,7 @@ fn drain_from_all(seq: usize) usize {
 
 fn worker(_: ?*anyopaque) void {
     while (true) {
-        _ = ke.wait.wait_one(&ke.log.event.hdr, .{}) catch unreachable;
+        _ = ke.wait.wait_one(&ke.log.event.hdr, "console_worker", .{}) catch unreachable;
         ke.log.event.reset();
 
         last_seq = drain_from_all(last_seq);
