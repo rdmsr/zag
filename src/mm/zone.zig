@@ -118,7 +118,7 @@ const mi = mm.private;
 
 /// Interval at which we do housekeeping (working set update, reaping, etc.)
 const update_interval_s = 15;
-const update_interval = std.time.ns_per_s * update_interval_s;
+const update_interval: r.Nanoseconds = .from(r.Seconds.init(update_interval_s));
 var update_work_item: ex.DelayedWorkItem = undefined;
 
 /// Fixed point conversion for WMA computation.
@@ -134,7 +134,7 @@ const zones_num = 32;
 const magazine_size = ke.Tunable(u8, 8, "mm.zone.mag_size");
 
 /// How much extra memory CPUs are allowed to keep around.
-const max_local_memory = ke.Tunable(u32, r.kib(128), "mm.zone.max_local_mem");
+const max_local_memory = ke.Tunable(u32, @intCast(r.kib(128)), "mm.zone.max_local_mem");
 
 /// Number of contentions allowed per second before the depot grows.
 const depot_grow_level = ke.Tunable(u32, 5 * wma_unit, "mm.zone.depot_grow_level");
@@ -146,7 +146,7 @@ const depot_shrink_level = ke.Tunable(u32, wma_unit / 2, "mm.zone.depot_shrink_l
 const excess_magazines = ke.Tunable(u32, 8, "mm.zone.excess_mags");
 
 /// Excess memory in a zone before magazines are trimmed.
-const excess_memory = ke.Tunable(u32, r.kib(16), "mm.zone.excess_mem");
+const excess_memory = ke.Tunable(u32, @intCast(r.kib(16)), "mm.zone.excess_mem");
 
 /// Every power-of-two-size from 8 to 2048 (inclusively).
 const generic_zones_num = 9;

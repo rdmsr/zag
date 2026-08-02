@@ -46,7 +46,7 @@ pub fn init() linksection(r.init) void {
     // Calculate how many ticks it costs to call tc_sleep.
     for (0..calib_cost_runs) |_| {
         const start = amd64.rdtsc();
-        ke.time.sleep(0);
+        ke.time.sleep(.init(0));
         const end = amd64.rdtsc();
         calib_cost += (end - start);
     }
@@ -61,7 +61,7 @@ pub fn init() linksection(r.init) void {
 
     for (0..runs) |i| {
         const start = amd64.rdtsc();
-        ke.time.sleep(calib_time);
+        ke.time.sleep(.init(calib_time));
         const end = amd64.rdtsc();
         freqs[i] = (end - start - calib_cost) * (std.time.ns_per_s / calib_time);
     }

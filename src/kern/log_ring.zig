@@ -92,7 +92,7 @@ const Desc = struct {
 
 pub const Info = struct {
     sequence: u64,
-    timestamp: u64,
+    timestamp: r.Nanoseconds,
     length: u16,
 };
 

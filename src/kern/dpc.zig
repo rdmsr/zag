@@ -113,7 +113,7 @@ fn dispatch_queue(cpu: u32) void {
     if (sched_cpu.start_timer) {
         ke.timer.set(
             &sched_cpu.resched_timer,
-            std.time.ns_per_ms * config.sched_timeslice,
+            .from(r.Milliseconds.init(config.sched_timeslice)),
             .{ .dpc = &sched_cpu.resched_dpc },
         );
     }
@@ -123,7 +123,7 @@ fn dispatch_queue(cpu: u32) void {
         ke.timer.cancel(&sched_cpu.resched_timer);
         ke.timer.set(
             &sched_cpu.resched_timer,
-            std.time.ns_per_ms * config.sched_timeslice,
+            .from(r.Milliseconds.init(config.sched_timeslice)),
             .{ .dpc = &sched_cpu.resched_dpc },
         );
     }

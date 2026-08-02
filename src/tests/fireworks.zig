@@ -32,7 +32,7 @@ fn plot_pixel(x: i64, y: i64, color: u32) void {
 }
 
 fn rand_tsc_based() u32 {
-    const tsc = ke.time.read_time();
+    const tsc = ke.time.read_time().value;
     const lo: u32 = @truncate(tsc);
     const hi: u32 = @truncate(tsc >> 32);
     return lo ^ hi;
@@ -100,7 +100,7 @@ fn get_random_color() u32 {
 fn perform_delay(ms: usize) void {
     var timer: ke.Timer = undefined;
     timer.init();
-    ke.timer.set(&timer, std.time.ns_per_ms * ms, .{});
+    ke.timer.set(&timer, .init(std.time.ns_per_ms * ms), .{});
     _ = ke.wait.wait_one(&timer.hdr, "sleep", .{}) catch unreachable;
 }
 

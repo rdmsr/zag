@@ -89,12 +89,12 @@ pub fn register_source(tc: *TimeCounter) void {
 
 /// Return the time elapsed since boot in nanoseconds.
 pub fn read_time() r.Nanoseconds {
-    const tc = best_tc orelse return 0;
+    const tc = best_tc orelse return .init(0);
 
     const s = state.load();
     const curr_count = tc.read_count() & tc.mask;
     const elapsed = (curr_count - s.initial_count) & tc.mask;
-    return s.offset + ticks_to_ns(tc, elapsed);
+    return .init(s.offset + ticks_to_ns(tc, elapsed));
 }
 
 /// Return the best TimeCounter.
@@ -109,14 +109,14 @@ pub fn sleep(ns: r.Nanoseconds) void {
     while (true) {
         var cur = read_time();
 
-        if (cur < start) continue;
+        if (cur.value < start.value) continue;
 
-        if (cur - start >= ns) {
+        if (cur.value - start.value >= ns.value) {
             cur = read_time();
 
             // Check again as we may have overflowed and read a bogus value..
             // This is kinda hacky but oh well.
-            if (cur - start >= ns) {
+            if (cur.value - start.value >= ns.value) {
                 break;
             }
         }

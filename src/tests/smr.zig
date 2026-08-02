@@ -35,13 +35,13 @@ fn rand(state: *u64) u64 {
 }
 
 fn seed_from(param: ?*anyopaque) u64 {
-    return (ke.time.read_time() ^ (@intFromPtr(param.?) *% 0x9e3779b97f4a7c15)) | 1;
+    return (ke.time.read_time().value ^ (@intFromPtr(param.?) *% 0x9e3779b97f4a7c15)) | 1;
 }
 
 fn delay_ms(ms: usize) void {
     var timer: ke.Timer = undefined;
     timer.init();
-    ke.timer.set(&timer, std.time.ns_per_ms * ms, .{});
+    ke.timer.set(&timer, .init(std.time.ns_per_ms * ms), .{});
     _ = ke.wait.wait_one(&timer.hdr, "sleep", .{}) catch unreachable;
 }
 

@@ -65,8 +65,8 @@ pub fn init() linksection(r.init) void {
         .Unknown => false,
     };
 
-    const init_delay: usize = if (skip_delay) 0 else std.time.ns_per_ms * 10;
-    const sipi_delay: usize = if (skip_delay) std.time.ns_per_us * 10 else std.time.ns_per_us * 300;
+    const init_delay: r.Nanoseconds = .init(if (skip_delay) 0 else std.time.ns_per_ms * 10);
+    const sipi_delay: r.Nanoseconds = .init(if (skip_delay) std.time.ns_per_us * 10 else std.time.ns_per_us * 300);
 
     const page: [*]u8 = @ptrFromInt(mm.p2v(0x8000));
     @memcpy(page[0..trampoline_size], @as([*]u8, @ptrFromInt(trampoline_start)));

@@ -34,13 +34,13 @@ fn rand(state: *u64) u64 {
 fn delay_ms(ms: usize) void {
     var timer: ke.Timer = undefined;
     timer.init();
-    ke.timer.set(&timer, std.time.ns_per_ms * ms, .{});
+    ke.timer.set(&timer, .init(std.time.ns_per_ms * ms), .{});
     _ = ke.wait.wait_one(&timer.hdr, "sleep", .{}) catch unreachable;
 }
 
 fn worker(param: ?*anyopaque) void {
     const id = @intFromPtr(param.?) - 1;
-    var seed = (ke.time.read_time() ^ (id *% 0x9e3779b97f4a7c15)) | 1;
+    var seed = (ke.time.read_time().value ^ (id *% 0x9e3779b97f4a7c15)) | 1;
     var iter: u64 = 0;
 
     while (true) : (iter += 1) {

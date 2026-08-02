@@ -33,7 +33,7 @@ pub inline fn debug_read() u8 {
 }
 
 /// Arm a one-shot timer to fire in `ns` nanoseconds.
-pub inline fn arm_timer(ns: u64) void {
+pub inline fn arm_timer(ns: r.Nanoseconds) void {
     return impl.arm_timer(ns);
 }
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const units = @import("units.zig");
 pub const List = @import("list.zig").List;
 pub const SeqLock = @import("seqlock.zig").SeqLock;
 pub const barrier = @import("barrier.zig");
