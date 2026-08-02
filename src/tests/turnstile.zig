@@ -46,7 +46,7 @@ fn delay_ms(ms: usize) void {
     var timer: ke.Timer = undefined;
     timer.init();
     ke.timer.set(&timer, std.time.ns_per_ms * ms, .{});
-    _ = ke.wait.wait_one(&timer.hdr, .{}) catch unreachable;
+    _ = ke.wait.wait_one(&timer.hdr, "sleep", .{}) catch unreachable;
 }
 
 fn wait_flag(flag: *std.atomic.Value(bool)) void {

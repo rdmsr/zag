@@ -257,7 +257,7 @@ pub fn enqueue(item: *WorkItem) void {
 
 fn pool_manager(_: ?*anyopaque) void {
     while (true) {
-        _ = ke.wait.wait_one(&pool_manager_event.hdr, .{}) catch unreachable;
+        _ = ke.wait.wait_one(&pool_manager_event.hdr, "work_pool_manager", .{}) catch unreachable;
 
         // We have been signaled, go through every pool and grow it if needed.
         // Failure to grow is ignored, it is only a latency problem and should be fixed

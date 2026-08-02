@@ -75,7 +75,9 @@ pub const Queue = struct {
         self.hdr.lock.release(ipl);
 
         // Wait until the queue has something for us.
-        _ = try ke.wait.wait_one(&self.hdr, .{ .timeout = timeout });
+        _ = try ke.wait.wait_one(&self.hdr, "queue", .{
+            .timeout = timeout,
+        });
 
         // Grab the queue item and set it to null.
         const ret = td.queue_item orelse unreachable;

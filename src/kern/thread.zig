@@ -99,6 +99,8 @@ pub const Thread = struct {
     /// Current wait status.
     wait_status: std.atomic.Value(ki.wait.Status),
     waitblocks: [4]ki.wait.WaitBlock,
+    /// Reason for the wait, if any.
+    wait_reason: ?[]const u8,
     /// Timer used for timeouts.
     timer: ke.Timer,
     /// Turnstile.
@@ -146,6 +148,7 @@ pub const Thread = struct {
             .runq_idx = 0,
             .wait_status = .init(.Satisfied),
             .waitblocks = undefined,
+            .wait_reason = null,
             .timer = undefined,
             .turnstile = undefined,
             .turnstile_waiter = null,
