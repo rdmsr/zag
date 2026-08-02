@@ -21,12 +21,23 @@ pub const percpu = ".data.percpu";
 pub const VAddr = usize;
 pub const PAddr = usize;
 
-pub const Nanoseconds = u64;
+pub const Nanoseconds = rtl.units.Nanoseconds;
+pub const Microseconds = rtl.units.Microseconds;
+pub const Milliseconds = rtl.units.Milliseconds;
+pub const Seconds = rtl.units.Seconds;
 
 pub var kernel_heap_base: usize = 0;
 pub var kernel_pfndb_base: usize = 0;
 
 pub var boot_info: *BootInfo = undefined;
+
+pub inline fn mmio_read(comptime T: type, addr: usize) T {
+    return @as(*volatile T, @ptrFromInt(addr)).*;
+}
+
+pub inline fn mmio_write(comptime T: type, addr: usize, value: T) void {
+    @as(*volatile T, @ptrFromInt(addr)).* = value;
+}
 
 /// Return N kibibytes in bytes.
 pub fn kib(comptime N: u32) usize {
@@ -46,14 +57,6 @@ pub fn gib(comptime N: u32) usize {
 /// Return N tibibytes in bytes.
 pub fn tib(comptime N: u32) usize {
     return gib(N) * 1024;
-}
-
-pub inline fn mmio_read(comptime T: type, addr: usize) T {
-    return @as(*volatile T, @ptrFromInt(addr)).*;
-}
-
-pub inline fn mmio_write(comptime T: type, addr: usize, value: T) void {
-    @as(*volatile T, @ptrFromInt(addr)).* = value;
 }
 
 pub const std_options = std.Options{

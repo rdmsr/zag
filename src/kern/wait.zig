@@ -166,7 +166,7 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
     }
 
     // Wait was already satisfied, back out.
-    if (satisfier != null or (has_timeout and opts.timeout.? == 0)) {
+    if (satisfier != null or (has_timeout and opts.timeout.?.value == 0)) {
         if (satisfier != null) {
             std.debug.assert(curtd.wait_status.load(.acquire) == .Satisfied);
         }

@@ -161,7 +161,7 @@ fn lapic_calibrate(ms: u64) u64 {
     write(.LvtTimer, (1 << 16));
     write(.TimerInitialCount, std.math.maxInt(u32));
 
-    ke.time.sleep(std.time.ns_per_ms * ms);
+    ke.time.sleep(.from(r.Milliseconds.init(ms)));
 
     const ticks = std.math.maxInt(u32) - read(.TimerCurrentCount);
 
@@ -200,7 +200,7 @@ pub fn arm_timer(ns: r.Nanoseconds) void {
     if (amd64.cpu_features.tsc_deadline) {
         const now = amd64.rdtsc();
 
-        const delta: u64 = @intCast((@as(u128, ns) * tsc.tsc_timer.frequency) / std.time.ns_per_s);
+        const delta: u64 = @intCast((@as(u128, ns.value) * tsc.tsc_timer.frequency) / std.time.ns_per_s);
 
         const deadline = now +% delta;
 
@@ -212,7 +212,7 @@ pub fn arm_timer(ns: r.Nanoseconds) void {
     write(.LvtTimer, 1 << 16);
     write(.TimerInitialCount, 0);
 
-    const us = ns / std.time.ns_per_us;
+    const us = ns.to(r.Microseconds).value;
     const ticks: u32 = @truncate(@max(us * timer_ticks_per_us.local().*, 1));
 
     // Setup IRQ.

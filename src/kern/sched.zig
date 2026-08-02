@@ -215,7 +215,7 @@ pub const Average = struct {
     // Amount of the period that has been accounted for
     period_contrib: usize,
     /// Timestamp (us) up to which history has been accounted.
-    last_update: u64,
+    last_update: r.Microseconds,
 };
 
 pub const percpu = ke.CpuLocal(PerCpu, undefined);
@@ -242,8 +242,8 @@ fn pelt_do_decay(val: u64, n: u64) u64 {
 }
 
 fn pelt_update(avg: *Average, runnable: bool) void {
-    const now = ke.time.read_time() / std.time.ns_per_us;
-    const new_delta = now - avg.last_update;
+    const now = ke.time.read_time().to(r.Microseconds);
+    const new_delta = now.value - avg.last_update.value;
 
     if (new_delta == 0) return;
 
@@ -318,8 +318,8 @@ fn pelt_update_td(td: *ke.Thread, cpu: ?*PerCpu, runnable: bool) void {
 fn attach_load_avg(cpu: *PerCpu, td: *ke.Thread) void {
     if (!tracks_load_avg(td)) return;
 
-    if (td.avg.last_update == 0) {
-        td.avg.last_update = ke.time.read_time() / std.time.ns_per_us;
+    if (td.avg.last_update.value == 0) {
+        td.avg.last_update = ke.time.read_time().to(r.Microseconds);
     } else {
         pelt_update_td(td, null, false);
     }
@@ -470,7 +470,7 @@ pub fn block() void {
 /// Block the currently running thread with its lock held.
 pub fn block_locked(curtd: *ke.Thread) void {
     curtd.state.store(.Blocked, .monotonic);
-    curtd.sleep_start = ke.time.read_time();
+    curtd.sleep_start = ke.time.read_time().value;
     curtd.runq = null;
 
     detach_load_avg(percpu.local(), curtd);
@@ -537,7 +537,7 @@ pub fn unblock_locked(td: *ke.Thread) void {
     std.debug.assert(td.lock.is_locked());
     std.debug.assert(td.state.load(.monotonic) == .Blocked);
 
-    const delta = (ke.time.read_time() - td.sleep_start) / std.time.ns_per_ms;
+    const delta = (ke.time.read_time().value - td.sleep_start) / std.time.ns_per_ms;
 
     td.sleep_time += delta;
 
@@ -685,7 +685,7 @@ pub fn late_init() linksection(r.init) void {
     balance_timer.init();
     ke.timer.set(
         &balance_timer,
-        balance_interval * std.time.ns_per_ms,
+        .from(r.Milliseconds.init(balance_interval)),
         .{ .dpc = &balance_dpc },
     );
 }
@@ -1136,7 +1136,7 @@ fn pick_cpu(td: *ke.Thread) u32 {
         var ran_recently = true;
 
         if (td.sleep_start != 0) {
-            const delta = ke.time.read_time() - td.sleep_start;
+            const delta = ke.time.read_time().value - td.sleep_start;
 
             // If we haven't been on this CPU in the last second, don't bother.
             if (delta > std.time.ns_per_s) {
@@ -1455,5 +1455,5 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
     const offset = lcg.next() % balance_interval;
     const ms = (balance_interval) + offset;
 
-    ke.timer.set(&balance_timer, ms * std.time.ns_per_ms, .{ .dpc = &balance_dpc });
+    ke.timer.set(&balance_timer, .from(r.Milliseconds.init(ms)), .{ .dpc = &balance_dpc });
 }

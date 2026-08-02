@@ -197,7 +197,7 @@ fn work_loop(p: ?*anyopaque) void {
     const dynamic = ctx.get_tag() == 1;
 
     while (true) {
-        const timeout: ?r.Nanoseconds = if (dynamic) std.time.ns_per_s * 5 else null;
+        const timeout: ?r.Nanoseconds = if (dynamic) .from(r.Seconds.init(5)) else null;
         const item = ctx.get_ptr().queue.remove(timeout) catch {
             _ = ctx.get_ptr().total_threads.fetchSub(1, .monotonic);
 

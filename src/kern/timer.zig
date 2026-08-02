@@ -42,7 +42,7 @@ pub const Timer = struct {
         self.* = .{
             .hdr = undefined,
             .state = .init(.Stopped),
-            .deadline = 0,
+            .deadline = .init(0),
             .dpc = null,
             .node = .{},
             .cpu = null,
@@ -79,7 +79,7 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
     defer cpu.lock.release_no_ipl();
 
     // Initialize the timer.
-    timer.deadline = ke.time.read_time() + time;
+    timer.deadline = .init(ke.time.read_time().value + time.value);
 
     timer.cpu = cpu;
     timer.dpc = opts.dpc;
@@ -130,7 +130,7 @@ pub fn cmp_timer(a: *rtl.pairing_heap.Node, b_: *rtl.pairing_heap.Node) std.math
     const timer_a: *Timer = @fieldParentPtr("node", a);
     const timer_b: *Timer = @fieldParentPtr("node", b_);
 
-    return std.math.order(timer_a.deadline, timer_b.deadline);
+    return std.math.order(timer_a.deadline.value, timer_b.deadline.value);
 }
 
 /// Called by the platform on a clock interrupt.
@@ -161,18 +161,18 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
 
         // If the timer expires more than 1ms in the future, consider it not yet due.
         // Sub-millisecond differences are close enough to expire immediately.
-        if (timer.deadline > curtime and timer.deadline - curtime > std.time.ns_per_ms) {
+        if (timer.deadline.value > curtime.value and timer.deadline.value - curtime.value > std.time.ns_per_ms) {
             const next = timer;
             cpu.lock.release_no_ipl();
 
             // Re-check in case the timer expired while we were here.
             const now = ke.time.read_time();
-            if (next.deadline <= now or next.deadline - now <= std.time.ns_per_ms) {
+            if (next.deadline.value <= now.value or next.deadline.value - now.value <= std.time.ns_per_ms) {
                 continue; // expired in the meantime, loop again
             }
 
-            std.debug.assert(next.deadline > now);
-            pl.arm_timer(next.deadline - now);
+            std.debug.assert(next.deadline.value > now.value);
+            pl.arm_timer(.init(next.deadline.value - now.value));
             return;
         }
 

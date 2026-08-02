@@ -159,7 +159,7 @@ pub const Thread = struct {
             .stack = stack,
             .switching = .init(false),
             .avg = .{
-                .last_update = 0,
+                .last_update = .init(0),
                 // New threads are considered heavy until they prove themselves,
                 // this might allow for better balancing during bursts.
                 .load = ki.sched.pelt_load_avg_max,
