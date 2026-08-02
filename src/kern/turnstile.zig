@@ -441,7 +441,7 @@ pub fn block(turnstile: ?*Turnstile, obj: *anyopaque, own: Ownership, queue: Que
 
     // Now block on the event.
     _ = ke.ipl.lower(.Passive);
-    _ = ke.wait.wait_one(&waiter.event.hdr, null) catch unreachable;
+    _ = ke.wait.wait_one(&waiter.event.hdr, .{}) catch unreachable;
     _ = ke.ipl.raise(ipl);
 }
 

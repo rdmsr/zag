@@ -64,7 +64,7 @@ fn delay_ms(ms: usize) void {
     var timer: ke.Timer = undefined;
     timer.init();
     ke.timer.set(&timer, std.time.ns_per_ms * ms, .{});
-    _ = ke.wait.wait_one(&timer.hdr, null) catch unreachable;
+    _ = ke.wait.wait_one(&timer.hdr, .{}) catch unreachable;
 }
 
 /// Park here while the checker is verifying quiescence. Only ever called
