@@ -221,7 +221,7 @@ fn work_dpc(dpc: *ke.Dpc, _: ?*anyopaque) void {
 
 /// Enqueue a work item in `time`.
 pub fn enqueue_in(item: *DelayedWorkItem, time: r.Nanoseconds) void {
-    ke.timer.set(&item.timer, time, &item.dpc);
+    ke.timer.set(&item.timer, time, .{ .dpc = &item.dpc });
 }
 
 /// Enqueue a work item to be executed eventually.

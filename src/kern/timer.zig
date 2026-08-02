@@ -58,9 +58,13 @@ const percpu = ke.CpuLocal(PerCpu, .{
     .dpc = .init(handle_expiry),
 });
 
+const Options = struct {
+    dpc: ?*ke.Dpc = null,
+};
+
 /// Start a timer with an expiration time.
 /// A DPC that will be enqueued upon expiration can be passed.
-pub fn set(timer: *Timer, time: r.Nanoseconds, dpc: ?*ke.Dpc) void {
+pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
     const ipl = timer.hdr.lock.acquire();
     defer timer.hdr.lock.release(ipl);
 
@@ -78,7 +82,7 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, dpc: ?*ke.Dpc) void {
     timer.deadline = ke.time.read_time() + time;
 
     timer.cpu = cpu;
-    timer.dpc = dpc;
+    timer.dpc = opts.dpc;
     timer.hdr.signaled = 0;
 
     cpu.timers.insert(&timer.node);
