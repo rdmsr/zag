@@ -25,6 +25,11 @@ fn reap_thread(obj: *anyopaque, _: ?*anyopaque) void {
     // Bleh
     const entry: *rtl.List.Entry = @fieldParentPtr("next", link);
     const ketd: *ke.Thread = @fieldParentPtr("runq_link", entry);
+
+    // Wait until the thread finishes switching off its stack.
+    const ipl = ketd.lock.acquire();
+    ketd.lock.release(ipl);
+
     const td: *Thread = @fieldParentPtr("kern", ketd);
 
     psp.turnstile_zone.destroy(td.kern.turnstile);
