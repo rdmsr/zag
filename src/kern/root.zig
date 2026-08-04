@@ -103,5 +103,10 @@ pub const smr = struct {
     pub const Sequence = p.smr.Sequence;
 };
 
+pub const ipi = struct {
+    pub const unicast = p.ipi.unicast;
+    pub const broadcast = p.ipi.broadcast;
+};
+
 /// Number of CPUs on the system
 pub var ncpus: usize = 0;

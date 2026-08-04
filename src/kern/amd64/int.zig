@@ -85,8 +85,9 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.{ .x86_64_sys
         ki.timer.clock();
     }
 
-    if (frame.intno == 241) {
-        ki.shootdown.ipi_handler();
+    // Platform IPI number.
+    if (frame.intno == 240) {
+        ki.ipi.ipi_handler();
     }
 
     if (frame.intno >= 32) {

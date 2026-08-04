@@ -113,14 +113,6 @@ pub inline fn restore_interrupts(state: bool) void {
     }
 }
 
-pub inline fn send_resched_ipi(target: u32) void {
-    pl.impl.send_resched_ipi(target);
-}
-
-pub inline fn send_tlb_ipi(target: u32) void {
-    pl.impl.send_tlb_ipi(target);
-}
-
 pub inline fn flush_full_tlb() void {
     const prev_cr3 = amd64.read_cr(3);
     // Reload CR3 to flush the entire TLB.

@@ -7,6 +7,7 @@ const r = @import("root");
 const ke = r.ke;
 const ki = ke.private;
 const mm = r.mm;
+const pl = r.pl;
 
 /// Structure representing a single shootdown request.
 pub const ShootdownState = struct {
@@ -36,6 +37,9 @@ const PerCpu = struct {
     valid_states: [config.ncpus]std.atomic.Value(u64),
     /// CPUs that have sent this CPU a shootdown.
     senders: ke.AtomicCpuMask,
+
+    sync_addr: r.VAddr,
+    sync_count: usize,
 };
 
 const slot_free: u16 = std.math.maxInt(u16);
@@ -43,11 +47,6 @@ const slot_reserved: u16 = std.math.maxInt(u16) - 1;
 const percpu = ke.CpuLocal(PerCpu, undefined);
 
 pub var shootdowns: rtl.HandoffList = undefined;
-
-var sync_counter: std.atomic.Value(usize) = .init(0);
-var sync_addr: r.VAddr = 0;
-var sync_count: usize = 0;
-var shootdown_lock: ke.SpinLock = .init();
 
 fn pcpu_init() linksection(r.init) void {
     const local = percpu.local();
@@ -89,30 +88,17 @@ fn flush_range(va: r.VAddr, npages: usize) void {
 
 /// Synchronous shootdown path.
 fn do_synchronous_shootdown(state: ShootdownState) void {
-    shootdown_lock.acquire_no_ipl();
+    const cpu = percpu.local();
 
-    sync_addr = state.base;
-    sync_count = state.npages;
-    sync_counter.store(ke.ncpus - 1, .release);
+    cpu.sync_addr = state.base;
+    cpu.sync_count = state.npages;
 
-    const cur = ke.cpu.current();
-
-    for (0..ke.ncpus) |i| {
-        if (i == cur) continue;
-        ki.impl.send_tlb_ipi(@truncate(i));
-    }
-
-    while (sync_counter.load(.monotonic) != 0) {
-        std.atomic.spinLoopHint();
-    }
-
-    shootdown_lock.release_no_ipl();
+    ke.ipi.broadcast(flush_tlb, null);
 }
 
-/// Called by the TLB interrupt handler.
-pub fn ipi_handler() void {
-    flush_range(sync_addr, sync_count);
-    _ = sync_counter.fetchSub(1, .release);
+fn flush_tlb(sender: u32, _: ?*anyopaque) void {
+    const cpu = percpu.remote(sender);
+    flush_range(cpu.sync_addr, cpu.sync_count);
 }
 
 /// Called in a quiescent state to process the pending shootdowns.

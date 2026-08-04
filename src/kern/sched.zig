@@ -95,6 +95,7 @@ const config = @import("config");
 const r = @import("root");
 const ke = r.ke;
 const ki = ke.private;
+const pl = r.pl;
 
 const runqueues_n = 64;
 const interactivity_threshold = 30;
@@ -624,7 +625,7 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
         ki.ipl.set_softint_pending(c, .Dispatch);
 
         if (c != ke.cpu.current()) {
-            ki.impl.send_resched_ipi(c);
+            pl.send_ipi(c);
         }
     }
 
@@ -1101,7 +1102,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
 
             if (c != ke.cpu.current()) {
                 // Send an IPI.
-                ki.impl.send_resched_ipi(c);
+                pl.send_ipi(c);
             }
 
             // queues_lock dropped

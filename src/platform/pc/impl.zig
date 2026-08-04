@@ -9,7 +9,7 @@ pub const smp = @import("smp.zig");
 
 const ki = r.ke.private;
 
-pub const name = "PC";
+pub const name: []const u8 = "PC";
 
 const com1 = 0x3F8;
 
@@ -113,10 +113,6 @@ pub fn arm_timer(deadline: r.Nanoseconds) void {
     apic.arm_timer(deadline);
 }
 
-pub fn send_resched_ipi(target_cpu: u32) void {
+pub fn send_ipi(target_cpu: u32) void {
     apic.send_ipi(smp.cpu_id_to_apic_id[target_cpu], 240, 0);
-}
-
-pub fn send_tlb_ipi(target_cpu: u32) void {
-    apic.send_ipi(smp.cpu_id_to_apic_id[target_cpu], 241, 0);
 }
