@@ -28,17 +28,6 @@ const ImplSchema = struct {
     /// Read a per-cpu pointer on the current CPU.
     pub fn percpu_ptr(variable: anytype) @TypeOf(variable) {}
 
-    /// Send a rescheduling inter-processor interrupt (IPI)
-    /// on the target CPU.
-    pub fn send_resched_ipi(target: u32) void {
-        _ = target;
-    }
-
-    /// Send a TLB shootdown IPI on the target CPU.
-    pub fn send_tlb_ipi(target: u32) void {
-        _ = target;
-    }
-
     /// Flush the entire TLB on the current CPU.
     pub fn flush_full_tlb() void {}
 
@@ -91,3 +80,4 @@ pub const queue = @import("queue.zig");
 pub const shootdown = @import("shootdown.zig");
 pub const tunable = @import("tunable.zig");
 pub const smr = @import("smr.zig");
+pub const ipi = @import("ipi.zig");

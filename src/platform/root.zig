@@ -3,6 +3,7 @@
 
 const config = @import("config");
 const r = @import("root");
+const rtl = @import("rtl");
 
 pub const impl = switch (config.arch) {
     .amd64 => @import("pc/impl.zig"),
@@ -10,6 +11,28 @@ pub const impl = switch (config.arch) {
 };
 
 pub const acpi = @import("acpi/root.zig");
+
+const ImplSchema = struct {
+    pub const name: []const u8 = undefined;
+    pub fn early_init() void {}
+    pub fn late_init() void {}
+    pub fn debug_write(c: u8) void {
+        _ = c;
+    }
+    pub fn debug_read() u8 {
+        unreachable;
+    }
+    pub fn send_ipi(cpu: u32) void {
+        _ = cpu;
+    }
+    pub fn arm_timer(ns: r.Nanoseconds) void {
+        _ = ns;
+    }
+};
+
+comptime {
+    rtl.assert_interface(impl, ImplSchema);
+}
 
 /// Early platform-specific initialization, called before anything else.
 pub inline fn early_init() void {
@@ -35,6 +58,11 @@ pub inline fn debug_read() u8 {
 /// Arm a one-shot timer to fire in `ns` nanoseconds.
 pub inline fn arm_timer(ns: r.Nanoseconds) void {
     return impl.arm_timer(ns);
+}
+
+/// Send an inter-processor interrupt (IPI) to a target CPU.
+pub inline fn send_ipi(cpu: u32) void {
+    return impl.send_ipi(cpu);
 }
 
 /// Pretty name for the platform.
