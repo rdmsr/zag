@@ -21,8 +21,14 @@ pub const Mutex = struct {
         const ipl = ke.ipl.raise(.Dispatch);
         const curtd = ki.sched.percpu.local().current_thread.?;
 
-        // Very fast path: the lock is uncontended and we can acquire it immediately.
-        const cur_owner = m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic);
+        // Very fast path: the lock is uncontended and we can acquire it
+        //immediately.
+        const cur_owner = m.owner.cmpxchgStrong(
+            null,
+            curtd,
+            .acquire,
+            .monotonic,
+        );
 
         if (cur_owner == null) {
             ke.ipl.lower(ipl);
@@ -36,7 +42,12 @@ pub const Mutex = struct {
                 continue;
             }
 
-            if (m.owner.cmpxchgWeak(null, curtd, .acquire, .monotonic) != null) {
+            if (m.owner.cmpxchgWeak(
+                null,
+                curtd,
+                .acquire,
+                .monotonic,
+            ) != null) {
                 continue;
             }
 
@@ -52,17 +63,32 @@ pub const Mutex = struct {
             if (owner == null) {
                 // Lock was released between lookup and here.
                 ki.turnstile.exit(m);
-                if (m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic) == null) {
+                if (m.owner.cmpxchgStrong(
+                    null,
+                    curtd,
+                    .acquire,
+                    .monotonic,
+                ) == null) {
                     break;
                 }
                 continue;
             }
 
             // Block until woken.
-            ki.turnstile.block(ts, m, .{ .single = owner.? }, .Exclusive);
+            ki.turnstile.block(
+                ts,
+                m,
+                .{ .single = owner.? },
+                .Exclusive,
+            );
 
             // Re-try acquisition after wakeup.
-            if (m.owner.cmpxchgStrong(null, curtd, .acquire, .monotonic) == null) {
+            if (m.owner.cmpxchgStrong(
+                null,
+                curtd,
+                .acquire,
+                .monotonic,
+            ) == null) {
                 break;
             }
         }
@@ -83,10 +109,17 @@ pub const Mutex = struct {
             return;
         }
 
-        // Note: wake up all waiters. This so-called "lock barging" (name from WTF::ParkingLot)
-        // has been shown to be better because this avoids lock convoys, see this mysterious 70s paper:
+        // Note: wake up all waiters.
+        // This so-called "lock barging" (name from WTF::ParkingLot) has been
+        // to be better because this avoids lock convoys,
+        // see this mysterious 70s paper:
         // https://dl.acm.org/doi/pdf/10.1145/850657.850659
-        ki.turnstile.wakeup(ts.?, .Exclusive, ts.?.waiters, null);
+        ki.turnstile.wakeup(
+            ts.?,
+            .Exclusive,
+            ts.?.waiters,
+            null,
+        );
         ki.turnstile.exit(m);
 
         ke.ipl.lower(ipl);
