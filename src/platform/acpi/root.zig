@@ -97,7 +97,8 @@ pub const Gas = extern struct {
     register_bit_width: u8 align(1),
     /// The bit offset of the given register at the given address.
     register_bit_offset: u8 align(1),
-    /// The access size of the given register. (1 = byte, 2 = word, 3 = dword, 4 = qword).
+    /// The access size of the given register.
+    /// (1 = byte, 2 = word, 3 = dword, 4 = qword).
     access_size: u8 align(1),
     address: u64 align(1),
     pub fn read(self: Gas) u64 {
@@ -142,9 +143,21 @@ pub const Gas = extern struct {
                 else => unreachable,
             },
             .SystemIo => switch (self.access_size) {
-                1 => arch.pio_write(u8, @truncate(self.address), @truncate(shifted_value)),
-                2 => arch.pio_write(u16, @truncate(self.address), @truncate(shifted_value)),
-                3 => arch.pio_write(u32, @truncate(self.address), @truncate(shifted_value)),
+                1 => arch.pio_write(
+                    u8,
+                    @truncate(self.address),
+                    @truncate(shifted_value),
+                ),
+                2 => arch.pio_write(
+                    u16,
+                    @truncate(self.address),
+                    @truncate(shifted_value),
+                ),
+                3 => arch.pio_write(
+                    u32,
+                    @truncate(self.address),
+                    @truncate(shifted_value),
+                ),
                 else => unreachable,
             },
             else => @panic("unsupported GAS address space"),
@@ -213,7 +226,8 @@ pub const Fadt = extern struct {
     const version_sizes = [_]usize{ 116, 132, 244, 244, 268, 276 };
 
     pub fn revision(self: Fadt) u8 {
-        // We can't rely on firmware to set the revision field correctly, so we infer it from the length field.
+        // We can't rely on firmware to set the revision field correctly,
+        // so we infer it from the length field.
         const declared: usize = self.header.revision;
         const len: u32 = self.header.length;
 

@@ -47,7 +47,8 @@ fn wait_for_pages(old_ipl: ke.Ipl) void {
 
         list_lock.release(ipl);
 
-        _ = ke.wait.wait_one(&free_page_event.hdr, "wait_for_pages", .{}) catch unreachable;
+        _ = ke.wait.wait_one(&free_page_event.hdr, "wait_for_pages", .{}) catch
+            unreachable;
 
         ipl = list_lock.acquire();
         cnt = free_pages;
@@ -150,7 +151,11 @@ pub fn init() linksection(r.init) void {
     for (0..memory_map.entry_count) |i| {
         const entry = memory_map.entries[i];
 
-        log.info("[{x:0>16}-{x:0>16}] {s}", .{ entry.base, entry.base + entry.size, @tagName(entry.type) });
+        log.info("[{x:0>16}-{x:0>16}] {s}", .{
+            entry.base,
+            entry.base + entry.size,
+            @tagName(entry.type),
+        });
 
         if (entry.type == .Free or entry.type == .LoaderReclaimable) {
             total_usable_memory += entry.size;
@@ -158,17 +163,22 @@ pub fn init() linksection(r.init) void {
     }
 
     const pfndb_size_required = @sizeOf(mm.Page) *
-        (std.math.divCeil(usize, total_usable_memory, mm.page_size) catch unreachable);
+        (std.math.divCeil(usize, total_usable_memory, mm.page_size) catch
+            unreachable);
 
-    log.info("using {} KiB for pfndb ({} bytes per page)", .{ pfndb_size_required / 1024, @sizeOf(mm.Page) });
+    log.info("using {} KiB for pfndb ({} bytes per page)", .{
+        pfndb_size_required / 1024,
+        @sizeOf(mm.Page),
+    });
 
     // Get the kernel pagemap from the loader,
     // we are already in it so no need to activate it.
     mi.impl.init_kernel();
 
     // Calculate the minimum amount of free memory we accept,
-    // this formula is from Linux and does not grow linearly; it would be wasteful
-    // to take a fixed percentage of memory from a large server.
+    // this formula is from Linux and does not grow linearly;
+    // it would be wasteful to take a fixed percentage of memory from a large
+    // server.
     // We clamp this between 128 KiB and 256 MiB.
     const min_free_kb = std.math.clamp(
         std.math.sqrt((usable_memory.load(.monotonic) / 1024) * 16),
@@ -180,7 +190,10 @@ pub fn init() linksection(r.init) void {
 
     const total_usable_pages = total_usable_memory / mm.page_size;
 
-    const gap = @max(min_memory_threshold / 4, total_usable_pages * threshold_scale_factor / 10000);
+    const gap = @max(
+        min_memory_threshold / 4,
+        total_usable_pages * threshold_scale_factor / 10000,
+    );
 
     low_memory_threshold = min_memory_threshold + gap;
     high_memory_threshold = low_memory_threshold + gap;
@@ -189,14 +202,20 @@ pub fn init() linksection(r.init) void {
     for (0..memory_map.entry_count) |i| {
         const entry = memory_map.entries[i];
 
-        if ((entry.type != .Free and entry.type != .LoaderReclaimable) or entry.size < mm.page_size) {
+        if (entry.type != .Free and entry.type != .LoaderReclaimable) {
+            continue;
+        }
+
+        if (entry.size < mm.page_size) {
             continue;
         }
 
         const npages = entry.size / mm.page_size;
 
         for (0..npages) |j| {
-            const page: *mm.Page = mm.pfn_to_struct_page(mm.page_to_pfn(entry.base + (j * mm.page_size)));
+            const page: *mm.Page = mm.pfn_to_struct_page(
+                mm.page_to_pfn(entry.base + (j * mm.page_size)),
+            );
 
             free_list.insert_head(&page.free.link);
             free_pages += 1;

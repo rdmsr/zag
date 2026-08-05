@@ -37,10 +37,15 @@ fn ap_entry(cpu_id: u32) callconv(.c) noreturn {
     ki.impl.init.ap_entry(cpu_id, &aps_booted);
 }
 
-fn make_thread(entrypoint: *const fn (?*anyopaque) void, stack: usize) *ke.Thread {
-    const td = mm.zone.gpa.create(ke.Thread) catch @panic("Failed to allocate thread for AP");
+fn make_thread(
+    entrypoint: *const fn (?*anyopaque) void,
+    stack: usize,
+    size: usize,
+) *ke.Thread {
+    const td = mm.zone.gpa.create(ke.Thread) catch
+        @panic("Failed to allocate thread for AP");
 
-    td.init(stack, r.kib(32), ke.Thread.Priority.idle_low, entrypoint, null);
+    td.init(stack, size, ke.Thread.Priority.idle_low, entrypoint, null);
 
     td.pinned = true;
     return td;
@@ -65,8 +70,12 @@ pub fn init() linksection(r.init) void {
         .Unknown => false,
     };
 
-    const init_delay: r.Nanoseconds = .init(if (skip_delay) 0 else std.time.ns_per_ms * 10);
-    const sipi_delay: r.Nanoseconds = .init(if (skip_delay) std.time.ns_per_us * 10 else std.time.ns_per_us * 300);
+    const init_delay: r.Nanoseconds = .init(
+        if (skip_delay) 0 else std.time.ns_per_ms * 10,
+    );
+    const sipi_delay: r.Nanoseconds = .init(
+        if (skip_delay) std.time.ns_per_us * 10 else std.time.ns_per_us * 300,
+    );
 
     const page: [*]u8 = @ptrFromInt(mm.p2v(0x8000));
     @memcpy(page[0..trampoline_size], @as([*]u8, @ptrFromInt(trampoline_start)));
@@ -76,8 +85,11 @@ pub fn init() linksection(r.init) void {
 
     const idtr = amd64.sidtr();
 
+    const offsets = mm.zone.gpa.alloc(usize, apic.apics.items.len + 1) catch
+        @panic("Failed to allocate AP local data offsets");
+
     // Allocate per-cpu offsets for CPU-local data.
-    ki.impl.cpu_offsets = @ptrCast(mm.zone.gpa.alloc(usize, apic.apics.items.len + 1) catch @panic("Failed to allocate AP local data offsets"));
+    ki.impl.cpu_offsets = @ptrCast(offsets);
     const percpu_size = @intFromPtr(&__percpu_end) - @intFromPtr(&__percpu_start);
 
     log.info("per-CPU data size: {} bytes", .{percpu_size});
@@ -98,19 +110,39 @@ pub fn init() linksection(r.init) void {
         cpu_id_to_apic_id[cpu_id] = apic_id;
 
         // Allocate per-cpu data.
-        const cpu_data = mm.zone.gpa.alloc(u8, percpu_size) catch @panic("Failed to allocate per-cpu data");
-        @memcpy(cpu_data, @as([*]u8, @ptrCast(&__percpu_start))[0..percpu_size]);
+        const cpu_data = mm.zone.gpa.alloc(u8, percpu_size) catch
+            @panic("Failed to allocate per-cpu data");
 
-        const self_offset_offset = @intFromPtr(&ki.impl.cpu_self_offset) - @intFromPtr(&__percpu_start);
-        ki.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -% @intFromPtr(&__percpu_start);
+        @memcpy(
+            cpu_data,
+            @as([*]u8, @ptrCast(&__percpu_start))[0..percpu_size],
+        );
+
+        const self_offset_offset = @intFromPtr(&ki.impl.cpu_self_offset) -
+            @intFromPtr(&__percpu_start);
+
+        ki.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -%
+            @intFromPtr(&__percpu_start);
+
+        const off: *usize = @ptrCast(@alignCast(&cpu_data[self_offset_offset]));
 
         // copy the offset into the AP's self_offset variable
-        @as(*usize, @ptrCast(@alignCast(&cpu_data[self_offset_offset]))).* = ki.impl.cpu_offsets[cpu_id];
+        off.* = ki.impl.cpu_offsets[cpu_id];
 
-        const stack_top = @intFromPtr(mm.heap.alloc(r.kib(32), .DontWaitForMemory) catch @panic("Failed to allocate AP stack")) + r.kib(32);
+        const stack_size = r.kib(16);
+
+        const stack_top = @intFromPtr(mm.heap.alloc(
+            stack_size,
+            .DontWaitForMemory,
+        ) catch
+            @panic("Failed to allocate AP stack")) + stack_size;
 
         start_stack.remote(@intCast(cpu_id)).* = stack_top & ~@as(usize, 15);
-        start_thread.remote(@intCast(cpu_id)).* = make_thread(@ptrCast(&ap_entry), stack_top - r.kib(32));
+        start_thread.remote(@intCast(cpu_id)).* = make_thread(
+            @ptrCast(&ap_entry),
+            stack_top - stack_size,
+            stack_size,
+        );
 
         rtl.barrier.fence(.release);
 

@@ -25,7 +25,12 @@ const ThreadFrame = extern struct {
 
 extern fn asm_thread_entry() void;
 
-extern fn do_context_switch(old: *ThreadContext, new: *ThreadContext, lock: *u8, switching: *bool) callconv(.c) void;
+extern fn do_context_switch(
+    old: *ThreadContext,
+    new: *ThreadContext,
+    lock: *u8,
+    switching: *bool,
+) callconv(.c) void;
 extern fn do_context_load(td: *ThreadContext) callconv(.c) void;
 
 pub const ThreadContext = extern struct {
@@ -38,7 +43,12 @@ pub const ThreadContext = extern struct {
         entry_fn(@ptrFromInt(arg));
     }
 
-    pub fn init(stack: r.VAddr, stack_size: usize, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) @This() {
+    pub fn init(
+        stack: r.VAddr,
+        stack_size: usize,
+        entry: *const fn (?*anyopaque) void,
+        arg: ?*anyopaque,
+    ) @This() {
         var ctx: @This() = undefined;
         var sp: usize = stack + stack_size;
 
@@ -58,9 +68,17 @@ pub const ThreadContext = extern struct {
         return ctx;
     }
 
-    pub fn switch_to(self: *ThreadContext, new: *ThreadContext) callconv(.c) void {
+    pub fn switch_to(
+        self: *ThreadContext,
+        new: *ThreadContext,
+    ) callconv(.c) void {
         const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", self));
-        do_context_switch(self, new, &thread.lock.inner.locked.raw, &thread.switching.raw);
+        do_context_switch(
+            self,
+            new,
+            &thread.lock.inner.locked.raw,
+            &thread.switching.raw,
+        );
     }
 
     pub fn load(self: *ThreadContext) callconv(.c) void {

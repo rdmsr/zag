@@ -113,7 +113,10 @@ const Segment = struct {
         return @fieldParentPtr("linkage", linkage);
     }
 
-    fn cmp(a_node: *const rtl.bst.Node, b_node: *const rtl.bst.Node) std.math.Order {
+    fn cmp(
+        a_node: *const rtl.bst.Node,
+        b_node: *const rtl.bst.Node,
+    ) std.math.Order {
         const a = Segment.from_tree_link(@constCast(a_node));
         const b = Segment.from_tree_link(@constCast(b_node));
         return std.math.order(a.base, b.base);
@@ -147,7 +150,13 @@ pub const Arena = struct {
     const Self = @This();
 
     /// Initialize the area for use.
-    pub fn init(self: *Self, name: []const u8, base: usize, size: usize, quantum: usize) !void {
+    pub fn init(
+        self: *Self,
+        name: []const u8,
+        base: usize,
+        size: usize,
+        quantum: usize,
+    ) !void {
         self.name = name;
         self.base = base;
         self.size = size;
@@ -260,7 +269,13 @@ pub const Arena = struct {
         // the quantum check avoids creating a remainder too small to ever be useful.
         if (seg.size != size and (seg.size - size) > self.quantum - 1) {
             const new_seg = try self.alloc_segment();
-            new_seg.* = .{ .type = .Allocated, .base = seg.base, .size = size, .link = undefined, .linkage = .{ .tree_link = undefined } };
+            new_seg.* = .{
+                .type = .Allocated,
+                .base = seg.base,
+                .size = size,
+                .link = undefined,
+                .linkage = .{ .tree_link = undefined },
+            };
 
             seg.base += size;
             seg.size -= size;
@@ -270,15 +285,18 @@ pub const Arena = struct {
             new_seg.link.insert_before(&seg.link);
             self.add_segment_to_freelist(seg);
 
-            self.allocated_segments.insert(&new_seg.linkage.tree_link) catch return error.InvalidAddress;
+            self.allocated_segments.insert(&new_seg.linkage.tree_link) catch
+                return error.InvalidAddress;
 
             if (options.policy == .NextFit) self.rotor = new_seg;
             return new_seg.base;
         } else {
-            // seg is exactly the right size (or remainder is too small), use it directly.
+            // seg is exactly the right size (or remainder is too small),
+            // use it directly.
             seg.type = .Allocated;
             seg.linkage = .{ .tree_link = undefined };
-            self.allocated_segments.insert(&seg.linkage.tree_link) catch return error.InvalidAddress;
+            self.allocated_segments.insert(&seg.linkage.tree_link) catch
+                return error.InvalidAddress;
 
             if (options.policy == .NextFit) self.rotor = seg;
             return seg.base;
@@ -295,7 +313,9 @@ pub const Arena = struct {
             .linkage = .{ .tree_link = undefined },
         };
 
-        const node = self.allocated_segments.tree.search(&search_node.linkage.tree_link) orelse return error.InvalidAddress;
+        const node = self.allocated_segments.tree.search(
+            &search_node.linkage.tree_link,
+        ) orelse return error.InvalidAddress;
 
         const seg = Segment.from_tree_link(node);
 
@@ -310,7 +330,8 @@ pub const Arena = struct {
             const next_seg: *Segment = @fieldParentPtr("link", next_entry);
 
             if (next_seg.type == .Free) {
-                // Remove next segment from freelist and segment list, then merge into seg.
+                // Remove next segment from freelist and segment list,
+                // then merge into seg.
                 self.remove_segment_from_freelist(next_seg);
                 next_seg.link.remove();
                 seg.size += next_seg.size;
@@ -326,7 +347,8 @@ pub const Arena = struct {
             const prev_seg: *Segment = @fieldParentPtr("link", prev_entry);
 
             if (prev_seg.type == .Free) {
-                // Remove previous segment from freelist and segment list, then merge into seg.
+                // Remove previous segment from freelist and segment list,
+                // then merge into seg.
                 self.remove_segment_from_freelist(prev_seg);
                 prev_seg.link.remove();
                 seg.base = prev_seg.base;
@@ -344,7 +366,11 @@ pub const Arena = struct {
     }
 
     // Implementation for the instant fit policy.
-    fn instant_fit(self: *Self, size: usize, options: AllocOptions) ?struct { usize, *Segment } {
+    fn instant_fit(
+        self: *Self,
+        size: usize,
+        options: AllocOptions,
+    ) ?struct { usize, *Segment } {
         var idx = freelist_index(size);
 
         if (!std.math.isPowerOfTwo(size)) idx += 1;
@@ -356,7 +382,8 @@ pub const Arena = struct {
             var it = self.freelists[idx].iterator();
             while (it.next()) : (it.advance()) {
                 const seg = Segment.from_free_link(it.get());
-                if (self.try_to_fit(seg, size, options)) |addr| return .{ addr, seg };
+                if (self.try_to_fit(seg, size, options)) |addr|
+                    return .{ addr, seg };
             }
         }
         return null;
@@ -364,7 +391,11 @@ pub const Arena = struct {
 
     // Implementation for the best fit policy.
     // Find the smallest segment that can satisfy the request.
-    fn best_fit(self: *Self, size: usize, options: AllocOptions) ?struct { usize, *Segment } {
+    fn best_fit(
+        self: *Self,
+        size: usize,
+        options: AllocOptions,
+    ) ?struct { usize, *Segment } {
         var idx = freelist_index(size);
         var best_seg: ?*Segment = null;
         var best_start: usize = 0;
@@ -388,8 +419,13 @@ pub const Arena = struct {
     }
 
     // Implementation for the next fit policy.
-    // Continue searching from the last allocated segment, wrapping around at the end of the arena.
-    fn next_fit(self: *Self, size: usize, options: AllocOptions) ?struct { usize, *Segment } {
+    // Continue searching from the last allocated segment, wrapping around at
+    // the end of the arena.
+    fn next_fit(
+        self: *Self,
+        size: usize,
+        options: AllocOptions,
+    ) ?struct { usize, *Segment } {
         // Start from rotor if we have one, otherwise from the beginning.
         const start_entry = if (self.rotor) |r| r.link.next else self.list.first();
 
@@ -418,9 +454,15 @@ pub const Arena = struct {
 
     // Try to fit the given segment to the request with the given options.
     // Returns the fitted address if successful.
-    fn try_to_fit(self: *Self, segment: *const Segment, size: usize, options: AllocOptions) ?usize {
+    fn try_to_fit(
+        self: *Self,
+        segment: *const Segment,
+        size: usize,
+        options: AllocOptions,
+    ) ?usize {
         var start = @max(segment.base, options.min orelse 0);
-        const end = @min(segment.base + segment.size, options.max orelse std.math.maxInt(usize));
+        const end = @min(segment.base + segment.size, options.max orelse
+            std.math.maxInt(usize));
         const alignment = options.alignment orelse self.quantum;
 
         if (start > end) return null;

@@ -13,7 +13,8 @@ pub const DispatchHeader = struct {
     pub const Type = enum {
         /// When signaled, `signaled` is kept high and all waiters are woken up.
         Notification,
-        /// When signaled, `signaled` is decreased until 0, and a single waiter is woken up.
+        /// When signaled, `signaled` is decreased until 0, and a single waiter
+        /// is woken up.
         Synchronization,
         /// Special type for queue objects.
         Queue,
@@ -70,11 +71,11 @@ pub const DispatchHeader = struct {
 
 pub const WaitBlock = struct {
     pub const Status = enum(u8) {
-        /// WaitBlock is linked to an object as part of a thread that is waiting.
+        /// Block is linked to an object as part of a thread that is waiting.
         Active,
-        /// The wait associated with this WaitBlock has been satisfied (or timed out).
+        /// The wait associated has been satisfied (or timed out).
         Inactive,
-        /// A signal was delivered to the wait (this could be before it was committed).
+        /// A signal was delivered to the wait.
         Signaled,
     };
     /// List linkage.
@@ -114,8 +115,9 @@ pub fn wait_one(object: *DispatchHeader, reason: []const u8, opts: Options) !usi
 /// Returns the index of the object that was signaled, or an error
 /// in the case of timeout.
 /// If `timeout` is not provided, it will wait indefinitely.
-/// If `waitblocks` is specified, then the wait will use those waitblocks for the operation.
-/// Note that if `timeout` is provided, then one additional waitblock must be allocated.
+/// If `waitblocks` is specified, then the wait will use those waitblocks
+/// for the operation. Note that if `timeout` is provided, then one additional
+/// waitblock must be allocated.
 pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
@@ -123,7 +125,9 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
     const obj_count = objects.len;
     const has_timeout = opts.timeout != null;
     const blocks = opts.waitblocks orelse blk: {
-        std.debug.assert(obj_count <= curtd.waitblocks.len - @intFromBool(has_timeout));
+        std.debug.assert(
+            obj_count <= curtd.waitblocks.len - @intFromBool(has_timeout),
+        );
         break :blk &curtd.waitblocks;
     };
 
@@ -146,7 +150,12 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
 
         if (obj.can_satisfy()) {
             // Object was already signaled. Try consuming it.
-            if (curtd.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acq_rel, .monotonic) == null) {
+            if (curtd.wait_status.cmpxchgStrong(
+                .InProgress,
+                .Satisfied,
+                .acq_rel,
+                .monotonic,
+            ) == null) {
                 obj.consume(curtd);
                 satisfier = i;
             }
@@ -161,7 +170,7 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
         wb.object = obj;
         wb.thread = curtd;
         wb.status = .Active;
-        // We are not satisfied yet, so add a waitblock to the object's waitblocks
+        // We are not satisfied yet, so add a waitblock to the object.
         obj.waitblocks.insert_tail(&wb.link);
     }
 
@@ -197,9 +206,15 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
     curtd.lock.acquire_no_ipl();
 
     // Now try committing the wait.
-    // While we're trying to commit the wait, the object locks have been released, and the state could therefore change.
+    // While we're trying to commit the wait, the object locks
+    // have been released, and the state could therefore change.
     // We need to re-check the state of the wait before actually blocking.
-    if (curtd.wait_status.cmpxchgStrong(.InProgress, .Committed, .acq_rel, .monotonic) == null) {
+    if (curtd.wait_status.cmpxchgStrong(
+        .InProgress,
+        .Committed,
+        .acq_rel,
+        .monotonic,
+    ) == null) {
         if (queue == null) {
             if (curtd.queue) |q| {
                 ki.queue.signal_wait(q);
@@ -236,7 +251,8 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
             wb.link.remove();
         }
         if (wb.status == .Signaled) {
-            // This waitblock was signaled, it must be the one that satisfied the wait.
+            // This waitblock was signaled, it must be the one that satisfied
+            // the wait.
             std.debug.assert(satisfier == null);
             satisfier = i;
         }
@@ -245,7 +261,10 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
     }
 
     const final_sat = satisfier orelse return error.Timeout;
-    return if (has_timeout and final_sat == timer_i) error.Timeout else final_sat;
+    return if (has_timeout and final_sat == timer_i)
+        error.Timeout
+    else
+        final_sat;
 }
 
 /// Satisfy a wait on an object.
@@ -267,19 +286,29 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
         wb.link.remove();
 
         // Three cases may occur here:
-        // 1. The wait was still preparing (status == .InProgress) and we interrupted it.
-        // 2. The wait was already committed (status == .Committed) and we satisfied it.
-        // 3. The wait was already satisfied by another object (status == .Satisfied).
-
+        // 1. The wait was still preparing (.InProgress) and we interrupted it.
+        // 2. The wait was already committed (.Committed) and we satisfied it.
+        // 3. The wait was already satisfied by another object (.Satisfied).
+        //
         // 1.
-        if (td.wait_status.cmpxchgStrong(.InProgress, .Satisfied, .acq_rel, .monotonic) == null) {
+        if (td.wait_status.cmpxchgStrong(
+            .InProgress,
+            .Satisfied,
+            .acq_rel,
+            .monotonic,
+        ) == null) {
             // We interrupted the wait while it was being prepared.
             wb.status = .Signaled;
             obj.consume(td);
         }
 
         // 2.
-        else if (td.wait_status.cmpxchgStrong(.Committed, .Satisfied, .acq_rel, .monotonic) == null) {
+        else if (td.wait_status.cmpxchgStrong(
+            .Committed,
+            .Satisfied,
+            .acq_rel,
+            .monotonic,
+        ) == null) {
             // We interrupted the wait while it was committed.
             // Wake the thread.
             wb.status = .Signaled;

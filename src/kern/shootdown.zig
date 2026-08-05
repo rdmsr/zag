@@ -53,7 +53,13 @@ fn pcpu_init() linksection(r.init) void {
 
     local.valid_states = @splat(.init(0));
     local.senders = .init(false);
-    local.states = @splat(.{ .base = 0, .npages = 0, .state = .init(slot_free), .payload = undefined, .link = undefined });
+    local.states = @splat(.{
+        .base = 0,
+        .npages = 0,
+        .state = .init(slot_free),
+        .payload = undefined,
+        .link = undefined,
+    });
 }
 
 comptime {
@@ -66,7 +72,12 @@ fn allocate_slot(cpu: *PerCpu) ?usize {
     for (0.., &cpu.states) |slot, *state| {
         if (state.state.load(.monotonic) != slot_free) continue;
 
-        if (state.state.cmpxchgStrong(slot_free, slot_reserved, .acquire, .monotonic) == null) {
+        if (state.state.cmpxchgStrong(
+            slot_free,
+            slot_reserved,
+            .acquire,
+            .monotonic,
+        ) == null) {
             return slot;
         }
     }
@@ -167,7 +178,10 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
     while (iter.next()) |bit| {
         if (bit == curcpu) continue;
 
-        _ = cpu.valid_states[bit].fetchOr(@as(u64, 1) << @truncate(slot), .release);
+        _ = cpu.valid_states[bit].fetchOr(
+            @as(u64, 1) << @truncate(slot),
+            .release,
+        );
 
         ki.ipl.set_softint_pending(@truncate(bit), .Dispatch);
 

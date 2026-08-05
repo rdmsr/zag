@@ -176,7 +176,12 @@ pub const QSpinLock = LockTemplate(struct {
 
     pub fn acquire_no_ipl(self: *Self) void {
         // Fast path: try to acquire the lock.
-        var v = self.data.val.cmpxchgStrong(0, locked_val, .acquire, .monotonic) orelse return;
+        var v = self.data.val.cmpxchgStrong(
+            0,
+            locked_val,
+            .acquire,
+            .monotonic,
+        ) orelse return;
 
         // Medium path: if only pending is set, the pending waiter is
         // in the process of clearing pending and setting `locked` to take
@@ -229,7 +234,12 @@ pub const QSpinLock = LockTemplate(struct {
     }
 
     pub fn try_acquire_no_ipl(self: *Self) bool {
-        return self.data.val.cmpxchgStrong(0, locked_val, .acquire, .monotonic) == null;
+        return self.data.val.cmpxchgStrong(
+            0,
+            locked_val,
+            .acquire,
+            .monotonic,
+        ) == null;
     }
 
     pub fn is_locked(self: *Self) bool {
@@ -247,7 +257,12 @@ pub const QSpinLock = LockTemplate(struct {
         if (idx >= 4) {
             // Exhausted all indices, spin.
             while (true) {
-                _ = self.data.val.cmpxchgWeak(0, locked_val, .acquire, .monotonic) orelse break;
+                _ = self.data.val.cmpxchgWeak(
+                    0,
+                    locked_val,
+                    .acquire,
+                    .monotonic,
+                ) orelse break;
                 std.atomic.spinLoopHint();
             }
 
@@ -266,7 +281,10 @@ pub const QSpinLock = LockTemplate(struct {
         // Store cpu + 1 so that we can distinguish from an empty tail field.
         rtl.barrier.fence(.release);
 
-        const tail: u16 = @bitCast(Tail{ .cpu = @intCast(ke.cpu.current() + 1), .idx = @intCast(idx) });
+        const tail: u16 = @bitCast(Tail{
+            .cpu = @intCast(ke.cpu.current() + 1),
+            .idx = @intCast(idx),
+        });
         const old: Tail = @bitCast(self.data.split.tail.swap(tail, .acq_rel));
 
         if (old.cpu != 0) {
@@ -293,7 +311,12 @@ pub const QSpinLock = LockTemplate(struct {
         if ((v & tail_mask) == @as(u32, tail) << 16) {
             // We are the only waiter in the queue.
             // Try to claim the lock and clear the tail atomically.
-            if (self.data.val.cmpxchgStrong(v, locked_val, .acquire, .monotonic) == null) {
+            if (self.data.val.cmpxchgStrong(
+                v,
+                locked_val,
+                .acquire,
+                .monotonic,
+            ) == null) {
                 return;
             }
         }

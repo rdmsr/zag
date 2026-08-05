@@ -21,7 +21,11 @@ const DebugWriter = struct {
         };
     }
 
-    fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) std.Io.Writer.Error!usize {
+    fn drain(
+        _: *std.Io.Writer,
+        data: []const []const u8,
+        _: usize,
+    ) std.Io.Writer.Error!usize {
         var total_written: usize = 0;
         for (data) |slice| {
             for (slice) |byte| {
@@ -37,7 +41,10 @@ const DebugWriter = struct {
 // Messages are on average 2^5 = 32 bytes.
 const avg_msg_size_bits = 5;
 
-pub var ringbuffer = ki.log_ring.RingBuffer(config.log_buffer_shift, avg_msg_size_bits).init();
+pub var ringbuffer = ki.log_ring.RingBuffer(
+    config.log_buffer_shift,
+    avg_msg_size_bits,
+).init();
 
 // Initialize manually because we need this ASAP.
 pub var event: ke.Event = .{
@@ -46,7 +53,10 @@ pub var event: ke.Event = .{
         .signaled = 0,
         .type = .Notification,
         .waitblocks = .{
-            .head = .{ .next = &event.hdr.waitblocks.head, .prev = &event.hdr.waitblocks.head },
+            .head = .{
+                .next = &event.hdr.waitblocks.head,
+                .prev = &event.hdr.waitblocks.head,
+            },
         },
     },
 };
@@ -75,7 +85,8 @@ pub fn log(
     res.info.length = @truncate(required_len);
 
     // Format the log message into the reserved buffer.
-    res.buf = std.fmt.bufPrint(res.buf, scope_str ++ fmt ++ "\n", args) catch return;
+    res.buf = std.fmt.bufPrint(res.buf, scope_str ++ fmt ++ "\n", args) catch
+        return;
 
     ringbuffer.publish(res);
 

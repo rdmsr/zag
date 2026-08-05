@@ -27,7 +27,11 @@ const ConWriter = struct {
         };
     }
 
-    fn drain(w: *std.Io.Writer, data: []const []const u8, _: usize) std.Io.Writer.Error!usize {
+    fn drain(
+        w: *std.Io.Writer,
+        data: []const []const u8,
+        _: usize,
+    ) std.Io.Writer.Error!usize {
         const self: *ConWriter = @fieldParentPtr("interface", w);
         var total_written: usize = 0;
         for (data) |slice| {
@@ -87,7 +91,8 @@ fn drain_from_all(seq: usize) usize {
 
 fn worker(_: ?*anyopaque) void {
     while (true) {
-        _ = ke.wait.wait_one(&ke.log.event.hdr, "console_worker", .{}) catch unreachable;
+        _ = ke.wait.wait_one(&ke.log.event.hdr, "console_worker", .{}) catch
+            unreachable;
         ke.log.event.reset();
 
         last_seq = drain_from_all(last_seq);
@@ -119,6 +124,10 @@ pub fn register(cons: *Console) void {
 pub fn init() void {
     console_list.init();
 
-    const td = ps.thread.create_kernel(ke.Thread.Priority.default, worker, null) catch @panic("handle me");
+    const td = ps.thread.create_kernel(
+        ke.Thread.Priority.default,
+        worker,
+        null,
+    ) catch @panic("handle me");
     ke.sched.enqueue(&td.kern);
 }

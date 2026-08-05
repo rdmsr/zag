@@ -476,7 +476,11 @@ const PowerManagementInfoEdx = packed struct(u32) {
     reserved1: u23,
 };
 
-fn assert_bit(comptime T: type, comptime field_name: []const u8, comptime expected_bit: u5) void {
+fn assert_bit(
+    comptime T: type,
+    comptime field_name: []const u8,
+    comptime expected_bit: u5,
+) void {
     var v: T = @bitCast(@as(u32, 0));
     @field(v, field_name) = true;
     const raw: u32 = @bitCast(v);

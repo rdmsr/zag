@@ -314,7 +314,8 @@ fn propagate(curtd: *ke.Thread, root: *Chain) void {
             // and they are forbidden to explicitly block.
             var it = targets(ts);
             while (it.next()) |t| {
-                if (t.thread == curtd) @panic("turnstile: cycle in blocking chain");
+                if (t.thread == curtd)
+                    @panic("turnstile: cycle in blocking chain");
                 t.thread.lock.acquire_no_ipl();
                 _ = donate_to(t.boost, t.thread, donate);
                 t.thread.lock.release_no_ipl();
@@ -384,7 +385,12 @@ pub fn exit(obj: *const anyopaque) void {
 /// This must be called with the appropriate turnstile chain lock held, and
 /// returns with the chain lock released.
 /// IPL is kept as before on return.
-pub fn block(turnstile: ?*Turnstile, obj: *anyopaque, own: Ownership, queue: Queue) void {
+pub fn block(
+    turnstile: ?*Turnstile,
+    obj: *anyopaque,
+    own: Ownership,
+    queue: Queue,
+) void {
     const chain = chain_for(obj);
     const curtd = ki.sched.percpu.local().current_thread.?;
     const ipl = ke.ipl.current();
@@ -441,7 +447,8 @@ pub fn block(turnstile: ?*Turnstile, obj: *anyopaque, own: Ownership, queue: Que
 
     // Now block on the event.
     _ = ke.ipl.lower(.Passive);
-    _ = ke.wait.wait_one(&waiter.event.hdr, "turnstile:waiter", .{}) catch unreachable;
+    _ = ke.wait.wait_one(&waiter.event.hdr, "turnstile:waiter", .{}) catch
+        unreachable;
     _ = ke.ipl.raise(ipl);
 }
 
@@ -464,7 +471,10 @@ pub fn wakeup(ts: *Turnstile, queue: Queue, count: usize, new_owner: ?*ke.Thread
     } else {
         for (0..count) |_| {
             if (ts.queues[queue_idx].is_empty()) break;
-            const waiter: *Waiter = @fieldParentPtr("link", ts.queues[queue_idx].first());
+            const waiter: *Waiter = @fieldParentPtr(
+                "link",
+                ts.queues[queue_idx].first(),
+            );
             dequeue(ts, waiter.thread);
         }
         if (ts.waiters > 0) ts.detach();
@@ -487,7 +497,8 @@ fn dequeue(ts: *Turnstile, td: *ke.Thread) void {
         ts.next_free = free.next_free;
         free.next_free = null;
     } else {
-        // Last waiter, pull the turnstile off the chain and keep it for ourselves.
+        // Last waiter, pull the turnstile off the chain
+        // and keep it for ourselves.
         ts.link.remove();
         ts.reset();
     }

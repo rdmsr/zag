@@ -35,7 +35,11 @@ fn reclaim_state(obj: *anyopaque, _: ?*anyopaque) void {
     space.lock.release();
 
     // Free the physical pages
-    mm.phys.free_batch(mm.pfn_to_struct_page(pfn_list.head), mm.pfn_to_struct_page(pfn_list.tail), npages);
+    mm.phys.free_batch(
+        mm.pfn_to_struct_page(pfn_list.head),
+        mm.pfn_to_struct_page(pfn_list.tail),
+        npages,
+    );
 
     _ = async_shootdowns.fetchAdd(1, .monotonic);
 
@@ -83,7 +87,11 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
         space.arena.free(va, size) catch unreachable;
 
         // Free the physical pages
-        mm.phys.free_batch(mm.pfn_to_struct_page(list.head), mm.pfn_to_struct_page(list.tail), size / mm.page_size);
+        mm.phys.free_batch(
+            mm.pfn_to_struct_page(list.head),
+            mm.pfn_to_struct_page(list.tail),
+            size / mm.page_size,
+        );
         return;
     };
 }

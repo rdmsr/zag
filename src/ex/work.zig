@@ -1,6 +1,7 @@
 //! Worker pools and work items.
 //!
-//! Work items are used to enqueue work to be done in a thread context asynchronously.
+//! Work items are used to enqueue work to be done in a thread context
+//! asynchronously.
 //! There are three worker priorities:
 //! - High
 //! - Normal
@@ -10,8 +11,8 @@
 //!
 //! Each CPU worker pool comprises of at least 2 threads, and the low pool
 //! has 4 threads by default. An additional thread will get spawned by the
-//! pool manager thread if a queue has a backlog, up to 4 additional dynamic threads
-//! (tunable) per pool.
+//! pool manager thread if a queue has a backlog, up to 4 additional dynamic
+//! threads (tunable) per pool.
 
 const std = @import("std");
 const rtl = @import("rtl");
@@ -58,7 +59,12 @@ pub const WorkItem = struct {
         }
     };
 
-    pub fn init(self: *WorkItem, priority: Priority, func: *const fn (arg: ?*anyopaque) void, arg: ?*anyopaque) void {
+    pub fn init(
+        self: *WorkItem,
+        priority: Priority,
+        func: *const fn (arg: ?*anyopaque) void,
+        arg: ?*anyopaque,
+    ) void {
         self.* = .{
             .func = func,
             .arg = arg,
@@ -145,7 +151,9 @@ const Pool = struct {
         const active = @atomicLoad(usize, &self.queue.active, .monotonic);
         const threads = self.total_threads.load(.monotonic);
 
-        if (threads < max_threads_for_prio(self.prio) and !is_empty and active < self.queue.max_active) {
+        if (threads < max_threads_for_prio(self.prio) and !is_empty and
+            active < self.queue.max_active)
+        {
             // We have room to grow, the list still has items and
             // not enough runnable threads are present, create an
             // additional thread to ease the backlog.
@@ -157,7 +165,8 @@ const Pool = struct {
 
     /// Spawn a dynamic worker thread on this pool.
     fn grow(self: *Pool, cpu: ?u32) !void {
-        if (self.total_threads.load(.monotonic) >= max_threads_for_prio(self.prio))
+        if (self.total_threads.load(.monotonic) >=
+            max_threads_for_prio(self.prio))
             return;
 
         _ = self.total_threads.fetchAdd(1, .monotonic);
@@ -197,7 +206,10 @@ fn work_loop(p: ?*anyopaque) void {
     const dynamic = ctx.get_tag() == 1;
 
     while (true) {
-        const timeout: ?r.Nanoseconds = if (dynamic) .from(r.Seconds.init(5)) else null;
+        const timeout: ?r.Nanoseconds = if (dynamic)
+            .from(r.Seconds.init(5))
+        else
+            null;
         const item = ctx.get_ptr().queue.remove(timeout) catch {
             _ = ctx.get_ptr().total_threads.fetchSub(1, .monotonic);
 
@@ -257,11 +269,16 @@ pub fn enqueue(item: *WorkItem) void {
 
 fn pool_manager(_: ?*anyopaque) void {
     while (true) {
-        _ = ke.wait.wait_one(&pool_manager_event.hdr, "work_pool_manager", .{}) catch unreachable;
+        _ = ke.wait.wait_one(
+            &pool_manager_event.hdr,
+            "work_pool_manager",
+            .{},
+        ) catch
+            unreachable;
 
         // We have been signaled, go through every pool and grow it if needed.
-        // Failure to grow is ignored, it is only a latency problem and should be fixed
-        // eventually as memory is freed.
+        // Failure to grow is ignored, it is only a latency problem and should
+        // be fixed eventually as memory is freed.
         for (0..ke.ncpus) |i| {
             const cpu: u32 = @intCast(i);
             const c = percpu.remote(cpu);

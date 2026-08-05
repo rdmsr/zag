@@ -11,7 +11,9 @@ pub const MadtIterator = struct {
     pub fn next(self: *MadtIterator) ?*const acpi.MadtEntryHeader {
         const entries_size = self.madt.header.length - @sizeOf(acpi.Madt);
         if (self.i >= entries_size) return null;
-        const entry: *const acpi.MadtEntryHeader = @ptrFromInt(@intFromPtr(&self.madt.entries) + self.i);
+        const entry: *const acpi.MadtEntryHeader = @ptrFromInt(
+            @intFromPtr(&self.madt.entries) + self.i,
+        );
         self.i += @max(2, entry.length);
         return entry;
     }

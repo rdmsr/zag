@@ -123,12 +123,19 @@ pub const Thread = struct {
     smr_sections: rtl.List,
 
     /// Initialize a thread.
-    /// - `stack`: Address of the **base** of the stack on which the initial context for the thread is built
+    /// - `stack`: Address of the base of the stack used by the thread.
     /// - `stack_size`: Size of the stack
     /// - `prio`: Base priority of the thread
     /// - `entry`: Entry point of the thread
     /// - `arg`: Extraneous argument to be passed to `entry`
-    pub fn init(thread: *Thread, stack: r.VAddr, stack_size: usize, prio: u8, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) void {
+    pub fn init(
+        thread: *Thread,
+        stack: r.VAddr,
+        stack_size: usize,
+        prio: u8,
+        entry: *const fn (?*anyopaque) void,
+        arg: ?*anyopaque,
+    ) void {
         thread.* = .{
             .context = .init(stack, stack_size, entry, arg),
             .lock = .init(),
