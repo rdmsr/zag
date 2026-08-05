@@ -7,6 +7,8 @@ pub const DelayedWorkItem = p.work.DelayedWorkItem;
 pub const Console = p.console.Console;
 pub const InternedString = p.string.InternedString;
 
+pub const init = p.init;
+
 pub const work = struct {
     pub const enqueue = p.work.enqueue;
     pub const enqueue_in = p.work.enqueue_in;

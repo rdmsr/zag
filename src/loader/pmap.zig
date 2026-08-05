@@ -172,7 +172,7 @@ pub const PMap = struct {
 
         /// Choose the largest page size that satisfies the alignment and
         /// size constraints of the current VA, PA, and remaining byte count.
-        /// Tries large pages first; falls back to 4K.
+        /// Tries large pages first, falls back to 4K.
         fn choose_target_level(self: *Cursor, pa: usize, remain: usize) usize {
             var level: usize = num_levels;
             while (level > 0) {
