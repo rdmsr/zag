@@ -91,16 +91,17 @@ pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
     ki.cpu.init_cpu(cpu_id);
     pl.impl.init_ap();
 
-    ki.sched.percpu.local().current_thread = pl.impl.smp.start_thread.local().*;
+    const sched = ki.sched.percpu.local();
+
+    sched.current_thread = pl.impl.smp.start_thread.local().*;
+    sched.idle_thread = sched.current_thread;
 
     amd64.sti();
 
     _ = booted.fetchAdd(1, .monotonic);
     ke.ipl.lower(.Passive);
 
-    while (true) {
-        std.atomic.spinLoopHint();
-    }
+    ki.sched.idle(null);
 }
 
 var initial_offsets: [1]usize = .{0};

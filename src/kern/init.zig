@@ -7,10 +7,24 @@ const ki = ke.private;
 const ex = r.ex;
 
 var thread0: ke.Thread = undefined;
-var stack: [r.kib(16)]u8 align(16) = undefined;
 
-pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
+export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     r.boot_info = boot_info;
+
+    thread0.init(
+        boot_info.kernel_stack,
+        boot_info.kernel_stack_size,
+        ke.Thread.Priority.idle_low,
+        init,
+        null,
+    );
+    thread0.pinned = true;
+
+    // Jump into the thread.
+    thread0.context.load();
+}
+
+pub fn init(_: ?*anyopaque) linksection(r.init) void {
     ke.ncpus = 1;
     ki.impl.early_init();
     ki.tunable.init();
@@ -20,18 +34,11 @@ pub fn init(boot_info: *r.BootInfo) linksection(r.init) void {
     ki.cpu.init_cpu(0);
     ki.turnstile.init_turnstiles();
 
-    thread0.init(
-        @intFromPtr(&stack),
-        r.kib(16),
-        ke.Thread.Priority.idle_low,
-        ki.sched.idle,
-        null,
-    );
-    thread0.priority = 0;
-    thread0.base_priority = 0;
-    thread0.pinned = true;
-
     ki.sched.percpu.local().current_thread = &thread0;
+    ki.sched.percpu.local().idle_thread = &thread0;
 
-    std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{ pl.name, arch.name, boot_info.cmdline });
+    std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{ pl.name, arch.name, r.boot_info.cmdline });
+
+    ex.init();
+    ki.sched.idle(null);
 }

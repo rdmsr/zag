@@ -93,6 +93,9 @@ pub fn loader_main(kernel: *anyopaque) void {
 
     const memmap = &r.loader_info.memory_map;
 
+    r.loader_info.kernel_stack = stack;
+    r.loader_info.kernel_stack_size = stack_size;
+
     // Finally, sort the memory map once we're done allocating everything.
     std.mem.sort(Entry, memmap.entries[0..memmap.entry_count], {}, cmp_entries);
 

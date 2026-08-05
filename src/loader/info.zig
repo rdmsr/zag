@@ -34,6 +34,9 @@ pub const Framebuffer = struct {
 // Kept in sync with the kernel
 pub const page_struct_size = 16;
 
+kernel_stack: usize,
+kernel_stack_size: usize,
+
 /// RSDP on ACPI machines
 rsdp: ?usize,
 

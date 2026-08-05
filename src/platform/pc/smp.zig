@@ -110,7 +110,6 @@ pub fn init() linksection(r.init) void {
         const stack_top = @intFromPtr(mm.heap.alloc(r.kib(32), .DontWaitForMemory) catch @panic("Failed to allocate AP stack")) + r.kib(32);
 
         start_stack.remote(@intCast(cpu_id)).* = stack_top & ~@as(usize, 15);
-
         start_thread.remote(@intCast(cpu_id)).* = make_thread(@ptrCast(&ap_entry), stack_top - r.kib(32));
 
         rtl.barrier.fence(.release);

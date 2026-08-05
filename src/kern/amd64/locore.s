@@ -166,6 +166,19 @@ do_context_switch:
     pop %r15
     ret
 
+.global do_context_load
+do_context_load:
+    /* Load new stack pointer. */
+    mov (%rdi), %rsp
+
+    /* Restore callee-saved registers. */
+    pop %rbp
+    pop %rbx
+    pop %r12
+    pop %r13
+    pop %r14
+    pop %r15
+    ret
 
 .extern thread_entry
 .global asm_thread_entry
