@@ -21,7 +21,8 @@ const femtos_per_s = 1_000_000_000_000_000;
 pub fn init(hpet: *acpi.HpetTable) linksection(r.init) void {
     hpet_regs = @ptrFromInt(mm.p2v(hpet.base_address.address));
 
-    hpet_timer.frequency = femtos_per_s / (r.mmio_read(u64, @intFromPtr(&hpet_regs.general_capabilities)) >> 32);
+    hpet_timer.frequency = femtos_per_s /
+        (r.mmio_read(u64, @intFromPtr(&hpet_regs.general_capabilities)) >> 32);
 
     // Disable timer.
     r.mmio_write(u64, @intFromPtr(&hpet_regs.general_configuration), 0);

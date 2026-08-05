@@ -4,7 +4,12 @@ const mm = r.mm;
 const mi = mm.private;
 
 pub fn init() void {
-    mi.kernel_space.arena.init("kernel heap", mi.impl.kernel_heap_base, r.tib(16), mm.page_size) catch @panic("failed to initialize kernel heap arena");
+    mi.kernel_space.arena.init(
+        "kernel heap",
+        mi.impl.kernel_heap_base,
+        r.tib(16),
+        mm.page_size,
+    ) catch @panic("failed to initialize kernel heap arena");
 }
 
 pub fn alloc(size: usize, policy: mm.WaitPolicy) mm.Error!*anyopaque {
@@ -18,7 +23,11 @@ pub fn alloc(size: usize, policy: mm.WaitPolicy) mm.Error!*anyopaque {
     const npages = size / mm.page_size;
 
     for (0..npages) |i| {
-        const pte = mi.pmap.wire_pte(&mi.kernel_space, addr + (i * mm.page_size), policy) catch {
+        const pte = mi.pmap.wire_pte(
+            &mi.kernel_space,
+            addr + (i * mm.page_size),
+            policy,
+        ) catch {
             mi.kernel_space.lock.release();
             return mm.Error.OutOfMemory;
         };

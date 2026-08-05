@@ -35,7 +35,11 @@ const percpu = ke.CpuLocal(PerCpu, undefined);
 /// The function will be executed synchronously, i.e this will block until
 /// the function finishes running. The callback is called with the sender cpu
 /// and provided argument as arguments.
-pub fn unicast(cpu: u32, func: *const fn (u32, ?*anyopaque) void, arg: ?*anyopaque) void {
+pub fn unicast(
+    cpu: u32,
+    func: *const fn (u32, ?*anyopaque) void,
+    arg: ?*anyopaque,
+) void {
     const ipl = ke.ipl.raise(.Dispatch);
     const curcpu = percpu.local();
     const remote = percpu.remote(cpu);
@@ -93,8 +97,8 @@ pub fn ipi_handler() void {
 
     while (true) {
         // Mark the current CPU as processing IPIs, if the CAS fails here,
-        // then it's probably some kind of IPI that was sent to force us to check
-        // software interrupts (like a rescheduling IPI).
+        // then it's probably some kind of IPI that was sent to force us to
+        // check software interrupts (like a rescheduling IPI).
         const val = curcpu.state.cmpxchgStrong(
             .Pending,
             .Running,

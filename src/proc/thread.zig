@@ -55,7 +55,11 @@ pub fn init() void {
 /// - `prio`: base priority of the thread.
 /// - `entry`: entry point.
 /// - `arg`: argument passed to `entry`.
-pub fn create_kernel(prio: u8, entry: *const fn (arg: ?*anyopaque) void, arg: ?*anyopaque) !*Thread {
+pub fn create_kernel(
+    prio: u8,
+    entry: *const fn (arg: ?*anyopaque) void,
+    arg: ?*anyopaque,
+) !*Thread {
     var td = try thread_zone.create();
     const stack = try mm.heap.alloc(kernel_thread_stack_size, .WaitForMemory);
 

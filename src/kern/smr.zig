@@ -77,7 +77,8 @@ pub const Tracker = struct {
 pub var full_scans: std.atomic.Value(usize) = .init(0);
 
 /// Scan all CPUs and return the minimum observed value.
-/// If `should_wait` is true, this will spinloop (or block) until all CPUs have reached the given goal.
+/// If `should_wait` is true, this will spinloop (or block)
+/// until all CPUs have reached the given goal.
 fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence {
     rtl.barrier.fence(.seq_cst);
 
@@ -162,7 +163,12 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence 
                     break;
                 }
 
-                ki.turnstile.block(ts, cpu, .{ .shared = &cpu.stalled }, .Exclusive);
+                ki.turnstile.block(
+                    ts,
+                    cpu,
+                    .{ .shared = &cpu.stalled },
+                    .Exclusive,
+                );
                 ke.ipl.lower(ipl);
 
                 seq = cpu.stall_seq.load(.monotonic);
@@ -256,8 +262,9 @@ pub fn advance(dom: *Domain) Sequence {
 
 /// Pretend-advance the write sequence and return the value for use as a wait goal.
 /// It is guaranteed that all previous memory writes made by
-/// the calling thread are visible. The global clock isn't advanced unlike `advance`,
-/// it is only when commit() is called.
+/// the calling thread are visible.
+/// The global clock isn't advanced unlike `advance`, it is only when commit()
+/// is called.
 pub fn deferred_advance(dom: *Domain) Sequence {
     rtl.barrier.fence(.seq_cst);
 
@@ -267,7 +274,12 @@ pub fn deferred_advance(dom: *Domain) Sequence {
 /// Actually advance the global clock to a value previously returned by
 /// deferred_advance().
 pub fn deferred_advance_commit(dom: *Domain, seq: Sequence) void {
-    _ = dom.clock.write_seq.cmpxchgStrong(seq - seq_incr, seq, .monotonic, .monotonic);
+    _ = dom.clock.write_seq.cmpxchgStrong(
+        seq - seq_incr,
+        seq,
+        .monotonic,
+        .monotonic,
+    );
 }
 
 /// Enter a read section.
@@ -276,18 +288,20 @@ fn enter_internal(dom: *Domain) Sequence {
 
     // Store the currently observed write sequence into our CPU state.
     // Subsequent loads must not be re-ordered w.r.t to the store here.
-    // On AMD64, we can simply use XADD as this is faster and provides the same guarantees,
-    // on other architectures we have to rely on a full (seq_cst) fence.
-    // The add operation works because cpu.current_seq is always only 0 (seq_invalid)
-    // when we write to it.
+    // On AMD64, we can simply use XADD as this is faster and provides the
+    // same guarantees, on other architectures we have to rely on a full fence.
+    // The add operation works because cpu.current_seq is always only 0
+    // (seq_invalid) when we write to it.
     //
-    // There can be a large pause between the load from the domain write sequence
-    // and the store to the per-cpu state because of e.g an interrupt. This could lead
-    // to a state where another CPU advances the global write sequence and current_seq
-    // becomes lower than the global write sequence. This is not an issue with the ordering
-    // in scan(), which also relies on a full memory barrier, as it is guaranteed that the
-    // CPU was treated as inactive and cannot possibly hold a reference to anything the
-    // poll declared reclaimable. See scan().
+    // There can be a large pause between the load from the domain write
+    // sequence and the store to the per-cpu state because of e.g an interrupt.
+    // This could lead to a state where another CPU advances
+    // the global write sequence and current_seq ends up lower
+    // than the global write sequence.
+    // This is not an issue with the ordering in scan(), which also relies
+    // on a full memory barrier, as it is guaranteed that the CPU was treated as
+    // inactive and cannot possibly hold a reference to anything the poll
+    // declared reclaimable. See scan().
     std.debug.assert(cpu.current_seq.load(.monotonic) == seq_invalid);
 
     const wr_seq = dom.clock.write_seq.load(.monotonic);
@@ -434,7 +448,8 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
     }
 
     if (wake) {
-        if (turnstile) |ts| ki.turnstile.wakeup(ts, .Exclusive, ts.waiters, null);
+        if (turnstile) |ts|
+            ki.turnstile.wakeup(ts, .Exclusive, ts.waiters, null);
     }
 
     ki.turnstile.exit(cpu);

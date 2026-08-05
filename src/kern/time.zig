@@ -18,11 +18,9 @@ pub const TimeCounter = struct {
     quality: i16,
     /// Mask to apply to the counter value.
     mask: u64,
-    /// Binary scaling exponent for fast ns conversion (0 if unused).
-    /// See `ticks_to_ns`.
+    /// Binary scaling exponent for fast ns conversion. See `ticks_to_ns`.
     p: u64,
-    /// Scaled nanoseconds-per-tick multiplier for fast ns conversion (0 if unused).
-    /// See `ticks_to_ns`.
+    /// Scaled for fast ns conversion (0 if unused). See `ticks_to_ns`.
     n: u64,
 };
 
@@ -59,10 +57,12 @@ fn ticks_to_ns(tc: *TimeCounter, count: u64) u64 {
 
 /// Register a time-keeping source.
 /// The TimeCounter will be used if it is the highest quality one available.
-/// This function cannot be safely called when the hardware timer has been started, as data races on `best_tc` are not avoided.
+/// This function cannot be safely called when the hardware timer
+/// has been started, as data races on `best_tc` are not avoided.
 pub fn register_source(tc: *TimeCounter) void {
     // Precompute scaling factors for the fast multiply-shift path.
-    // This is meant to avoid 128-bit division and only use multiplication for 64-bit counters.
+    // This is meant to avoid 128-bit division and only use multiplication for
+    // 64-bit counters.
     if (tc.mask == std.math.maxInt(u64)) {
         tc.p = std.math.log2_int_ceil(u64, tc.frequency);
         tc.n = (@as(u64, std.time.ns_per_s) << @intCast(tc.p)) / tc.frequency;

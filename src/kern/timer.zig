@@ -1,5 +1,6 @@
 //! Timer object implementation.
-//! Timer objects are useful when one wants to wait a fixed amount of time for an event to occur.
+//! Timer objects are useful when one wants to wait a given amount of time for
+//! an event to occur.
 const std = @import("std");
 const rtl = @import("rtl");
 const r = @import("root");
@@ -70,7 +71,12 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
 
     const cpu = percpu.local();
 
-    if (timer.state.cmpxchgStrong(.Stopped, .Pending, .acquire, .monotonic) != null) {
+    if (timer.state.cmpxchgStrong(
+        .Stopped,
+        .Pending,
+        .acquire,
+        .monotonic,
+    ) != null) {
         // Could not set the timer.
         return;
     }
@@ -107,7 +113,12 @@ pub fn cancel(timer: *Timer) void {
     const ipl = timer.hdr.lock.acquire();
     defer timer.hdr.lock.release(ipl);
 
-    if (timer.state.cmpxchgStrong(.Pending, .Stopped, .acquire, .monotonic) != null) {
+    if (timer.state.cmpxchgStrong(
+        .Pending,
+        .Stopped,
+        .acquire,
+        .monotonic,
+    ) != null) {
         // Something changed, it probably expired.
         return;
     }
@@ -137,7 +148,8 @@ pub fn cmp_timer(a: *rtl.pairing_heap.Node, b_: *rtl.pairing_heap.Node) std.math
 pub fn clock() void {
     ke.dpc.enqueue(&percpu.local().dpc, null);
     // Check for overflows.
-    // This is fine to call a lot, as the function only gets expensive (i.e seqlock store) when an overflow actually happens.
+    // This is fine to call a lot, as the function only gets expensive
+    // (i.e seqlock store) when an overflow actually happens.
     ki.time.update_overflow();
 }
 
@@ -161,13 +173,17 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
 
         // If the timer expires more than 1ms in the future, consider it not yet due.
         // Sub-millisecond differences are close enough to expire immediately.
-        if (timer.deadline.value > curtime.value and timer.deadline.value - curtime.value > std.time.ns_per_ms) {
+        if (timer.deadline.value > curtime.value and
+            timer.deadline.value - curtime.value > std.time.ns_per_ms)
+        {
             const next = timer;
             cpu.lock.release_no_ipl();
 
             // Re-check in case the timer expired while we were here.
             const now = ke.time.read_time();
-            if (next.deadline.value <= now.value or next.deadline.value - now.value <= std.time.ns_per_ms) {
+            if (next.deadline.value <= now.value or
+                next.deadline.value - now.value <= std.time.ns_per_ms)
+            {
                 continue; // expired in the meantime, loop again
             }
 
@@ -176,7 +192,12 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
             return;
         }
 
-        if (timer.state.cmpxchgStrong(.Pending, .Running, .acquire, .monotonic) != null) {
+        if (timer.state.cmpxchgStrong(
+            .Pending,
+            .Running,
+            .acquire,
+            .monotonic,
+        ) != null) {
             // Timer must've been canceled.
             cpu.lock.release_no_ipl();
             continue;

@@ -133,7 +133,7 @@ const rehashing_reseed: u8 = 1 << 2;
 const Core = struct {
     /// The current state of the hash table.
     state: std.atomic.Value(State),
-    /// One pointer for current buckets, another for new buckets (during resizing).
+    /// One pointer for current buckets, another for new buckets.
     buckets: [2]std.atomic.Value([*]Bucket),
     /// One seed for current table, another for the new table.
     seeds: [2]std.atomic.Value(u32),
@@ -153,7 +153,10 @@ const Core = struct {
         policy: ResizePolicy,
         min_size: u32,
     ) !void {
-        const min: u32 = if (policy == .Compact) @max(2, min_size) else @max(16, min_size);
+        const min: u32 = if (policy == .Compact)
+            @max(2, min_size)
+        else
+            @max(16, min_size);
 
         const start_size = min;
 
@@ -186,7 +189,13 @@ const Core = struct {
         self.rehash_work.init(.Normal, rehash, self);
     }
 
-    fn migrate_bucket(self: *Self, old: *Bucket, new_array: [*]Bucket, new_seed: u32, new_shift: u5) void {
+    fn migrate_bucket(
+        self: *Self,
+        old: *Bucket,
+        new_array: [*]Bucket,
+        new_seed: u32,
+        new_shift: u5,
+    ) void {
         // This is called in worker thread context, so we have ample stack size
         // to work with.
         const flat_size = 256;
@@ -331,7 +340,10 @@ const Core = struct {
     /// Remove a given element from the table, SMR must be entered.
     fn remove(self: *Self, link: *rcu.SList.Entry) void {
         var state = self.state.load(.acquire);
-        var h = self.hash_link(link, self.seeds[state.current_index].load(.monotonic));
+        var h = self.hash_link(
+            link,
+            self.seeds[state.current_index].load(.monotonic),
+        );
 
         var b = self.bucket(state, .Cur, h);
 
@@ -343,7 +355,10 @@ const Core = struct {
 
             // Get the new state instead.
             state = self.state.load(.acquire);
-            h = self.hash_link(link, self.seeds[state.new_index].load(.monotonic));
+            h = self.hash_link(
+                link,
+                self.seeds[state.new_index].load(.monotonic),
+            );
             b = self.bucket(state, .New, h);
             first = b.lock();
         }
@@ -425,7 +440,11 @@ const Core = struct {
 };
 
 /// Scalable, lock-free hashtable backed by SMR.
-pub fn Table(comptime T: type, comptime link_field: []const u8, comptime Context: type) type {
+pub fn Table(
+    comptime T: type,
+    comptime link_field: []const u8,
+    comptime Context: type,
+) type {
     comptime rtl.assert_interface(Context, struct {
         pub const Key = Context.Key;
         pub fn hash(key: Key, seed: usize) u32 {
@@ -470,7 +489,10 @@ pub fn Table(comptime T: type, comptime link_field: []const u8, comptime Context
         /// Get an element given a key, SMR must be entered.
         pub fn get(self: *Self, key: Context.Key) ?*T {
             const state = self.core.state.load(.acquire);
-            const h = Context.hash(key, self.core.seeds[state.current_index].load(.monotonic));
+            const h = Context.hash(
+                key,
+                self.core.seeds[state.current_index].load(.monotonic),
+            );
             const b = self.core.bucket(state, .Cur, h);
 
             var word = b.load();
@@ -504,7 +526,10 @@ pub fn Table(comptime T: type, comptime link_field: []const u8, comptime Context
             value: *rcu.SList.Entry,
         ) ?*T {
             var state = self.core.state.load(.acquire);
-            var h = Context.hash(key, self.core.seeds[state.current_index].load(.monotonic));
+            var h = Context.hash(
+                key,
+                self.core.seeds[state.current_index].load(.monotonic),
+            );
             var b = self.core.bucket(state, .Cur, h);
 
             var first = b.lock();
@@ -515,7 +540,10 @@ pub fn Table(comptime T: type, comptime link_field: []const u8, comptime Context
 
                 // Get the new state instead.
                 state = self.core.state.load(.acquire);
-                h = Context.hash(key, self.core.seeds[state.new_index].load(.monotonic));
+                h = Context.hash(
+                    key,
+                    self.core.seeds[state.new_index].load(.monotonic),
+                );
                 b = self.core.bucket(state, .New, h);
                 first = b.lock();
             }
@@ -574,7 +602,10 @@ pub fn Table(comptime T: type, comptime link_field: []const u8, comptime Context
 
             // Now do the same as in get(), but with the new state.
             const state = self.core.state.load(.acquire);
-            const h = Context.hash(key, self.core.seeds[state.new_index].load(.monotonic));
+            const h = Context.hash(
+                key,
+                self.core.seeds[state.new_index].load(.monotonic),
+            );
             const b = self.core.bucket(state, .New, h);
 
             var word: usize = b.load();

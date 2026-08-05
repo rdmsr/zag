@@ -90,11 +90,16 @@ fn xapic_read(register: ApicRegisters) u32 {
 }
 
 fn x2apic_write(register: ApicRegisters, value: u64) void {
-    amd64.wrmsr(@intFromEnum(amd64.Msr.X2ApicBase) + (@as(u32, @intFromEnum(register)) >> 4), value);
+    amd64.wrmsr(
+        @intFromEnum(amd64.Msr.X2ApicBase) + (@intFromEnum(register) >> 4),
+        value,
+    );
 }
 
 fn x2apic_read(register: ApicRegisters) u64 {
-    return amd64.rdmsr(@intFromEnum(amd64.Msr.X2ApicBase) + (@as(u32, @intFromEnum(register)) >> 4));
+    return amd64.rdmsr(
+        @intFromEnum(amd64.Msr.X2ApicBase) + (@intFromEnum(register) >> 4),
+    );
 }
 
 pub fn write(register: ApicRegisters, value: u32) void {
@@ -133,7 +138,10 @@ pub fn send_init(apic_id: u32) void {
 
 pub fn send_sipi(apic_id: u32, startup_page: u8) void {
     if (in_x2apic_mode.local().*) {
-        x2apic_write(.Icr, (@as(u64, apic_id) << 32) | 0x00004600 | startup_page);
+        x2apic_write(
+            .Icr,
+            (@as(u64, apic_id) << 32) | 0x00004600 | startup_page,
+        );
     } else {
         xapic_write(.Icr1, @as(u32, apic_id) << 24);
         xapic_write(.Icr, @as(u32, 0x00004600) | startup_page);
@@ -143,7 +151,8 @@ pub fn send_sipi(apic_id: u32, startup_page: u8) void {
 
 pub fn send_ipi(apic_id: u32, vector: u8, delivery_mode: u8) void {
     if (in_x2apic_mode.local().*) {
-        const icr_value = (@as(u64, apic_id) << 32) | (@as(u64, delivery_mode) << 8) | vector;
+        const icr_value = (@as(u64, apic_id) << 32) |
+            (@as(u64, delivery_mode) << 8) | vector;
         x2apic_write(.Icr, icr_value);
     } else {
         const icr_value = (@as(u32, delivery_mode) << 8) | vector;
@@ -200,10 +209,11 @@ pub fn arm_timer(ns: r.Nanoseconds) void {
     if (amd64.cpu_features.tsc_deadline) {
         const now = amd64.rdtsc();
 
-        const delta: u64 = @intCast((@as(u128, ns.value) * tsc.tsc_timer.frequency) / std.time.ns_per_s);
+        const delta: u64 = @intCast(
+            (@as(u128, ns.value) * tsc.tsc_timer.frequency) / std.time.ns_per_s,
+        );
 
         const deadline = now +% delta;
-
         amd64.write_msr(.TscDeadline, deadline);
         return;
     }
@@ -242,7 +252,8 @@ pub fn init() linksection(r.init) void {
 
     const cur_cpu_id = get_id();
 
-    // First, we iterate to check if we find *any* APICs. If we do, then we must use them over x2APIC entries for IDs under 255.
+    // First, we iterate to check if we find *any* APICs.
+    // If we do, then we must use them over x2APIC entries for IDs under 255.
     var has_lapics = false;
     while (iter.next()) |entry| {
         switch (entry.type) {
@@ -264,13 +275,16 @@ pub fn init() linksection(r.init) void {
             .LocalApic => {
                 const lapic: *const MadtLapic = @ptrCast(entry);
                 if (lapic.flags & 1 == 0 or lapic.id == cur_cpu_id) continue;
-                apics.append(mm.zone.gpa, lapic.id) catch @panic("Could not append APIC ID to list");
+                apics.append(mm.zone.gpa, lapic.id) catch
+                    @panic("Could not append APIC ID to list");
             },
             .X2LocalApic => {
                 const x2lapic: *const MadtX2Lapic = @ptrCast(entry);
                 if (has_lapics and x2lapic.id <= 0xFF) continue;
-                if (x2lapic.flags & 1 == 0 or x2lapic.id == cur_cpu_id) continue;
-                apics.append(mm.zone.gpa, x2lapic.id) catch @panic("Could not append APIC ID to list");
+                if (x2lapic.flags & 1 == 0 or x2lapic.id == cur_cpu_id)
+                    continue;
+                apics.append(mm.zone.gpa, x2lapic.id) catch
+                    @panic("Could not append APIC ID to list");
             },
             else => {},
         }

@@ -40,7 +40,11 @@ pub fn CpuLocal(comptime T: type, comptime init: T) type {
 }
 
 /// Wraps around CPU-local data with a designated symbol name.
-pub fn ExportedCpuLocal(comptime T: type, comptime init: T, comptime name: []const u8) type {
+pub fn ExportedCpuLocal(
+    comptime T: type,
+    comptime init: T,
+    comptime name: []const u8,
+) type {
     const S = struct {
         var storage: T linksection(".data.percpu") = init;
 

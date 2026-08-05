@@ -6,7 +6,8 @@ const std = @import("std");
 const mm = r.mm;
 const mi = mm.private;
 
-/// Describes a contiguous region of physical memory to be mapped at a given virtual address.
+/// Describes a contiguous region of physical memory to be mapped
+/// at a given virtual address.
 const MapItem = struct {
     pa: r.PAddr,
     len: usize,
@@ -87,8 +88,15 @@ pub const PMap = struct {
         }
     }
 
-    /// Map a contiguous virtual address range to a contiguous physical address range.
-    pub fn map_contiguous_range(self: *Self, va: r.VAddr, pa: r.PAddr, size: usize, flags: mm.MapFlags) void {
+    /// Map a contiguous virtual address range to a
+    /// contiguous physical address range.
+    pub fn map_contiguous_range(
+        self: *Self,
+        va: r.VAddr,
+        pa: r.PAddr,
+        size: usize,
+        flags: mm.MapFlags,
+    ) void {
         const src = ContiguousSource{
             .flags = flags,
             .size = size,
@@ -163,7 +171,10 @@ pub const PMap = struct {
         const head: *mm.Page = @ptrCast(head_free);
         const tail: *mm.Page = @ptrCast(tail_free);
 
-        return .{ .head = mm.struct_page_to_pfn(head), .tail = mm.struct_page_to_pfn(tail) };
+        return .{
+            .head = mm.struct_page_to_pfn(head),
+            .tail = mm.struct_page_to_pfn(tail),
+        };
     }
 
     pub const Cursor = struct {
@@ -177,7 +188,11 @@ pub const PMap = struct {
         /// Reset upward in `advance` when the VA crosses a level boundary.
         top_level: usize,
 
-        fn walk_down(self: *Cursor, target_level: usize, allocate: bool) error{PageNotMapped}!void {
+        fn walk_down(
+            self: *Cursor,
+            target_level: usize,
+            allocate: bool,
+        ) error{PageNotMapped}!void {
             var current_level = self.top_level;
 
             while (current_level > target_level) {
@@ -191,8 +206,13 @@ pub const PMap = struct {
 
                     const new_table_pa = mi.phys.alloc();
 
-                    const table_ptr: [*]mi.impl.Pte = @ptrFromInt(mm.p2v(new_table_pa));
-                    @memset(table_ptr[0..entries_per_table], std.mem.zeroes(mi.impl.Pte));
+                    const table_ptr: [*]mi.impl.Pte = @ptrFromInt(
+                        mm.p2v(new_table_pa),
+                    );
+                    @memset(
+                        table_ptr[0..entries_per_table],
+                        std.mem.zeroes(mi.impl.Pte),
+                    );
 
                     pte = mi.impl.make_table_pte(new_table_pa);
                     self.tables[current_level][idx] = pte;
@@ -210,14 +230,20 @@ pub const PMap = struct {
             return true;
         }
 
-        pub fn map_range(self: *Cursor, pa: r.PAddr, size: usize, flags: mm.MapFlags) void {
+        pub fn map_range(
+            self: *Cursor,
+            pa: r.PAddr,
+            size: usize,
+            flags: mm.MapFlags,
+        ) void {
             var remain = size;
             var current_pa = pa;
 
             while (remain > 0) {
                 const target_level = 0;
 
-                self.walk_down(target_level, true) catch @panic("walk_down failed during map_range");
+                self.walk_down(target_level, true) catch
+                    @panic("walk_down failed during map_range");
 
                 const table = self.tables[target_level];
                 table[index_for_level(self.va, target_level)] =
@@ -252,7 +278,11 @@ pub const PMap = struct {
     };
 };
 
-pub fn wire_pte(space: *mi.Space, va: r.VAddr, policy: mm.WaitPolicy) mm.Error!*mi.impl.Pte {
+pub fn wire_pte(
+    space: *mi.Space,
+    va: r.VAddr,
+    policy: mm.WaitPolicy,
+) mm.Error!*mi.impl.Pte {
     std.debug.assert(space.lock.is_locked());
 
     var table: [*]mi.impl.Pte = @ptrFromInt(mm.p2v(mi.kernel_space.pmap.root_pa));
@@ -268,7 +298,8 @@ pub fn wire_pte(space: *mi.Space, va: r.VAddr, policy: mm.WaitPolicy) mm.Error!*
         }
 
         if (!entry.present) {
-            // Release the lock while allocating a new page table, since that may block.
+            // Release the lock while allocating a new page table,
+            // since that may block.
             space.lock.release();
 
             const new_table_pa = mi.phys.alloc_opts(.{ .policy = policy }) orelse {
@@ -276,13 +307,15 @@ pub fn wire_pte(space: *mi.Space, va: r.VAddr, policy: mm.WaitPolicy) mm.Error!*
                 return mm.Error.OutOfMemory;
             };
 
-            // Re-acquire the lock and re-validate the entry, since another thread may have raced to allocate it.
+            // Re-acquire the lock and re-validate the entry,
+            // since another thread may have raced to allocate it.
             space.lock.acquire();
 
             entry = table[idx];
 
             if (entry.present) {
-                // Another thread beat us to it, free the page we just allocated and continue.
+                // Another thread beat us to it,
+                // free the page we just allocated and continue.
                 mi.phys.free(new_table_pa);
             } else {
                 const new_table_ptr: [*]u64 = @ptrFromInt(mm.p2v(new_table_pa));

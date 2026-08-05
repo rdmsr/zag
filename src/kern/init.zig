@@ -37,7 +37,11 @@ pub fn init(_: ?*anyopaque) linksection(r.init) void {
     ki.sched.percpu.local().current_thread = &thread0;
     ki.sched.percpu.local().idle_thread = &thread0;
 
-    std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{ pl.name, arch.name, r.boot_info.cmdline });
+    std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{
+        pl.name,
+        arch.name,
+        r.boot_info.cmdline,
+    });
 
     ex.init();
     ki.sched.idle(null);

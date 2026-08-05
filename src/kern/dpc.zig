@@ -6,7 +6,7 @@ const ke = r.ke;
 const ki = ke.private;
 
 /// Deferred Procedure Call (DPC) structure.
-/// Used for scheduling work to be done when IPL is lowered below `ke.Ipl.Dispatch`.
+/// Used for scheduling work to be done when IPL is lowered below `.Dispatch`.
 pub const Dpc = struct {
     /// Entry into per-CPU DPC queue
     link: rtl.List.Entry,
@@ -78,7 +78,8 @@ fn dispatch_queue(cpu: u32) void {
 
     ipl_cpu.ipl = .Dispatch;
 
-    // Mark as handled, this must be done before enabling interrupts or we will race.
+    // Mark as handled, this must be done before enabling interrupts or we will
+    // race.
     ki.ipl.clear_softint_pending(cpu, .Dispatch);
 
     _ = ki.impl.enable_interrupts();
@@ -100,8 +101,9 @@ fn dispatch_queue(cpu: u32) void {
         dpc = @fieldParentPtr("link", first_elem);
         dpc.inserted.store(false, .release);
 
-        // An interrupt which would enqueue this DPC could occur between loading the argument and calling the routine,
-        // which is why we capture it here to ensure that we get the intended context.
+        // An interrupt which would enqueue this DPC could occur between
+        // loading the argument and calling the routine, which is why we capture
+        // it here to ensure that we get the intended context.
         const arg = dpc.arg;
 
         dpc_cpu.lock.release(ipl);
@@ -148,8 +150,8 @@ fn dispatch_queue(cpu: u32) void {
 
 /// Dispatch the DPC queue on `cpu`.
 pub fn dispatch(cpu: u32) void {
-    // DPC processing is done at Ipl.Dispatch
-    // We can't call lower/raise here because they might call us again recursively.
+    // DPC processing is done at IPL Dispatch.
+    // Don't call lower/raise here because they might call us again recursively.
     var mycpu = cpu;
     const old_ipl = ki.ipl.percpu.remote(mycpu).ipl;
     const int_state = ki.impl.disable_interrupts();
