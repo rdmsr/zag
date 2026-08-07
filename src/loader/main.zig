@@ -4,7 +4,7 @@ const std = @import("std");
 const Entry = r.BootInfo.MemMap.Entry;
 const stack_size = 1024 * 16; // should be enough
 
-extern fn jump_to_kernel(loader_info: usize, stack: usize, entry: usize) void;
+extern fn jump_to_kernel(loader_info: usize, entry: usize) void;
 
 fn load_kernel(kernel: *anyopaque) usize {
     const elf: *std.elf.Elf64.Ehdr = @ptrCast(@alignCast(kernel));
@@ -53,12 +53,8 @@ fn load_kernel(kernel: *anyopaque) usize {
                     // Copy the file data.
                     @memcpy(dest, source);
 
-                    if (filesz_rem == 0) {
-                        const zeroes = phdr.memsz - phdr.filesz;
-
-                        // Fill the rest of memsz with 0.
-                        @memset(va[0..zeroes], 0);
-                    }
+                    // Zero the rest.
+                    @memset(va[file_remaining..r.page_size], 0);
 
                     // Now update the page permissions to their true value.
                     r.mem.pagemap.map_page(addr, pa, .{
@@ -89,15 +85,23 @@ pub fn loader_main(kernel: *anyopaque) void {
     r.arch.init();
     r.mem.init();
     const entry = load_kernel(kernel);
-    const stack = r.mem.alloc(stack_size);
 
+    const stack = r.mem.alloc(stack_size);
     const memmap = &r.loader_info.memory_map;
 
     r.loader_info.kernel_stack = stack;
     r.loader_info.kernel_stack_size = stack_size;
 
     // Finally, sort the memory map once we're done allocating everything.
-    std.mem.sort(Entry, memmap.entries[0..memmap.entry_count], {}, cmp_entries);
+    std.mem.sort(
+        Entry,
+        memmap.entries[0..memmap.entry_count],
+        {},
+        cmp_entries,
+    );
 
-    jump_to_kernel(@intFromPtr(&r.loader_info), stack + stack_size, entry);
+    jump_to_kernel(
+        @intFromPtr(&r.loader_info),
+        entry,
+    );
 }

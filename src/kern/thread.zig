@@ -137,7 +137,12 @@ pub const Thread = struct {
         arg: ?*anyopaque,
     ) void {
         thread.* = .{
-            .context = .init(stack, stack_size, entry, arg),
+            .context = .init(
+                stack,
+                stack_size,
+                entry,
+                arg,
+            ),
             .lock = .init(),
             .nice = 0,
             .priority = prio,
