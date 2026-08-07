@@ -146,3 +146,30 @@ pub inline fn flush_full_tlb() void {
 pub inline fn flush_tlb(va: r.VAddr) void {
     amd64.invlpg(va);
 }
+
+// Inline asm so the compiler has a chance to inline it.
+pub inline fn raise_software_ipl(new: ke.Ipl, old: *ke.Ipl) bool {
+    return asm volatile (
+        \\movb %%gs:cpu_ipl, %%cl
+        \\movb %%cl, (%[old_ptr])
+        \\movb %[new_val], %%gs:cpu_ipl
+        \\cmpb %%cl, %[new_val]
+        \\setl %[result]
+        : [result] "=r" (-> bool),
+        : [new_val] "r" (new),
+          [old_ptr] "r" (old),
+        : .{ .rcx = true, .memory = true });
+}
+
+pub inline fn lower_software_ipl(new: ke.Ipl, old: *ke.Ipl) bool {
+    return asm volatile (
+        \\movb %%gs:cpu_ipl, %%cl
+        \\movb %%cl, (%[old_ptr])
+        \\movb %[new_val], %%gs:cpu_ipl
+        \\cmpb %[new_val], %%cl
+        \\setl %[result]
+        : [result] "=r" (-> bool),
+        : [new_val] "r" (new),
+          [old_ptr] "r" (old),
+        : .{ .rcx = true, .memory = true });
+}

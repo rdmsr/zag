@@ -20,40 +20,43 @@ pub const Ipl = enum(u8) {
 };
 
 const PerCpu = struct {
-    /// Current IPL on this CPU.
-    ipl: Ipl,
     /// Bitmask of pending software interrupts on this CPU.
     pending_softints: std.atomic.Value(u8),
 };
 
+/// Current IPL on this CPU.
+pub const cpu_ipl = ke.ExportedCpuLocal(
+    Ipl,
+    .Passive,
+    "cpu_ipl",
+);
+
 pub const percpu = ke.CpuLocal(PerCpu, .{
-    .ipl = .Passive,
-    .pending_softints = std.atomic.Value(u8).init(0),
+    .pending_softints = .init(0),
 });
 
 pub fn current() Ipl {
-    return percpu.local().ipl;
+    return cpu_ipl.local().*;
 }
 
 /// Raise IPL to `new`.
 /// Panics if the current IPL is higher than requested.
 pub fn raise(new: Ipl) Ipl {
-    const ints = ki.impl.disable_interrupts();
+    var old: ke.Ipl = undefined;
 
-    var cpu = percpu.local();
-    const old = cpu.ipl;
-
-    if (@intFromEnum(new) < @intFromEnum(old)) {
-        std.debug.panic("ke.ipl.raise(): Target IPL ({}) is lower than current IPL ({})", .{ new, old });
+    if (ki.impl.raise_software_ipl(new, &old)) {
+        @branchHint(.unlikely);
+        std.debug.panic(
+            "ke.ipl.raise(): Target IPL ({}) is lower than current IPL ({})",
+            .{ new, old },
+        );
     }
 
     if (@intFromEnum(new) > @intFromEnum(Ipl.get_max_software())) {
+        // Moving between hardware levels is rare.
+        @branchHint(.unlikely);
         ki.impl.set_hardware_ipl(new);
     }
-
-    cpu.ipl = new;
-
-    ki.impl.restore_interrupts(ints);
 
     return old;
 }
@@ -61,36 +64,41 @@ pub fn raise(new: Ipl) Ipl {
 /// Lower IPL to `new`.
 /// Panics if the current IPL is lower than requested.
 pub fn lower(new: Ipl) void {
-    const ints = ki.impl.disable_interrupts();
-    var cpu = percpu.local();
-    const cpu_id = ke.cpu.current();
-    const old = cpu.ipl;
+    var old: ke.Ipl = undefined;
 
-    if (@intFromEnum(new) > @intFromEnum(old)) {
-        std.debug.panic("ke.ipl.lower(): Target IPL ({}) is higher than current IPL ({})", .{ new, old });
+    if (ki.impl.lower_software_ipl(new, &old)) {
+        @branchHint(.unlikely);
+        std.debug.panic(
+            "ke.ipl.lower(): Target IPL ({}) is higher than current IPL ({})",
+            .{ new, old },
+        );
     }
 
-    if (@intFromEnum(new) <= @intFromEnum(Ipl.get_max_software()) and @intFromEnum(old) > @intFromEnum(Ipl.get_max_software())) {
+    if (@intFromEnum(new) <= @intFromEnum(Ipl.get_max_software()) and
+        @intFromEnum(old) > @intFromEnum(Ipl.get_max_software()))
+    {
+        @branchHint(.unlikely);
         ki.impl.set_hardware_ipl(.Passive);
     }
 
-    cpu.ipl = new;
-
-    ki.impl.restore_interrupts(ints);
-
-    if (@intFromEnum(new) < @intFromEnum(Ipl.Dispatch) and is_softint_pending(.Dispatch)) {
-        ki.dpc.dispatch(cpu_id);
+    if (@intFromEnum(new) < @intFromEnum(Ipl.Dispatch) and
+        is_softint_pending(.Dispatch))
+    {
+        // Dispatch DPCs if necessary.
+        ki.dpc.dispatch();
     }
 }
 
 /// Set the hardware IPL to `new`.
 pub fn set_hardware(new: Ipl) Ipl {
-    var cpu = percpu.local();
-    const old = cpu.ipl;
+    const ints = ki.impl.disable_interrupts();
+    const cpu = cpu_ipl.local();
+    const old = cpu.*;
 
-    cpu.ipl = new;
+    cpu.* = new;
 
     ki.impl.set_hardware_ipl(new);
+    ki.impl.restore_interrupts(ints);
 
     return old;
 }
@@ -98,16 +106,23 @@ pub fn set_hardware(new: Ipl) Ipl {
 /// Mark a software interrupt of IPL `ipl` on `cpu` as pending.
 pub fn set_softint_pending(cpu: u32, ipl: Ipl) void {
     std.debug.assert(@intFromEnum(ipl) <= @intFromEnum(Ipl.Dispatch));
-    _ = percpu.remote(cpu).pending_softints.bitSet(@intCast(@intFromEnum(ipl)), .monotonic);
+    _ = percpu.remote(cpu).pending_softints.bitSet(
+        @intCast(@intFromEnum(ipl)),
+        .monotonic,
+    );
 }
 
 /// Mark a software interrupt of IPL `ipl` on `cpu` as handled.
 pub fn clear_softint_pending(cpu: u32, ipl: Ipl) void {
     std.debug.assert(@intFromEnum(ipl) <= @intFromEnum(Ipl.Dispatch));
-    _ = percpu.remote(cpu).pending_softints.bitReset(@intCast(@intFromEnum(ipl)), .monotonic);
+    _ = percpu.remote(cpu).pending_softints.bitReset(
+        @intCast(@intFromEnum(ipl)),
+        .monotonic,
+    );
 }
 
-/// Check whether a software interrupt of IPL `ipl` on the current CPU is pending.
+/// Check whether a software interrupt of IPL `ipl`
+/// is pending on the current CPU.
 pub fn is_softint_pending(ipl: Ipl) bool {
     std.debug.assert(@intFromEnum(ipl) <= @intFromEnum(Ipl.Dispatch));
     const shift: u3 = @intCast(@intFromEnum(ipl));
