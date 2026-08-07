@@ -11,6 +11,9 @@ var thread0: ke.Thread = undefined;
 export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     r.boot_info = boot_info;
 
+    // Immediately initialize the context of what will eventually become
+    // our idle thread. We keep running on the loader stack up until we switch
+    // into the thread.
     thread0.init(
         boot_info.kernel_stack,
         boot_info.kernel_stack_size,
