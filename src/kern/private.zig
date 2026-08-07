@@ -2,6 +2,7 @@ const config = @import("config");
 const init_mod = @import("init.zig");
 const r = @import("root");
 const rtl = @import("rtl");
+const ke = r.ke;
 
 pub const impl = switch (config.arch) {
     .amd64 => @import("amd64/impl.zig"),
@@ -52,6 +53,21 @@ const ImplSchema = struct {
 
     /// Implementation-defined early initialization.
     pub fn early_init() void {}
+
+    /// Raise software IPL to the given value.
+    /// Returns true if the raise failed.
+    pub fn raise_software_ipl(new: ke.Ipl, old: *ke.Ipl) bool {
+        _ = new;
+        _ = old;
+        unreachable;
+    }
+    /// Lower software IPL to the given value.
+    /// Returns true if the lower failed.
+    pub fn lower_software_ipl(new: ke.Ipl, old: *ke.Ipl) bool {
+        _ = new;
+        _ = old;
+        unreachable;
+    }
 };
 
 comptime {

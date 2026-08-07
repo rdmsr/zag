@@ -72,11 +72,11 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
 }
 
 fn dispatch_queue(cpu: u32) void {
-    const ipl_cpu = ki.ipl.percpu.remote(cpu);
-    const dpc_cpu = pcpu.remote(cpu);
-    const sched_cpu = ki.sched.percpu.remote(cpu);
+    const ipl_cpu = ki.ipl.cpu_ipl.local();
+    const dpc_cpu = pcpu.local();
+    const sched_cpu = ki.sched.percpu.local();
 
-    ipl_cpu.ipl = .Dispatch;
+    ipl_cpu.* = .Dispatch;
 
     // Mark as handled, this must be done before enabling interrupts or we will
     // race.
@@ -148,13 +148,13 @@ fn dispatch_queue(cpu: u32) void {
     _ = ki.impl.disable_interrupts();
 }
 
-/// Dispatch the DPC queue on `cpu`.
-pub fn dispatch(cpu: u32) void {
+/// Dispatch the DPC queue on the current CPU.
+pub fn dispatch() void {
     // DPC processing is done at IPL Dispatch.
     // Don't call lower/raise here because they might call us again recursively.
-    var mycpu = cpu;
-    const old_ipl = ki.ipl.percpu.remote(mycpu).ipl;
     const int_state = ki.impl.disable_interrupts();
+    const old_ipl = ki.ipl.cpu_ipl.local().*;
+    var mycpu = ke.cpu.current();
 
     while (ki.ipl.is_softint_pending(.Dispatch)) {
         dispatch_queue(mycpu);
@@ -162,7 +162,6 @@ pub fn dispatch(cpu: u32) void {
         mycpu = ke.cpu.current();
     }
 
-    ki.ipl.percpu.remote(mycpu).ipl = old_ipl;
-
+    ki.ipl.cpu_ipl.local().* = old_ipl;
     ki.impl.restore_interrupts(int_state);
 }
