@@ -1393,6 +1393,11 @@ pub fn idle(_: ?*anyopaque) noreturn {
             }
         }
 
+        // Dispatch any pending DPCs.
+        if (ki.ipl.is_softint_pending(.Dispatch)) {
+            ki.dpc.dispatch();
+        }
+
         std.atomic.spinLoopHint();
     }
 }
