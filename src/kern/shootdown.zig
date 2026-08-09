@@ -38,6 +38,7 @@ const PerCpu = struct {
     /// CPUs that have sent this CPU a shootdown.
     senders: ke.AtomicCpuMask,
 
+    npages: std.atomic.Value(u32),
     sync_addr: r.VAddr,
     sync_count: usize,
 };
@@ -118,39 +119,65 @@ pub fn process_shootdowns() void {
     const cpu = percpu.local();
     const curcpu = ke.cpu.current();
 
+    rtl.barrier.fence(.acquire);
+
     if (cpu.senders.is_all(false, .monotonic)) {
         // Nothing to do.
         return;
     }
 
+    var claimed: [config.ncpus]u64 = @splat(0);
+    var nreq: usize = 0;
+
     var iter = cpu.senders.iter(.monotonic);
 
-    // Go through every sender and get their states.
     while (iter.next()) |i| {
         if (i == curcpu) continue;
 
         cpu.senders.clear(i, .monotonic);
 
+        const states = percpu.remote(@truncate(i)).valid_states[curcpu].swap(
+            0,
+            .acquire,
+        );
+
+        claimed[i] = states;
+        nreq += @popCount(states);
+    }
+
+    if (nreq == 0) return;
+
+    // npages is just a hint, we don't need it to be accurate.
+    const full = cpu.npages.load(.monotonic) >= ki.impl.tlb_max_pages;
+    cpu.npages.store(0, .monotonic);
+
+    if (full) {
+        // Just flush the entire thing.
+        ki.impl.flush_full_tlb();
+    }
+
+    // Go through every sender and release their states.
+    // Additionally flush the ranges that didn't get flushed previously.
+    for (0.., &claimed) |i, states| {
+        if (states == 0) continue;
+
         const sender = percpu.remote(@truncate(i));
+        var bits = states;
 
-        while (true) {
-            var states = sender.valid_states[curcpu].swap(0, .acquire);
-            if (states == 0) break;
+        while (bits != 0) : (bits &= bits - 1) {
+            const state = &sender.states[@ctz(bits)];
 
-            while (states != 0) {
-                // Go through each set bit and invalidate the slot.
-                const bit = @ctz(states);
-                states &= ~(@as(u64, 1) << @intCast(bit));
+            if (!full) flush_range(state.base, state.npages);
 
-                const state = &sender.states[bit];
-                flush_range(state.base, state.npages);
-
-                if (state.state.fetchSub(1, .release) == 1) {
-                    shootdowns.insert(&state.link);
-                }
+            if (state.state.fetchSub(1, .release) == 1) {
+                shootdowns.insert(&state.link);
             }
         }
     }
+}
+
+fn process_shootdowns_kick(_: u32, _: ?*anyopaque) void {
+    process_shootdowns();
 }
 
 /// Submit a shootdown to occur asynchronously on `target_mask`.
@@ -171,7 +198,10 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
     };
 
     cpu.states[slot] = state;
-    cpu.states[slot].state.store(@truncate(target_mask.count()), .release);
+    cpu.states[slot].state.store(
+        @truncate(target_mask.count()),
+        .release,
+    );
 
     var iter = target_mask.iter();
 
@@ -183,9 +213,13 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
             .release,
         );
 
-        ki.ipl.set_softint_pending(@truncate(bit), .Dispatch);
+        const remote = percpu.remote(@truncate(bit));
 
         // Tell him we have something for him.
-        percpu.remote(@truncate(bit)).senders.set(curcpu, .release);
+        _ = remote.npages.fetchAdd(state.npages, .monotonic);
+        remote.senders.set(curcpu, .release);
+
+        rtl.barrier.fence(.release);
+        ki.ipl.set_softint_pending(@truncate(bit), .Dispatch);
     }
 }

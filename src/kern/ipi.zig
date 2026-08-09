@@ -53,7 +53,6 @@ pub fn unicast(
     const state = remote.state.swap(.Pending, .release);
 
     if (state == .Idle) {
-        std.log.info("Sent ipi", .{});
         pl.send_ipi(cpu);
     }
 
@@ -65,7 +64,7 @@ pub fn unicast(
 }
 
 pub fn broadcast(func: *const fn (u32, ?*anyopaque) void, arg: ?*anyopaque) void {
-    const ipl = ke.ipl.raise(.High);
+    const ipl = ke.ipl.raise(.Dispatch);
     const curcpu = percpu.local();
 
     curcpu.func = func;

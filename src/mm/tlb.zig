@@ -74,6 +74,9 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
         },
     };
 
+    space.lock.release();
+
+    const ipl = ke.ipl.raise(.Dispatch);
     var mask: ke.CpuMask = .init(false);
 
     for (0..ke.ncpus) |i| {
@@ -84,6 +87,9 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
 
     ke.shootdown.submit(state, mask) catch {
         _ = sync_shootdowns.fetchAdd(1, .monotonic);
+
+        ke.ipl.lower(ipl);
+        space.lock.acquire();
         space.arena.free(va, size) catch unreachable;
 
         // Free the physical pages
@@ -94,6 +100,9 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
         );
         return;
     };
+
+    ke.ipl.lower(ipl);
+    space.lock.acquire();
 }
 
 fn activation(_: *rtl.HandoffList) void {
