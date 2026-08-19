@@ -279,7 +279,7 @@ fn quiesce_check() void {
 }
 
 fn spawn(prio: u8, entry: *const fn (?*anyopaque) void, id: usize) *ps.Thread {
-    const t = ps.thread.create_kernel(prio, entry, @ptrFromInt(id + 1)) catch @panic("oom");
+    const t = ps.thread.create_kernel(@enumFromInt(prio), entry, @ptrFromInt(id + 1)) catch @panic("oom");
     ke.sched.enqueue(&t.kern);
     return t;
 }

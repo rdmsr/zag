@@ -17,7 +17,7 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     thread0.init(
         boot_info.kernel_stack,
         boot_info.kernel_stack_size,
-        ke.Thread.Priority.idle_low,
+        .IdleThread,
         init,
         null,
     );

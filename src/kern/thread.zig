@@ -7,41 +7,55 @@ const ki = ke.private;
 
 /// Structure representing a kernel thread.
 pub const Thread = struct {
-    /// Thread priority classes.
-    /// Realtime: Highest priority, aggressively scheduled.
-    /// Batch: Normal priority.
-    /// Idle: For idle and background threads.
-    pub const Priority = struct {
+    pub const Priority = enum(u8) {
+        const Self = @This();
+
+        /// Reserved for the idle thread.
+        IdleThread = 0,
+        /// Background kernel work.
+        Idle = 1,
+        /// Low priority CPU-bound work
+        LowBatch = 2,
+        /// High priority CPU-bound work
+        HighBatch = 137,
+        /// Low priority interactive work.
+        LowInteractive = 138,
+        /// High priority interactive work.
+        HighInteractive = 223,
+        /// The default thread priority.
+        Default = 117,
+        /// Low priority real-time work.
+        LowRealtime = 224,
+        /// Mid priority real-time work.
+        MidRealtime = 239,
+        /// High priority real-time work.
+        HighRealtime = 255,
+        _,
+
         pub const Class = enum(u8) {
             Realtime,
-            Batch,
+            Timeshare,
             Idle,
         };
 
-        /// Idle thread has the lowest priority.
-        pub const idle_low = 0;
-        pub const idle = 1;
+        pub const max = 255;
+        pub const nice_max = 20;
 
-        /// Batch threads have priorities 2-23
-        pub const low_batch = 2;
-        pub const high_batch = 23;
-        pub const batch_range = high_batch - low_batch + 1;
-
-        /// Realtime threads have priorities 40-63
-        pub const low_realtime = 40;
-        pub const max = 63;
-
-        /// In the mid-range of batch threads
-        pub const default = 10;
-
-        /// Interactive threads have priorities 24-39
-        pub const low_interactive = 24;
-        pub const high_interactive = 39;
+        // The low and top 20 priorities from the batch range are reserved
+        // for nice.
+        pub const cpu_range = @intFromEnum(Self.HighBatch) - (nice_max * 2) - 1;
 
         pub fn class_from_prio(prio: u8) Class {
-            if (prio >= low_realtime and prio <= max) return .Realtime;
-            if (prio >= low_batch and prio < low_realtime) return .Batch;
-            if (prio <= idle) return .Idle;
+            if (prio >= @intFromEnum(Self.LowRealtime) and
+                prio <= @intFromEnum(Self.HighRealtime))
+                return .Realtime;
+
+            if (prio >= @intFromEnum(Self.LowBatch) and
+                prio < @intFromEnum(Self.LowRealtime))
+                return .Timeshare;
+
+            if (prio <= @intFromEnum(Self.Idle))
+                return .Idle;
 
             unreachable;
         }
@@ -74,12 +88,6 @@ pub const Thread = struct {
     base_priority: u8,
     /// Priority inherited via priority donation.
     inherited_prio: u8,
-    /// When the thread started sleeping.
-    sleep_start: u64,
-    /// Ticks spent voluntarily sleeping recently.
-    sleep_time: u64,
-    /// Ticks spent running recently.
-    run_time: u64,
     /// Whether the thread is pinned to this CPU.
     /// If it is pinned, then it can't be moved across another CPU.
     pinned: bool,
@@ -116,6 +124,8 @@ pub const Thread = struct {
     stack: r.VAddr,
     /// PELT load average,
     avg: ki.sched.Average,
+    /// Accounting statistics.
+    acct: ki.sched.Accounting,
     /// Set whenever the thread is switching off its stack.
     /// This is used to avoid taking thread next lock to wait for switch off
     /// to complete.
@@ -132,7 +142,7 @@ pub const Thread = struct {
         thread: *Thread,
         stack: r.VAddr,
         stack_size: usize,
-        prio: u8,
+        prio: Priority,
         entry: *const fn (?*anyopaque) void,
         arg: ?*anyopaque,
     ) void {
@@ -145,12 +155,9 @@ pub const Thread = struct {
             ),
             .lock = .init(),
             .nice = 0,
-            .priority = prio,
-            .base_priority = prio,
+            .priority = @intFromEnum(prio),
+            .base_priority = @intFromEnum(prio),
             .inherited_prio = 0,
-            .sleep_start = 0,
-            .sleep_time = 0,
-            .run_time = 0,
             .pinned = false,
             .state = .init(.Ready),
             .runq_link = .{},
@@ -170,14 +177,8 @@ pub const Thread = struct {
             .queue_item = null,
             .stack = stack,
             .switching = .init(false),
-            .avg = .{
-                .last_update = .init(0),
-                // New threads are considered heavy until they prove themselves,
-                // this might allow for better balancing during bursts.
-                .load = ki.sched.pelt_load_avg_max,
-                .est = ki.sched.pelt_load_avg_max,
-                .period_contrib = 0,
-            },
+            .avg = .{},
+            .acct = .{},
             .smr_sections = undefined,
         };
 
@@ -201,7 +202,8 @@ pub const Thread = struct {
     }
 
     pub fn is_interactive(self: *Thread) bool {
-        return self.priority >= Priority.low_interactive and self.priority <= Priority.high_interactive;
+        return self.priority >= @intFromEnum(Priority.LowInteractive) and
+            self.priority <= @intFromEnum(Priority.HighInteractive);
     }
 };
 

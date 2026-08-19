@@ -154,12 +154,12 @@ fn particle(param: ?*anyopaque) void {
 }
 
 fn spawn_particle(arg: ?*anyopaque) void {
-    const t = ps.thread.create_kernel(ke.Thread.Priority.default, &particle, arg) catch @panic("OOM");
+    const t = ps.thread.create_kernel(.Default, &particle, arg) catch @panic("OOM");
     ke.sched.enqueue(&t.kern);
 }
 
 fn spawn_explodeable() void {
-    const t = ps.thread.create_kernel(ke.Thread.Priority.default, &explodeable, null) catch @panic("OOM");
+    const t = ps.thread.create_kernel(.Default, &explodeable, null) catch @panic("OOM");
     ke.sched.enqueue(&t.kern);
 }
 

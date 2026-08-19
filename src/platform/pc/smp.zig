@@ -45,7 +45,7 @@ fn make_thread(
     const td = mm.zone.gpa.create(ke.Thread) catch
         @panic("Failed to allocate thread for AP");
 
-    td.init(stack, size, ke.Thread.Priority.idle_low, entrypoint, null);
+    td.init(stack, size, .IdleThread, entrypoint, null);
 
     td.pinned = true;
     return td;

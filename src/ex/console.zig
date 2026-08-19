@@ -125,7 +125,7 @@ pub fn init() void {
     console_list.init();
 
     const td = ps.thread.create_kernel(
-        ke.Thread.Priority.default,
+        .Default,
         worker,
         null,
     ) catch @panic("handle me");

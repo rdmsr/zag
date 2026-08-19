@@ -50,11 +50,11 @@ pub const WorkItem = struct {
         /// High priority work.
         High,
 
-        pub fn to_sched_prio(prio: Priority) u8 {
+        pub fn to_sched_prio(prio: Priority) ke.Thread.Priority {
             return switch (prio) {
-                .Low => ke.Thread.Priority.low_batch,
-                .Normal => ke.Thread.Priority.high_batch,
-                .High => ke.Thread.Priority.low_realtime,
+                .Low => .LowBatch,
+                .Normal => .HighBatch,
+                .High => .LowRealtime,
             };
         }
     };
@@ -127,6 +127,8 @@ const Pool = struct {
                 work_loop,
                 @ptrFromInt(ctx.value),
             );
+
+            td.kern.nice = -ke.Thread.Priority.nice_max;
 
             if (cpu != null) {
                 td.kern.last_cpu = cpu;
@@ -312,7 +314,7 @@ pub fn init() !void {
     try low.init(.Low, null);
 
     var td = ps.thread.create_kernel(
-        ke.Thread.Priority.default,
+        .Default,
         pool_manager,
         null,
     ) catch @panic("Failed to create pool manager");
