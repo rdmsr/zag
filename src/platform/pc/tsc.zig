@@ -18,7 +18,10 @@ pub var tsc_timer: ke.TimeCounter = .{
 
 pub fn init() linksection(r.init) void {
     if (!amd64.cpu_features.invariant_tsc) {
-        log.info("invariant TSC not supported (get a new PC), using fallback", .{});
+        log.info(
+            "invariant TSC not supported (get a new PC), using fallback",
+            .{},
+        );
         if (ke.time.best()) |best| {
             log.info("using {s} as timecounter source", .{best.name});
         }
@@ -28,9 +31,14 @@ pub fn init() linksection(r.init) void {
     // Try using cpuid leaf 0x15 to get the TSC frequency.
     const cpuid_state = amd64.cpuid(0x15, 0);
 
-    if (cpuid_state.ebx != 0 and cpuid_state.ecx != 0 and cpuid_state.eax != 0) {
+    if (cpuid_state.ebx != 0 and cpuid_state.ecx != 0 and
+        cpuid_state.eax != 0)
+    {
         const tsc_freq = (cpuid_state.ebx / cpuid_state.eax) * cpuid_state.ecx;
-        log.info("TSC frequency determined via CPUID: {} Hz", .{tsc_freq});
+        log.info(
+            "TSC frequency determined via CPUID: {} Hz",
+            .{tsc_freq},
+        );
         tsc_timer.frequency = tsc_freq;
 
         ke.time.register_source(&tsc_timer);
@@ -56,7 +64,8 @@ pub fn init() linksection(r.init) void {
     const runs = 5;
     const calib_time = 10 * std.time.ns_per_ms;
 
-    // Sleep for 10ms `runs` times and measure the TSC frequency, then average the middle values to get a stable estimate.
+    // Sleep for 10ms `runs` times and measure the TSC frequency,
+    // then average the middle values to get a stable estimate.
     var freqs: [runs]u64 = undefined;
 
     for (0..runs) |i| {
@@ -75,7 +84,11 @@ pub fn init() linksection(r.init) void {
 
     ke.time.register_source(&tsc_timer);
 
-    log.info("frequency calibrated using {s}: {}.{} MHz", .{ best.name, tsc_timer.frequency / 1_000_000, (tsc_timer.frequency % 1_000_000) / 1000 });
+    log.info("frequency calibrated using {s}: {}.{} MHz", .{
+        best.name,
+        tsc_timer.frequency / 1_000_000,
+        (tsc_timer.frequency % 1_000_000) / 1000,
+    });
 }
 
 fn read_tsc() u64 {
