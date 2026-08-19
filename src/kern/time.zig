@@ -30,7 +30,7 @@ const State = struct {
     // Counter value at the time the current TimeCounter was selected.
     // Used as the baseline for elapsed time calculation.
     initial_count: u64,
-    // Accumulated nanosecond offset from previous TimeCounters and overflow events.
+    // Accumulated nanosecond offset from previous TimeCounters and overflows.
     // Added to the current counter's contribution in `read_time_nano`.
     offset: u64,
 };
