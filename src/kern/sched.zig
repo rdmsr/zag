@@ -7,7 +7,7 @@
 //! - `Realtime`: Always scheduled before batch and idle threads.
 //!   Picked from `realtime_runq` in priority order.
 //!   Interactive batch threads are promoted into this queue.
-//! - `Batch`: Scheduled via a circular calendar queue that rotates
+//! - .Timeshare`: Scheduled via a circular calendar queue that rotates
 //!   on every tick, ensuring all threads get CPU time proportional
 //!   to their priority.
 //! - `Idle`: Only scheduled when both realtime and batch queues are empty.
@@ -18,9 +18,11 @@
 //! Each batch thread is assigned an interactivity score based on the
 //! ratio of its recent sleep time to its recent CPU time:
 //!
-//! - If `sleep_time > run_time`: score = `run_time / (sleep_time / scaling_factor)`
+//! - If `sleep_time > run_time`: score =
+//!   `run_time / (sleep_time / scaling_factor)`
 //!   — heavily sleeping threads score low (more interactive).
-//! - If `run_time > sleep_time`: score = `scaling_factor * 2 - (sleep_time / (run_time / scaling_factor))`
+//! - If `run_time > sleep_time`: score = `scaling_factor * 2 -
+//!   (sleep_time / (run_time / scaling_factor))`
 //!   — CPU-bound threads score high (less interactive).
 //! - Niceness is added to the score, making low-nice threads easier to
 //!   qualify as interactive.
@@ -47,7 +49,8 @@
 //!   Always one slot ahead of `runidx` so fresh threads are never
 //!   picked in the same tick they were enqueued.
 //!
-//! Threads are inserted at `(insidx + prio_high_batch - thread.priority) % runqueues_n`,
+//! Threads are inserted at
+//! `(insidx + prio_high_batch - thread.priority) % runqueues_n`,
 //! placing lower-priority threads further ahead in the rotation so
 //! they run less frequently than higher-priority ones.
 //!
@@ -80,12 +83,13 @@
 //! ----------------
 //!
 //! CPU selection is done on various metrics, but mostly relies on the CPU load
-//! and its load average. The load represents the number of threads currently sitting
-//! in its runqueue, while the load average uses per-entity load tracking (PELT)
-//! to broadly measure CPU utilization, see comment below.
+//! and its load average. The load represents the number of threads currently
+//! sitting in its runqueue, while the load average uses per-entity load
+//! tracking (PELT) to broadly measure CPU utilization, see comment below.
 //! The load average is the only metric relied upon by periodic load balancing,
-//! since it represents the broader history of a CPU. For other forms of balancing,
-//! the load is preferred as to prioritize latency (i.e. you want to run a thread ASAP).
+//! since it represents the broader history of a CPU. For other forms of
+//! balancing, the load is preferred as to prioritize latency
+//! (i.e. you want to run a thread ASAP).
 //!
 //! See `sched_ule.c` in FreeBSD for the original implementation this is based on.
 
@@ -100,9 +104,11 @@ const pl = r.pl;
 const runqueues_n = 64;
 const interactivity_threshold = 30;
 const scaling_factor = 50;
-const preempt_threshold = ke.Thread.Priority.low_realtime;
+const preempt_threshold = @intFromEnum(ke.Thread.Priority.LowRealtime);
 const balance_interval = @as(u64, config.sched_balance_interval);
 const steal_threshold = 1;
+const pct_window_target = 10 * std.time.us_per_s;
+const pct_window_max = 11 * std.time.us_per_s;
 
 // Per-entity load tracking (PELT)
 // -------------------------------
@@ -146,12 +152,6 @@ const pelt_inv_table: [pelt_decay]u32 = .{
     0x9837f051, 0x94f4efa8, 0x91c3d373, 0x8ea4398b,
     0x8b95c1e3, 0x88980e80, 0x85aac367, 0x82cd8698,
 };
-
-var balance_timer: ke.Timer = undefined;
-var balance_dpc: ke.Dpc = .init(balance);
-
-// LCG values taken from FreeBSD.
-var lcg = std.Random.lcg.Wrapping(u32).init(0, 69069, 5);
 
 pub const RunQueue = struct {
     /// Bitmap of non-empty queues. A set bit represents a non-empty queue.
@@ -210,16 +210,94 @@ pub const PerCpu = struct {
 };
 
 pub const Average = struct {
-    load: usize,
+    // New threads are considered heavy until they prove themselves,
+    // this might allow for better balancing during bursts.
+    load: usize = pelt_load_avg_max,
     // Estimated load
-    est: usize,
+    est: usize = pelt_load_avg_max,
     // Amount of the period that has been accounted for
-    period_contrib: usize,
+    period_contrib: usize = 0,
     /// Timestamp (us) up to which history has been accounted.
-    last_update: r.Microseconds,
+    last_update: r.Microseconds = .init(0),
+};
+
+pub const Accounting = struct {
+    /// Timestamp (us) of the last accounting event.
+    stamp: u64 = 0,
+    /// us spent running / sleeping in the interactivity window.
+    run_time: u64 = 0,
+    sleep_time: u64 = 0,
+    /// %CPU window, run us contained in [window_start, stamp].
+    pct_run: u64 = 0,
+    pct_window_start: u64 = 0,
 };
 
 pub const percpu = ke.CpuLocal(PerCpu, undefined);
+
+var balance_timer: ke.Timer = undefined;
+var balance_dpc: ke.Dpc = .init(balance);
+
+// LCG values taken from FreeBSD.
+var lcg = std.Random.lcg.Wrapping(u32).init(0, 69069, 5);
+
+/// Initialize a CPU for use by the scheduler.
+fn init_cpu() linksection(r.init) void {
+    var cpu = percpu.local();
+
+    cpu.* = .{
+        .insidx = 0,
+        .runidx = 0,
+        .calendar_queue = .{
+            .status = 0,
+            .queues = undefined,
+        },
+        .realtime_queue = .{
+            .status = 0,
+            .queues = undefined,
+        },
+        .queues_lock = .init(),
+        .idle_queue = undefined,
+        .steal_work = false,
+        .load = .init(0),
+        .load_avg = .init(0),
+        .est_load_avg = .init(0),
+        .migratable = .init(0),
+        .current_thread_prio = .init(0),
+        .resched_dpc = .init(ki.sched.clock),
+        .resched_timer = undefined,
+        .start_timer = false,
+        .preemption_reason = .None,
+        .current_thread = null,
+        .idle_thread = null,
+        .next_thread = null,
+        .pick_offset = 0,
+    };
+
+    cpu.resched_timer.init();
+    cpu.idle_queue.init();
+
+    for (0..runqueues_n) |i| {
+        cpu.calendar_queue.queues[i].init();
+    }
+
+    for (0..runqueues_n) |i| {
+        cpu.realtime_queue.queues[i].init();
+    }
+}
+
+comptime {
+    _ = r.percpu_init_set.insert(&init_cpu);
+}
+
+/// Called on CPU 0 to initialize load balancing mechanisms.
+pub fn late_init() linksection(r.init) void {
+    balance_timer.init();
+    ke.timer.set(
+        &balance_timer,
+        .from(r.Milliseconds.init(balance_interval)),
+        .{ .dpc = &balance_dpc },
+    );
+}
 
 /// Apply `n` microseconds worth of decay to `val`.
 fn pelt_do_decay(val: u64, n: u64) u64 {
@@ -285,7 +363,8 @@ fn pelt_update(avg: *Average, runnable: bool) void {
         //     p-1                                                    p-1
         // p * Sum y^n, subtracting the first term (n=0) gives us p * Sum
         //     n=0                                                    n=1
-        const d2 = pelt_load_avg_max - pelt_do_decay(pelt_load_avg_max, decay_time) - pelt_scale;
+        const d2 = pelt_load_avg_max -
+            pelt_do_decay(pelt_load_avg_max, decay_time) - pelt_scale;
 
         // Get the partial period remainder.
         delta %= pelt_scale;
@@ -338,357 +417,162 @@ pub fn detach_load_avg(cpu: *PerCpu, td: *ke.Thread) void {
     _ = cpu.est_load_avg.fetchSub(td.avg.est, .monotonic);
 }
 
-/// Handle preemption.
-/// This is called in DPC dispatch when it notices `next_thread` is set.
-pub fn handle_preemption(cpu: *PerCpu) void {
-    cpu.queues_lock.acquire_no_ipl();
+const SpanKind = enum { Running, Sleeping, Queued };
 
-    const cur = cpu.current_thread.?;
+/// Account for a certain span of time.
+fn account(td: *ke.Thread, now_us: u64, kind: SpanKind) void {
+    const a = &td.acct;
+    const span = now_us - a.stamp;
 
-    const next = cpu.next_thread orelse {
-        cpu.queues_lock.release_no_ipl();
+    switch (kind) {
+        .Running => a.run_time += span,
+        .Sleeping => a.sleep_time += span,
+        .Queued => {},
+    }
+
+    if (span >= pct_window_target) {
+        // If an entire window passed since the last update, whatever
+        // knowledge we had beforehand is now worthless, just reset all the
+        // values knowing what the thread did during that time.
+        a.pct_run = if (kind == .Running) pct_window_target else 0;
+        a.pct_window_start = now_us - pct_window_target;
+        a.stamp = now_us;
         return;
+    }
+
+    if (now_us - a.pct_window_start >= pct_window_max) {
+        // The window went over its maximum length. After this update the
+        // window becomes [now - target, now], whose last `span` usecs are
+        // added below, so old history is rescaled to occupy only the remaining
+        // (target - span).
+        //
+        // Running threads have tiny spans (of the timeslice), which
+        // basically makes the below formula come out as an exponential decay
+        // of 10/11 per second.
+        // A sleeping thread sees its history drop linearly,
+        // approaching zero as the sleep approaches a full target window.
+        const len = a.stamp - a.pct_window_start;
+        a.pct_run = a.pct_run * (pct_window_target - span) / len;
+        a.pct_window_start = now_us - pct_window_target;
+    }
+
+    if (kind == .Running) a.pct_run += span;
+    a.stamp = now_us;
+}
+
+// Update recent history for a thread.
+fn clamp_time(td: *ke.Thread) void {
+    const max = 5 * std.time.us_per_s;
+    const sum = td.acct.run_time + td.acct.sleep_time;
+
+    if (sum < max) return;
+
+    if (sum > max * 2) {
+        // History is way out of range (>10s), reset it.
+        // Preserve the dominant side to avoid flipping interactivity
+        // classification.
+        if (td.acct.run_time > td.acct.sleep_time) {
+            td.acct.run_time = max;
+            td.acct.sleep_time = 1;
+        } else {
+            td.acct.sleep_time = max;
+            td.acct.run_time = 1;
+        }
+
+        return;
+    }
+
+    if (sum > ((max / 5) * 6)) {
+        // History is moderately out of range (>6s), halve both values.
+        // Keeps the sleep/run ratio intact while pulling the sum back in range.
+        td.acct.run_time /= 2;
+        td.acct.sleep_time /= 2;
+        return;
+    }
+
+    // History is slightly out of range (5s-6s), 20% decay.
+    // Gradually ages out old history without disturbing the ratio.
+    td.acct.run_time = (td.acct.run_time / 5) * 4;
+    td.acct.sleep_time = (td.acct.sleep_time / 5) * 4;
+}
+
+// Compute the interactivity score for a thread.
+fn interactive_score(td: *ke.Thread) usize {
+    var div: usize = undefined;
+    var score: usize = undefined;
+    const a = td.acct;
+
+    // Calculate the interactivity penalty.
+    if (a.sleep_time > a.run_time) {
+        div = @max(1, a.sleep_time / scaling_factor);
+        score = a.run_time / div;
+    } else if (a.run_time > a.sleep_time) {
+        div = @max(1, a.run_time / scaling_factor);
+        score = (scaling_factor + scaling_factor - (a.sleep_time / div));
+    } else if (a.run_time != 0) {
+        score = scaling_factor;
+    } else return 0;
+
+    // Add niceness values to the penalty, this makes it easier for threads with
+    // lower nice values (higher priority) to be considered interactive.
+    var signed_score: isize = @intCast(score);
+    signed_score += td.nice;
+    score = @intCast(@max(0, signed_score));
+
+    return score;
+}
+
+// Recompute the base priority for a thread from interactivity and nice.
+fn recompute_priority(td: *ke.Thread) void {
+
+    // Priority is computed only for time-shared (batch) thread based on
+    // interactivity and nice. If the thread is determined interactive, it is
+    // effectively promoted to real-time with a lower priority than actual
+    // real-time threads. If the thread is determined non-interactive,
+    // priority is calculated based on recent CPU usage and nice.
+    const score = interactive_score(td);
+
+    const base: u8 = if (score < interactivity_threshold)
+        // Choose a priority based on score, the lower the score,
+        // the higher the priority it will be.
+        // This is a simple formula I came up with that is probably good enough.
+        @intCast(@intFromEnum(ke.Thread.Priority.LowInteractive) +
+            ((interactivity_threshold - score) / 2))
+    else blk: {
+        // Thread is not interactive, compute priority from recent CPU usage.
+        // pct_run / len is the fraction of recent time (11s window) that the
+        // thread has spent running, we want to punish threads that got to run
+        // a lot and reward threads that got starved.
+        const len = @max(1, td.acct.stamp - td.acct.pct_window_start);
+        const cpu_range = ke.Thread.Priority.cpu_range;
+
+        const cpu_pri_off: u8 = @intCast(@min(
+            cpu_range - 1,
+            (td.acct.pct_run * (cpu_range - 1) + len / 2) / len,
+        ));
+
+        // nice offset: negative nice increases priority value,
+        // positive decreases it.
+        const nice_off: i16 = @as(i16, td.nice) + ke.Thread.Priority.nice_max;
+
+        const raw: i16 = @as(i16, @intFromEnum(ke.Thread.Priority.HighBatch)) -
+            @as(i16, cpu_pri_off) -
+            nice_off;
+
+        break :blk @intCast(std.math.clamp(
+            raw,
+            @intFromEnum(ke.Thread.Priority.LowBatch),
+            @intFromEnum(ke.Thread.Priority.HighBatch),
+        ));
     };
 
-    cpu.next_thread = null;
-    cpu.current_thread_prio.store(next.priority, .monotonic);
-
-    cpu.queues_lock.release_no_ipl();
-    cur.lock.acquire_no_ipl();
-
-    cur.switching.store(true, .monotonic);
-
-    if (cur != cpu.idle_thread and cur.state.load(.monotonic) != .Blocked) {
-        // Put it back in the queue.
-        cpu.queues_lock.acquire_no_ipl();
-        insert_in_queue(cpu, cur, cpu.preemption_reason == .HigherPriority);
-        cur.cpu = ke.cpu.current();
-        cpu.queues_lock.release_no_ipl();
-    }
-
-    while (next.switching.load(.monotonic) == true) {
-        std.atomic.spinLoopHint();
-    }
-
-    do_switch(cpu, cur, next);
-
-    // cur.lock dropped
+    td.base_priority = base;
+    td.priority = td.effective_priority();
 }
 
-/// Called every time slice in DPC context.
-pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
-    const cpu = percpu.local();
-    std.debug.assert(ki.ipl.current() == .Dispatch);
-
-    const curtd = cpu.current_thread orelse return;
-
-    curtd.lock.acquire_no_ipl();
-    defer curtd.lock.release_no_ipl();
-
-    cpu.queues_lock.acquire_no_ipl();
-    defer cpu.queues_lock.release_no_ipl();
-
-    // Advance the insert index every tick, while keeping a separation of 1 with runidx.
-    // This ensures fairness.
-    if (cpu.runidx == cpu.insidx) {
-        cpu.insidx = (cpu.insidx + 1) % runqueues_n;
-
-        if (cpu.calendar_queue.queues[cpu.runidx].is_empty()) {
-            // Ensure we don't point at an empty queue.
-            cpu.runidx = cpu.insidx;
-        }
-    }
-
-    if (curtd.base_priority_class() == .Batch) {
-        curtd.run_time += config.sched_timeslice;
-
-        clamp_time(curtd);
-        recompute_priority(curtd);
-        cpu.current_thread_prio.store(curtd.priority, .monotonic);
-    }
-
-    pelt_update_td(curtd, cpu, true);
-
-    if (cpu.next_thread != null) {
-        // Another thread was already selected for preemption.
-        return;
-    }
-
-    // Pick a new thread to run.
-    const newtd = select_thread(curtd, cpu, false);
-
-    // Ensure the timer gets reloaded.
-    cpu.start_timer = true;
-    cpu.next_thread = newtd;
-
-    if (newtd) |n| {
-        cpu.current_thread_prio.store(n.priority, .monotonic);
-    }
-}
-
-/// Enqueue a thread.
-pub fn enqueue(td: *ke.Thread) void {
-    const ipl = td.lock.acquire();
-    const cpu = pick_cpu(td);
-    enqueue_on_cpu(cpu, td);
-    td.lock.release(ipl);
-}
-
-/// Yield on the current CPU.
-pub fn yield() void {
-    const ipl = ke.ipl.raise(.Dispatch);
-    const td = percpu.local().current_thread.?;
-
-    td.lock.acquire_no_ipl();
-    td.switching.store(true, .monotonic);
-
-    const cpu = percpu.local();
-    if (td != cpu.idle_thread and td.state.load(.monotonic) == .Running) {
-        cpu.queues_lock.acquire_no_ipl();
-        insert_in_queue(cpu, td, false);
-        td.cpu = ke.cpu.current();
-        cpu.queues_lock.release_no_ipl();
-    }
-
-    yield_locked();
-
-    // td lock released
-    ke.ipl.lower(ipl);
-}
-
-/// Block the currently running thread.
-pub fn block() void {
-    const ipl = ke.ipl.raise(.Dispatch);
-    const td = percpu.local().current_thread.?;
-
-    td.lock.acquire_no_ipl();
-    block_locked(td);
-
-    // td lock released
-    ke.ipl.lower(ipl);
-}
-
-/// Block the currently running thread with its lock held.
-pub fn block_locked(curtd: *ke.Thread) void {
-    curtd.state.store(.Blocked, .monotonic);
-    curtd.sleep_start = ke.time.read_time().value;
-    curtd.runq = null;
-
-    detach_load_avg(percpu.local(), curtd);
-
-    // WMA with 75% old and 25% new load.
-    // This is used to estimate the thread's load
-    // when it'll wake back up.
-    const sample = curtd.avg.load;
-    if (sample >= curtd.avg.est) {
-        curtd.avg.est = sample;
-    } else {
-        curtd.avg.est = (3 * curtd.avg.est + sample) / 4;
-    }
-
-    yield_locked();
-}
-
-/// Yield the current CPU with the current thread already locked at Dispatch IPL.
-pub fn yield_locked() void {
-    const sched_cpu = percpu.local();
-
-    sched_cpu.queues_lock.acquire_no_ipl();
-
-    const cur = sched_cpu.current_thread;
-    var next = sched_cpu.next_thread;
-
-    if (next != null) {
-        sched_cpu.next_thread = null;
-    } else {
-        // Pick a new thread to run.
-        next = select_thread(null, sched_cpu, false);
-    }
-
-    if (next == null) {
-        // Nothing to run, go idle.
-        next = sched_cpu.idle_thread;
-        sched_cpu.steal_work = true;
-    }
-
-    if (next) |n| {
-        sched_cpu.current_thread_prio.store(n.priority, .monotonic);
-    }
-
-    sched_cpu.queues_lock.release_no_ipl();
-
-    if (next != null and cur.? != next.?) {
-        // Switch into the thread. Ensure it's not switching.
-        while (next.?.switching.load(.monotonic) == true) {
-            std.atomic.spinLoopHint();
-        }
-
-        do_switch(sched_cpu, cur.?, next.?);
-    } else {
-        // Ensure curthread is not marked as selected.
-        cur.?.state.store(.Running, .monotonic);
-        cur.?.switching.store(false, .monotonic);
-        cur.?.lock.release_no_ipl();
-    }
-
-    // cur lock dropped
-}
-
-pub fn unblock_locked(td: *ke.Thread) void {
-    std.debug.assert(td.lock.is_locked());
-    std.debug.assert(td.state.load(.monotonic) == .Blocked);
-
-    const delta = (ke.time.read_time().value - td.sleep_start) / std.time.ns_per_ms;
-
-    td.sleep_time += delta;
-
-    if (delta >= config.sched_timeslice and td.base_priority_class() == .Batch) {
-        // If we have slept for more than a tick, update interactivity.
-        clamp_time(td);
-        recompute_priority(td);
-    }
-
-    // Enqueue the thread
-    const cpu = pick_cpu(td);
-    enqueue_on_cpu(cpu, td);
-}
-
-/// Unblock a thread.
-pub fn unblock(td: *ke.Thread) void {
-    const ipl = td.lock.acquire();
-
-    unblock_locked(td);
-
-    td.lock.release(ipl);
-}
-
-pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
-    std.debug.assert(td.lock.is_locked());
-
-    const old_prio = td.priority;
-
-    const c = td.cpu orelse {
-        td.priority = new_prio;
-        return;
-    };
-
-    const cpu = percpu.remote(c);
-
-    cpu.queues_lock.acquire_no_ipl();
-    defer cpu.queues_lock.release_no_ipl();
-
-    td.priority = new_prio;
-
-    const state = td.state.load(.monotonic);
-
-    if (state == .Ready) {
-        // Remove it from its queue and add it back.
-        remove_from_queue(cpu, td);
-        insert_in_queue(cpu, td, false);
-        td.cpu = c;
-    }
-
-    if (state == .Running) {
-        std.debug.assert(td.last_cpu == c);
-
-        cpu.current_thread_prio.store(new_prio, .monotonic);
-
-        // On promotion, check if a thread was already selection for preemption,
-        // if we now preempt that thread, then insert it back into its queue.
-        if (new_prio > old_prio) {
-            if (cpu.next_thread) |n| {
-                if (should_prio_preempt(td, n.priority, false)) {
-                    cpu.next_thread = null;
-                    insert_in_queue(cpu, n, true);
-                    n.cpu = c;
-                    cpu.preemption_reason = .None;
-                }
-            }
-            return;
-        }
-
-        // Demotion: try to preempt the thread if possible.
-        if (cpu.next_thread != null) return;
-
-        // Only try picking from the realtime queue as batch threads don't preempt each other.
-        const next = pick_realtime_thread(cpu, new_prio + 1, false) orelse return;
-        _ = cpu.load.fetchSub(1, .monotonic);
-
-        if (!next.pinned) {
-            _ = cpu.migratable.fetchSub(1, .monotonic);
-        }
-
-        cpu.next_thread = next;
-        cpu.preemption_reason = .HigherPriority;
-        cpu.current_thread_prio.store(next.priority, .monotonic);
-
-        ki.ipl.set_softint_pending(c, .Dispatch);
-
-        if (c != ke.cpu.current()) {
-            pl.send_ipi(c);
-        }
-    }
-
-    if (state == .Selected or cpu.next_thread == td) {
-        // Thread is committed to run on but not running, update the hint.
-        cpu.current_thread_prio.store(new_prio, .monotonic);
-        return;
-    }
-
-    // XXX: Handle Selected threads so that they are placed properly?
-}
-
-/// Initialize a CPU for use by the scheduler.
-fn init_cpu() linksection(r.init) void {
-    var cpu = percpu.local();
-
-    cpu.* = .{
-        .insidx = 0,
-        .runidx = 0,
-        .calendar_queue = .{ .status = 0, .queues = undefined },
-        .realtime_queue = .{ .status = 0, .queues = undefined },
-        .queues_lock = .init(),
-        .idle_queue = undefined,
-        .steal_work = false,
-        .load = .init(0),
-        .load_avg = .init(0),
-        .est_load_avg = .init(0),
-        .migratable = .init(0),
-        .current_thread_prio = .init(0),
-        .resched_dpc = .init(ki.sched.clock),
-        .resched_timer = undefined,
-        .start_timer = false,
-        .preemption_reason = .None,
-        .current_thread = null,
-        .idle_thread = null,
-        .next_thread = null,
-        .pick_offset = 0,
-    };
-
-    cpu.resched_timer.init();
-    cpu.idle_queue.init();
-
-    for (0..runqueues_n) |i| {
-        cpu.calendar_queue.queues[i].init();
-    }
-
-    for (0..runqueues_n) |i| {
-        cpu.realtime_queue.queues[i].init();
-    }
-}
-
-comptime {
-    _ = r.percpu_init_set.insert(&init_cpu);
-}
-
-/// Called on CPU 0 to initialize load balancing mechanisms.
-pub fn late_init() linksection(r.init) void {
-    balance_timer.init();
-    ke.timer.set(
-        &balance_timer,
-        .from(r.Milliseconds.init(balance_interval)),
-        .{ .dpc = &balance_dpc },
-    );
+fn to_sched_prio(val: u8) u8 {
+    // We have 256 priorities, but 64 queues.
+    return val / 4;
 }
 
 fn calendar_queue_increment(cpu: *PerCpu) void {
@@ -700,15 +584,16 @@ fn calendar_queue_increment(cpu: *PerCpu) void {
     }
 }
 
-fn pick_realtime_thread(cpu: *PerCpu, minprio: u8, migrate: bool) ?*ke.Thread {
+fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, migrate: bool) ?*ke.Thread {
     std.debug.assert(cpu.queues_lock.is_locked());
 
     const runq = &cpu.realtime_queue;
+    const minprio = to_sched_prio(minimum_prio);
 
     if (runq.status == 0) return null;
 
     // Search higher priority queues first.
-    var i: usize = ke.Thread.Priority.max;
+    var i: usize = to_sched_prio(ke.Thread.Priority.max);
 
     qloop: while (i >= minprio and i > 0) : (i -= 1) {
         const bit = (@as(u64, 1) << @intCast(i));
@@ -723,7 +608,10 @@ fn pick_realtime_thread(cpu: *PerCpu, minprio: u8, migrate: bool) ?*ke.Thread {
         std.debug.assert(!curr_queue.is_empty());
 
         // Get the first thread of the queue.
-        var td: *ke.Thread = @fieldParentPtr("runq_link", curr_queue.first());
+        var td: *ke.Thread = @fieldParentPtr(
+            "runq_link",
+            curr_queue.first(),
+        );
 
         td.state.store(.Selected, .monotonic);
 
@@ -779,7 +667,10 @@ fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
         std.debug.assert(!curr_queue.is_empty());
 
         // Get the first thread of the queue.
-        var td: *ke.Thread = @fieldParentPtr("runq_link", curr_queue.first());
+        var td: *ke.Thread = @fieldParentPtr(
+            "runq_link",
+            curr_queue.first(),
+        );
 
         td.state.store(.Selected, .monotonic);
 
@@ -818,7 +709,10 @@ fn pick_idle_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
     if (cpu.idle_queue.is_empty()) return null;
 
     // Just get the first thread from the queue.
-    const td: *ke.Thread = @fieldParentPtr("runq_link", cpu.idle_queue.first());
+    const td: *ke.Thread = @fieldParentPtr(
+        "runq_link",
+        cpu.idle_queue.first(),
+    );
 
     if (migrate and td.pinned) {
         return null;
@@ -842,19 +736,26 @@ fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, preempted: bool) void {
 
     td.cpu = null;
 
+    const prio = to_sched_prio(td.priority);
+
     if (td.priority_class() == .Realtime or td.is_interactive()) {
         // Insert in realtime queue.
         cpu.realtime_queue.status |=
-            (@as(u64, 1) << @intCast(td.priority));
+            (@as(u64, 1) << @intCast(prio));
 
-        insert_in_list(&cpu.realtime_queue.queues[td.priority], &td.runq_link, preempted);
+        insert_in_list(
+            &cpu.realtime_queue.queues[prio],
+            &td.runq_link,
+            preempted,
+        );
         td.runq = &cpu.realtime_queue;
-        td.runq_idx = @intCast(td.priority);
-    } else if (td.priority_class() == .Batch) {
+        td.runq_idx = @intCast(prio);
+    } else if (td.priority_class() == .Timeshare) {
         // Insert in calendar queue.
         // The insertion index is determined by insidx and the the priority of the thread,
         // higher priority threads will be put closer to insidx, which ensures that they are ran more frequently.
-        var idx = (cpu.insidx + (ke.Thread.Priority.high_batch - td.priority)) % runqueues_n;
+        var idx = (cpu.insidx + (@intFromEnum(ke.Thread.Priority.HighBatch) -
+            td.priority)) % runqueues_n;
 
         if (preempted) {
             // Thread was preempted involuntarily, ensure it runs next.
@@ -901,123 +802,64 @@ fn remove_from_queue(cpu: *PerCpu, td: *ke.Thread) void {
             // Clear the bit.
             rq.status &= ~(@as(u64, 1) << @intCast(td.runq_idx));
 
-            if (td.priority_class() == .Batch) {
+            if (td.priority_class() == .Timeshare) {
                 calendar_queue_increment(cpu);
             }
         }
     }
 }
 
-// Update recent history for a thread.
-fn clamp_time(td: *ke.Thread) void {
-    const max = 5 * std.time.ms_per_s;
-    const sum = td.run_time + td.sleep_time;
-
-    if (sum < max) return;
-
-    if (sum > max * 2) {
-        // History is way out of range (>10s), reset it.
-        // Preserve the dominant side to avoid flipping interactivity classification.
-        if (td.run_time > td.sleep_time) {
-            td.run_time = max;
-            td.sleep_time = 1;
-        } else {
-            td.sleep_time = max;
-            td.run_time = 1;
+// Find a thread to preempt `cur` with.
+fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
+    // First try to pick from the realtime queues.
+    if (pick_realtime_thread(
+        cpu,
+        if (cur) |c| c.priority else 0,
+        migrate,
+    )) |td| {
+        _ = cpu.load.fetchSub(1, .monotonic);
+        if (!td.pinned) {
+            _ = cpu.migratable.fetchSub(1, .monotonic);
         }
-
-        return;
+        return td;
     }
 
-    if (sum > ((max / 5) * 6)) {
-        // History is moderately out of range (>6s), halve both values.
-        // Keeps the sleep/run ratio intact while pulling the sum back in range.
-        td.run_time /= 2;
-        td.sleep_time /= 2;
-        return;
+    // Nothing lower can preempt this thread.
+    if (cur != null and (cur.?.priority_class() == .Realtime or
+        cur.?.is_interactive()))
+    {
+        return null;
     }
 
-    // History is slightly out of range (5s-6s), 20% decay.
-    // Gradually ages out old history without disturbing the ratio.
-    td.run_time = (td.run_time / 5) * 4;
-    td.sleep_time = (td.sleep_time / 5) * 4;
+    // Then try picking a batch thread.
+    if (pick_batch_thread(cpu, migrate)) |td| {
+        _ = cpu.load.fetchSub(1, .monotonic);
+        if (!td.pinned) {
+            _ = cpu.migratable.fetchSub(1, .monotonic);
+        }
+        return td;
+    }
+
+    if (cur != null and cur.?.priority_class() == .Idle) {
+        // Idle threads don't preempt each other
+        return null;
+    }
+
+    // Finally try picking from the idle queue.
+    if (pick_idle_thread(cpu, migrate)) |td| {
+        _ = cpu.load.fetchSub(1, .monotonic);
+        if (!td.pinned) {
+            _ = cpu.migratable.fetchSub(1, .monotonic);
+        }
+        return td;
+    }
+
+    // Nothing to run.
+    return null;
 }
 
-// Compute the interactivity score for a thread.
-fn interactive_score(td: *ke.Thread) usize {
-    var div: usize = undefined;
-    var score: usize = undefined;
-
-    // Calculate the interactivity penalty.
-    if (td.sleep_time > td.run_time) {
-        div = @max(1, td.sleep_time / scaling_factor);
-        score = td.run_time / div;
-    } else if (td.run_time > td.sleep_time) {
-        div = @max(1, td.run_time / scaling_factor);
-        score = (scaling_factor + scaling_factor - (td.sleep_time / div));
-    } else if (td.run_time != 0) {
-        score = scaling_factor;
-    } else return 0;
-
-    // Add niceness values to the penalty, this makes it easier for threads with
-    // lower nice values (higher priority) to be considered interactive.
-    var signed_score: isize = @intCast(score);
-    signed_score += td.nice;
-    score = @intCast(@max(0, signed_score));
-
-    return score;
-}
-
-// Recompute the base priority for a thread from interactivity and nice.
-fn recompute_priority(td: *ke.Thread) void {
-
-    // Priority is computed only for time-shared (batch) thread based on
-    // interactivity and nice. If the thread is determined interactive, it is
-    // effectively promoted to real-time with a lower priority than actual
-    // real-time threads. If the thread is determined non-interactive,
-    // priority is calculated based on recent CPU usage and nice.
-    const score = interactive_score(td);
-
-    const base: u8 = if (score < interactivity_threshold)
-        // Choose a priority based on score, the lower the score,
-        // the higher the priority it will be.
-        // This is a simple formula I came up with that is probably good enough.
-        @intCast(ke.Thread.Priority.low_interactive + ((interactivity_threshold - score) / 2))
-    else blk: {
-        // Thread is not interactive, compute priority from recent CPU usage.
-        // cpu_pri_off is the fraction of the history window spent running,
-        // scaled to [0, batch_range). A thread that spent all its time running
-        // gets cpu_pri_off = batch_range - 1 (lowest priority).
-        // A thread that barely ran gets cpu_pri_off = 0 (highest batch priority).
-        // This is a pretty straightforward formula, which /should/ be good enough.
-        const cpu_range = ke.Thread.Priority.batch_range;
-        const window = if (td.run_time + td.sleep_time == 0) @as(u64, 1) else td.run_time + td.sleep_time;
-        const cpu_pri_off: u8 = @intCast((td.run_time * (cpu_range - 1)) / window);
-
-        // nice offset: negative nice increases priority value, positive decreases it.
-        // Clamped to half the range to avoid pushing priority out of bounds before clamping.
-        const nice_off = std.math.clamp(
-            -@as(i32, td.nice),
-            -@as(i32, cpu_range / 2),
-            @as(i32, cpu_range / 2),
-        );
-
-        const raw = @as(i32, ke.Thread.Priority.high_batch) -
-            @as(i32, cpu_pri_off) +
-            nice_off;
-
-        break :blk @intCast(std.math.clamp(
-            raw,
-            ke.Thread.Priority.low_batch,
-            ke.Thread.Priority.high_batch,
-        ));
-    };
-
-    td.base_priority = base;
-    td.priority = td.effective_priority();
-}
-
-// Return whether or not a thread with given priority and interactivity should get preempted by `td`.
+// Return whether or not a thread with given priority and interactivity should
+//  get preempted by `td`.
 fn should_prio_preempt(td: *ke.Thread, other_prio: u8, remote: bool) bool {
     const class = ke.Thread.Priority.class_from_prio(other_prio);
 
@@ -1031,14 +873,17 @@ fn should_prio_preempt(td: *ke.Thread, other_prio: u8, remote: bool) bool {
         return true;
     }
 
-    if (class == .Batch and td.is_interactive() and other_prio < ke.Thread.Priority.low_interactive and remote) {
-        // Interactive threads always preempt batch non-interactive ones on remote CPUs.
+    if (class == .Timeshare and td.is_interactive() and
+        other_prio < @intFromEnum(ke.Thread.Priority.LowInteractive) and remote)
+    {
+        // Interactive threads always preempt batch non-interactive ones
+        // on remote CPUs.
         return true;
     }
 
-    // Preempt if the priority exceeds the preemption threshold (i.e the thread is real-time)
-    // or if the thread is interactive.
-    // Interactive threads may still preempt each other based on interactivity.
+    // Preempt if the priority exceeds the preemption threshold or if the thread
+    // is interactive. Interactive threads may still preempt each other based on
+    // interactivity.
     if ((td.priority >= preempt_threshold or td.is_interactive())) {
         return true;
     }
@@ -1060,6 +905,75 @@ fn should_preempt_cpu(td: *ke.Thread, cpu: *PerCpu, remote: bool) bool {
     return should_prio_preempt(td, prio, remote);
 }
 
+// Find a suitable CPU to run the thread.
+fn pick_cpu(td: *ke.Thread, slept: u64) u32 {
+    // CPU selection policy in order:
+    // 1. Pick the last CPU the thread ran on if it would run immediately or if it's pinned.
+    // 2. Pick the least loaded CPU on which the thread can run immediately.
+    // 3. Pick the least loaded CPU overall.
+
+    const curcpu = ke.cpu.current();
+
+    if (td.last_cpu) |cpu| {
+        // If we haven't been on this CPU in the last second, don't bother.
+        const ran_recently = slept <= std.time.us_per_s;
+        const sched_cpu = percpu.remote(cpu);
+
+        // If we can preempt and have ran recently on this CPU, run on it.
+        if ((should_preempt_cpu(td, sched_cpu, cpu != curcpu) and
+            ran_recently) or td.pinned)
+            return cpu;
+    }
+
+    // Check all CPUs, keeping track of the least loaded one overall and the
+    // least loaded preemptible one.
+    // We try to pick the CPU on which we can run immediately, but if there is
+    // a tie we use the average load to break it.
+
+    const local = percpu.local();
+    local.pick_offset +%= 1;
+
+    var least: ?u32 = null;
+    var least_load: usize = 0;
+    var least_preempt: ?u32 = null;
+    var least_preempt_load: usize = 0;
+    var least_preempt_depth: usize = 0;
+    var least_depth: usize = 0;
+
+    for (0..ke.ncpus) |n| {
+        const i = (local.pick_offset + n) % ke.ncpus;
+        const cpu: u32 = @truncate(i);
+        const data = percpu.remote(cpu);
+        const depth = data.load.load(.monotonic);
+        const avg = @max(
+            data.est_load_avg.load(.monotonic),
+            data.load_avg.load(.monotonic),
+        );
+
+        if (least == null or depth < least_depth or
+            (depth == least_depth and avg < least_load))
+        {
+            least = cpu;
+            least_depth = depth;
+            least_load = avg;
+        }
+
+        if (should_preempt_cpu(td, data, i != curcpu)) {
+            if (least_preempt == null or depth < least_preempt_depth or
+                (depth == least_preempt_depth and avg < least_preempt_load))
+            {
+                least_preempt = cpu;
+                least_preempt_depth = depth;
+                least_preempt_load = avg;
+            }
+        }
+    }
+
+    // If we found a preemptible CPU, pick that one.
+    // Otherwise pick the least loaded one.
+    return least_preempt orelse least.?;
+}
+
 // Enqueue a thread on a CPU.
 fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
     std.debug.assert(td.lock.is_locked());
@@ -1071,7 +985,9 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
 
     attach_load_avg(cpu, td);
 
-    if (cpu.current_thread != null and should_preempt_cpu(td, cpu, c != ke.cpu.current())) {
+    if (cpu.current_thread != null and
+        should_preempt_cpu(td, cpu, c != ke.cpu.current()))
+    {
         // We can preempt the current thread, first check whether or not there
         // is already a next thread selected, and if we can preempt it.
 
@@ -1124,131 +1040,347 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
     // queues_lock dropped
 }
 
-// Find a suitable CPU to run the thread.
-fn pick_cpu(td: *ke.Thread) u32 {
-    // CPU selection policy in order:
-    // 1. Pick the last CPU the thread ran on if it would run immediately or if it's pinned.
-    // 2. Pick the least loaded CPU on which the thread can run immediately.
-    // 3. Pick the least loaded CPU overall.
-
-    const curcpu = ke.cpu.current();
-
-    if (td.last_cpu) |cpu| {
-        var ran_recently = true;
-
-        if (td.sleep_start != 0) {
-            const delta = ke.time.read_time().value - td.sleep_start;
-
-            // If we haven't been on this CPU in the last second, don't bother.
-            if (delta > std.time.ns_per_s) {
-                ran_recently = false;
-            }
-
-            td.sleep_start = 0;
-        }
-
-        const sched_cpu = percpu.remote(cpu);
-
-        // If we can preempt and have ran recently on this CPU, run on it.
-        if ((should_preempt_cpu(td, sched_cpu, cpu != curcpu) and ran_recently) or td.pinned)
-            return cpu;
-    }
-
-    // Check all CPUs, keeping track of the least loaded one overall and the
-    // least loaded preemptible one.
-    // We try to pick the CPU on which we can run immediately, but if there is
-    // a tie we use the average load to break it.
-
-    const local = percpu.local();
-    local.pick_offset +%= 1;
-
-    var least: ?u32 = null;
-    var least_load: usize = 0;
-    var least_preempt: ?u32 = null;
-    var least_preempt_load: usize = 0;
-    var least_preempt_depth: usize = 0;
-    var least_depth: usize = 0;
-
-    for (0..ke.ncpus) |n| {
-        const i = (local.pick_offset + n) % ke.ncpus;
-        const cpu: u32 = @truncate(i);
-        const data = percpu.remote(cpu);
-        const depth = data.load.load(.monotonic);
-        const avg = @max(data.est_load_avg.load(.monotonic), data.load_avg.load(.monotonic));
-
-        if (least == null or depth < least_depth or
-            (depth == least_depth and avg < least_load))
-        {
-            least = cpu;
-            least_depth = depth;
-            least_load = avg;
-        }
-
-        if (should_preempt_cpu(td, data, i != curcpu)) {
-            if (least_preempt == null or depth < least_preempt_depth or (depth == least_preempt_depth and avg < least_preempt_load)) {
-                least_preempt = cpu;
-                least_preempt_depth = depth;
-                least_preempt_load = avg;
-            }
-        }
-    }
-
-    // If we found a preemptible CPU, pick that one. Otherwise pick the least loaded one.
-    return least_preempt orelse least.?;
-}
-
-// Find a thread to preempt `cur` with.
-fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
-    // First try to pick from the realtime queues.
-    if (pick_realtime_thread(cpu, if (cur) |c| c.priority else 0, migrate)) |td| {
-        _ = cpu.load.fetchSub(1, .monotonic);
-        if (!td.pinned) {
-            _ = cpu.migratable.fetchSub(1, .monotonic);
-        }
-        return td;
-    }
-
-    // Nothing lower can preempt this thread.
-    if (cur != null and (cur.?.priority_class() == .Realtime or cur.?.is_interactive())) {
-        return null;
-    }
-
-    // Then try picking a batch thread.
-    if (pick_batch_thread(cpu, migrate)) |td| {
-        _ = cpu.load.fetchSub(1, .monotonic);
-        if (!td.pinned) {
-            _ = cpu.migratable.fetchSub(1, .monotonic);
-        }
-        return td;
-    }
-
-    if (cur != null and cur.?.priority_class() == .Idle) {
-        // Idle threads don't preempt each other
-        return null;
-    }
-
-    // Finally try picking from the idle queue.
-    if (pick_idle_thread(cpu, migrate)) |td| {
-        _ = cpu.load.fetchSub(1, .monotonic);
-        if (!td.pinned) {
-            _ = cpu.migratable.fetchSub(1, .monotonic);
-        }
-        return td;
-    }
-
-    // Nothing to run.
-    return null;
-}
-
 // Execute a context switch on `cpu`.
 fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
     cpu.current_thread = next;
     next.last_cpu = ke.cpu.current();
 
+    const time = ke.time.read_time();
+    const now_us = time.to(r.Microseconds).value;
+
+    if (tracks_load_avg(cur)) {
+        account(cur, now_us, .Running);
+    }
+
+    if (tracks_load_avg(next)) {
+        account(next, now_us, .Queued);
+    }
+
     next.state.store(.Running, .monotonic);
 
     // Do machine-dependent switch.
     cur.context.switch_to(&next.context);
+}
+
+/// Handle preemption.
+/// This is called in DPC dispatch when it notices `next_thread` is set.
+pub fn handle_preemption(cpu: *PerCpu) void {
+    cpu.queues_lock.acquire_no_ipl();
+
+    const cur = cpu.current_thread.?;
+
+    const next = cpu.next_thread orelse {
+        cpu.queues_lock.release_no_ipl();
+        return;
+    };
+
+    cpu.next_thread = null;
+    cpu.current_thread_prio.store(next.priority, .monotonic);
+
+    cpu.queues_lock.release_no_ipl();
+    cur.lock.acquire_no_ipl();
+
+    cur.switching.store(true, .monotonic);
+
+    if (cur != cpu.idle_thread and cur.state.load(.monotonic) != .Blocked) {
+        // Put it back in the queue.
+        cpu.queues_lock.acquire_no_ipl();
+        insert_in_queue(
+            cpu,
+            cur,
+            cpu.preemption_reason == .HigherPriority,
+        );
+        cur.cpu = ke.cpu.current();
+        cpu.queues_lock.release_no_ipl();
+    }
+
+    while (next.switching.load(.monotonic) == true) {
+        std.atomic.spinLoopHint();
+    }
+
+    do_switch(cpu, cur, next);
+
+    // cur.lock dropped
+}
+
+/// Called every time slice in DPC context.
+pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
+    const cpu = percpu.local();
+    std.debug.assert(ki.ipl.current() == .Dispatch);
+
+    const curtd = cpu.current_thread orelse return;
+
+    const now = ke.time.read_time();
+    const now_us = now.to(r.Microseconds).value;
+
+    curtd.lock.acquire_no_ipl();
+    defer curtd.lock.release_no_ipl();
+
+    cpu.queues_lock.acquire_no_ipl();
+    defer cpu.queues_lock.release_no_ipl();
+
+    // Advance the insert index every tick, while keeping a separation of 1 with runidx.
+    // This ensures fairness.
+    if (cpu.runidx == cpu.insidx) {
+        cpu.insidx = (cpu.insidx + 1) % runqueues_n;
+
+        if (cpu.calendar_queue.queues[cpu.runidx].is_empty()) {
+            // Ensure we don't point at an empty queue.
+            cpu.runidx = cpu.insidx;
+        }
+    }
+
+    if (tracks_load_avg(curtd)) {
+        account(curtd, now_us, .Running);
+    }
+
+    if (curtd.base_priority_class() == .Timeshare) {
+        clamp_time(curtd);
+        recompute_priority(curtd);
+        cpu.current_thread_prio.store(curtd.priority, .monotonic);
+    }
+
+    pelt_update_td(curtd, cpu, true);
+
+    if (cpu.next_thread != null) {
+        // Another thread was already selected for preemption.
+        return;
+    }
+
+    // Pick a new thread to run.
+    const newtd = select_thread(curtd, cpu, false);
+
+    // Ensure the timer gets reloaded.
+    cpu.start_timer = true;
+    cpu.next_thread = newtd;
+
+    if (newtd) |n| {
+        cpu.current_thread_prio.store(n.priority, .monotonic);
+    }
+}
+
+/// Enqueue a thread.
+pub fn enqueue(td: *ke.Thread) void {
+    const ipl = td.lock.acquire();
+    const cpu = pick_cpu(td, 0);
+    enqueue_on_cpu(cpu, td);
+    td.lock.release(ipl);
+}
+
+/// Yield on the current CPU.
+pub fn yield() void {
+    const ipl = ke.ipl.raise(.Dispatch);
+    const td = percpu.local().current_thread.?;
+
+    td.lock.acquire_no_ipl();
+    td.switching.store(true, .monotonic);
+
+    const cpu = percpu.local();
+    if (td != cpu.idle_thread and td.state.load(.monotonic) == .Running) {
+        cpu.queues_lock.acquire_no_ipl();
+        insert_in_queue(cpu, td, false);
+        td.cpu = ke.cpu.current();
+        cpu.queues_lock.release_no_ipl();
+    }
+
+    yield_locked();
+
+    // td lock released
+    ke.ipl.lower(ipl);
+}
+
+/// Yield the current CPU with the current thread already locked at Dispatch IPL.
+pub fn yield_locked() void {
+    const sched_cpu = percpu.local();
+
+    sched_cpu.queues_lock.acquire_no_ipl();
+
+    const cur = sched_cpu.current_thread;
+    var next = sched_cpu.next_thread;
+
+    if (next != null) {
+        sched_cpu.next_thread = null;
+    } else {
+        // Pick a new thread to run.
+        next = select_thread(null, sched_cpu, false);
+    }
+
+    if (next == null) {
+        // Nothing to run, go idle.
+        next = sched_cpu.idle_thread;
+        sched_cpu.steal_work = true;
+    }
+
+    if (next) |n| {
+        sched_cpu.current_thread_prio.store(n.priority, .monotonic);
+    }
+
+    sched_cpu.queues_lock.release_no_ipl();
+
+    if (next != null and cur.? != next.?) {
+        // Switch into the thread. Ensure it's not switching.
+        while (next.?.switching.load(.monotonic) == true) {
+            std.atomic.spinLoopHint();
+        }
+
+        do_switch(sched_cpu, cur.?, next.?);
+    } else {
+        // Ensure curthread is not marked as selected.
+        cur.?.state.store(.Running, .monotonic);
+        cur.?.switching.store(false, .monotonic);
+        cur.?.lock.release_no_ipl();
+    }
+
+    // cur lock dropped
+}
+
+/// Block the currently running thread.
+pub fn block() void {
+    const ipl = ke.ipl.raise(.Dispatch);
+    const td = percpu.local().current_thread.?;
+
+    td.lock.acquire_no_ipl();
+    block_locked(td);
+
+    // td lock released
+    ke.ipl.lower(ipl);
+}
+
+/// Block the currently running thread with its lock held.
+pub fn block_locked(curtd: *ke.Thread) void {
+    curtd.state.store(.Blocked, .monotonic);
+    curtd.runq = null;
+
+    detach_load_avg(percpu.local(), curtd);
+
+    // EWMA with 75% old and 25% new load.
+    // This is used to estimate the thread's load
+    // when it'll wake back up.
+    const sample = curtd.avg.load;
+    if (sample >= curtd.avg.est) {
+        curtd.avg.est = sample;
+    } else {
+        curtd.avg.est = (3 * curtd.avg.est + sample) / 4;
+    }
+
+    yield_locked();
+}
+
+/// Unblock a thread.
+pub fn unblock(td: *ke.Thread) void {
+    const ipl = td.lock.acquire();
+
+    unblock_locked(td);
+
+    td.lock.release(ipl);
+}
+
+pub fn unblock_locked(td: *ke.Thread) void {
+    std.debug.assert(td.lock.is_locked());
+    std.debug.assert(td.state.load(.monotonic) == .Blocked);
+
+    const now = ke.time.read_time();
+
+    const now_us = now.to(r.Microseconds).value;
+    const delta = (now_us - td.acct.stamp);
+
+    if (tracks_load_avg(td)) {
+        account(td, now_us, .Sleeping);
+    }
+
+    if (delta >= config.sched_timeslice * std.time.us_per_ms and
+        td.base_priority_class() == .Timeshare)
+    {
+        // If we have slept for more than a tick, update interactivity.
+        clamp_time(td);
+        recompute_priority(td);
+    }
+
+    // Enqueue the thread
+    const cpu = pick_cpu(td, delta);
+    enqueue_on_cpu(cpu, td);
+}
+
+pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
+    std.debug.assert(td.lock.is_locked());
+
+    const old_prio = td.priority;
+
+    const c = td.cpu orelse {
+        td.priority = new_prio;
+        return;
+    };
+
+    const cpu = percpu.remote(c);
+
+    cpu.queues_lock.acquire_no_ipl();
+    defer cpu.queues_lock.release_no_ipl();
+
+    td.priority = new_prio;
+
+    const state = td.state.load(.monotonic);
+
+    if (state == .Ready) {
+        // Remove it from its queue and add it back.
+        remove_from_queue(cpu, td);
+        insert_in_queue(cpu, td, false);
+        td.cpu = c;
+    }
+
+    if (state == .Running) {
+        std.debug.assert(td.last_cpu == c);
+
+        cpu.current_thread_prio.store(new_prio, .monotonic);
+
+        // On promotion, check if a thread was already selection for preemption,
+        // if we now preempt that thread, then insert it back into its queue.
+        if (new_prio > old_prio) {
+            if (cpu.next_thread) |n| {
+                if (should_prio_preempt(td, n.priority, false)) {
+                    cpu.next_thread = null;
+                    insert_in_queue(cpu, n, true);
+                    n.cpu = c;
+                    cpu.preemption_reason = .None;
+                }
+            }
+            return;
+        }
+
+        // Demotion: try to preempt the thread if possible.
+        if (cpu.next_thread != null) return;
+
+        // Only try picking from the realtime queue as batch threads
+        // don't preempt each other.
+        const next = pick_realtime_thread(
+            cpu,
+            new_prio + 1,
+            false,
+        ) orelse return;
+
+        _ = cpu.load.fetchSub(1, .monotonic);
+
+        if (!next.pinned) {
+            _ = cpu.migratable.fetchSub(1, .monotonic);
+        }
+
+        cpu.next_thread = next;
+        cpu.preemption_reason = .HigherPriority;
+        cpu.current_thread_prio.store(next.priority, .monotonic);
+
+        ki.ipl.set_softint_pending(c, .Dispatch);
+
+        if (c != ke.cpu.current()) {
+            pl.send_ipi(c);
+        }
+    }
+
+    if (state == .Selected or cpu.next_thread == td) {
+        // Thread is committed to run on but not running, update the hint.
+        cpu.current_thread_prio.store(new_prio, .monotonic);
+        return;
+    }
+
+    // XXX: Handle Selected threads so that they are placed properly?
 }
 
 fn find_most_loaded(exclude: ?*ke.CpuMask, steal: bool) ?u32 {
@@ -1274,8 +1406,14 @@ fn find_most_loaded(exclude: ?*ke.CpuMask, steal: bool) ?u32 {
         // to break ties only, otherwise rely on thread count.
         // Load balancing relies solely on the load average to try
         // to relieve longer-term CPU pressure.
-        const load_avg = @max(cpu.est_load_avg.load(.monotonic), cpu.load_avg.load(.monotonic));
-        const load = if (steal) cpu.migratable.load(.monotonic) else load_avg;
+        const load_avg = @max(
+            cpu.est_load_avg.load(.monotonic),
+            cpu.load_avg.load(.monotonic),
+        );
+        const load = if (steal)
+            cpu.migratable.load(.monotonic)
+        else
+            load_avg;
 
         if (most == null) {
             most = @truncate(i);
@@ -1309,7 +1447,10 @@ fn find_least_loaded(exclude: ?*ke.CpuMask) ?u32 {
         }
 
         const cpu = percpu.remote(@truncate(i));
-        const load = @max(cpu.est_load_avg.load(.monotonic), cpu.load_avg.load(.monotonic));
+        const load = @max(
+            cpu.est_load_avg.load(.monotonic),
+            cpu.load_avg.load(.monotonic),
+        );
 
         if (least == null) {
             least = @truncate(i);
@@ -1363,6 +1504,82 @@ fn steal_work(cpu: u32) ?*ke.Thread {
     return null;
 }
 
+/// Called every second to balance work between CPUs on CPU0.
+/// Takes a thread from the most loaded CPU and puts it on the least loaded one.
+fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
+    var high_mask = ke.CpuMask.init(false);
+    var low_mask: ke.CpuMask = undefined;
+
+    while (true) {
+        const high = find_most_loaded(&high_mask, false);
+
+        if (high == null or
+            percpu.remote(high.?).migratable.load(.monotonic) == 0)
+        {
+            // No highest loaded CPU.
+            break;
+        }
+
+        // Don't steal from this CPU again.
+        high_mask.set(high.?);
+        low_mask = high_mask;
+
+        if (high_mask.is_all(true)) {
+            // All CPUs are masked, nothing to steal.
+            break;
+        }
+
+        const low = find_least_loaded(&low_mask);
+
+        if (low == null) {
+            // No lowest loaded CPU.
+            break;
+        }
+
+        const high_cpu = percpu.remote(high.?);
+        const low_cpu = percpu.remote(low.?);
+
+        const high_avg = @max(
+            high_cpu.load_avg.load(.monotonic),
+            high_cpu.est_load_avg.load(.monotonic),
+        );
+        const low_avg = @max(
+            low_cpu.load_avg.load(.monotonic),
+            low_cpu.est_load_avg.load(.monotonic),
+        );
+
+        if (high_avg -| low_avg < pelt_load_avg_max / 2) {
+            // Only balance when the imbalance is high.
+            break;
+        }
+
+        // Steal a thread from the high CPU and put it on the low CPU.
+        const sched_high = percpu.remote(high.?);
+        const td = steal_thread_from_cpu(sched_high, null);
+
+        if (td) |thread| {
+            thread.lock.acquire_no_ipl();
+
+            enqueue_on_cpu(low.?, thread);
+            thread.lock.release_no_ipl();
+        }
+
+        // Don't shuffle threads around.
+        high_mask.set(low.?);
+    }
+
+    const offset = lcg.next() % balance_interval;
+    const ms = (balance_interval) + offset;
+
+    ke.timer.set(
+        &balance_timer,
+        .from(r.Milliseconds.init(ms)),
+        .{
+            .dpc = &balance_dpc,
+        },
+    );
+}
+
 /// Idle loop for a CPU. Must be set up in the idle thread.
 pub fn idle(_: ?*anyopaque) noreturn {
     const cpu = percpu.local();
@@ -1370,7 +1587,11 @@ pub fn idle(_: ?*anyopaque) noreturn {
 
     while (true) {
         // Racy but only a hint anyway
-        const next = @atomicLoad(?*ke.Thread, &cpu.next_thread, .monotonic);
+        const next = @atomicLoad(
+            ?*ke.Thread,
+            &cpu.next_thread,
+            .monotonic,
+        );
 
         if (cpu.load.load(.monotonic) != 0 or next != null) {
             ke.sched.yield();
@@ -1400,66 +1621,4 @@ pub fn idle(_: ?*anyopaque) noreturn {
 
         std.atomic.spinLoopHint();
     }
-}
-
-/// Called every second to balance work between CPUs on CPU0.
-/// Takes a thread from the most loaded CPU and puts it on the least loaded one.
-fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
-    var high_mask = ke.CpuMask.init(false);
-    var low_mask: ke.CpuMask = undefined;
-
-    while (true) {
-        const high = find_most_loaded(&high_mask, false);
-
-        if (high == null or percpu.remote(high.?).migratable.load(.monotonic) == 0) {
-            // No highest loaded CPU.
-            break;
-        }
-
-        // Don't steal from this CPU again.
-        high_mask.set(high.?);
-        low_mask = high_mask;
-
-        if (high_mask.is_all(true)) {
-            // All CPUs are masked, nothing to steal.
-            break;
-        }
-
-        const low = find_least_loaded(&low_mask);
-
-        if (low == null) {
-            // No lowest loaded CPU.
-            break;
-        }
-
-        const high_cpu = percpu.remote(high.?);
-        const low_cpu = percpu.remote(low.?);
-
-        const high_avg = @max(high_cpu.load_avg.load(.monotonic), high_cpu.est_load_avg.load(.monotonic));
-        const low_avg = @max(low_cpu.load_avg.load(.monotonic), low_cpu.est_load_avg.load(.monotonic));
-
-        if (high_avg -| low_avg < pelt_load_avg_max / 2) {
-            // Only balance when the imbalance is high.
-            break;
-        }
-
-        // Steal a thread from the high CPU and put it on the low CPU.
-        const sched_high = percpu.remote(high.?);
-        const td = steal_thread_from_cpu(sched_high, null);
-
-        if (td) |thread| {
-            thread.lock.acquire_no_ipl();
-
-            enqueue_on_cpu(low.?, thread);
-            thread.lock.release_no_ipl();
-        }
-
-        // Don't shuffle threads around.
-        high_mask.set(low.?);
-    }
-
-    const offset = lcg.next() % balance_interval;
-    const ms = (balance_interval) + offset;
-
-    ke.timer.set(&balance_timer, .from(r.Milliseconds.init(ms)), .{ .dpc = &balance_dpc });
 }

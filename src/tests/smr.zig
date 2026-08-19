@@ -135,7 +135,7 @@ fn poller(_: ?*anyopaque) void {
 }
 
 fn spawn(entry: *const fn (?*anyopaque) void, id: usize) void {
-    const t = ps.thread.create_kernel(ke.Thread.Priority.default, entry, @ptrFromInt(id + 1)) catch @panic("oom");
+    const t = ps.thread.create_kernel(.Default, entry, @ptrFromInt(id + 1)) catch @panic("oom");
     ke.sched.enqueue(&t.kern);
 }
 

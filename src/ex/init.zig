@@ -26,7 +26,7 @@ pub fn init() void {
         if (rtl.cmdline.get_string(cline, "test")) |tst| {
             // Run a test if specified.
             if (r.tests.tests.get(tst)) |func| {
-                const t = ps.thread.create_kernel(ke.Thread.Priority.default, func, r.boot_info) catch @panic("oom");
+                const t = ps.thread.create_kernel(.Default, func, r.boot_info) catch @panic("oom");
                 ke.sched.enqueue(&t.kern);
             } else {
                 std.log.info("invalid test: \"{s}\"", .{tst});
@@ -35,6 +35,6 @@ pub fn init() void {
     }
 
     if (r.boot_info.framebuffer != null) {
-        //   fbconsole.init(boot_info);
+        //        fbconsole.init(r.boot_info);
     }
 }

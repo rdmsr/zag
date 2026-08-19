@@ -105,7 +105,7 @@ fn chain_high(_: ?*anyopaque) void {
 }
 
 fn spawn(prio: u8, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) *ps.Thread {
-    const t = ps.thread.create_kernel(prio, entry, arg) catch @panic("oom");
+    const t = ps.thread.create_kernel(@enumFromInt(prio), entry, arg) catch @panic("oom");
     ke.sched.enqueue(&t.kern);
     return t;
 }
@@ -217,7 +217,7 @@ pub fn start(_: ?*anyopaque) void {
         const prio: u8 = @intCast(2 + (i * 5) % 29);
         stress_prio[i] = prio;
 
-        const t = ps.thread.create_kernel(prio, &stress, @ptrFromInt(i + 1)) catch @panic("oom");
+        const t = ps.thread.create_kernel(@enumFromInt(prio), &stress, @ptrFromInt(i + 1)) catch @panic("oom");
         stress_tds[i] = t;
         ke.sched.enqueue(&t.kern);
     }
