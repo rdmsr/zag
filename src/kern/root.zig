@@ -21,6 +21,7 @@ pub const Queue = p.queue.Queue;
 pub const Mutex = p.mutex.Mutex;
 pub const ShootdownState = p.shootdown.ShootdownState;
 pub const Tunable = p.tunable.Tunable;
+pub const Priority = p.thread.Priority;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;

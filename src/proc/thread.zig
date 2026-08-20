@@ -56,7 +56,7 @@ pub fn init() void {
 /// - `entry`: entry point.
 /// - `arg`: argument passed to `entry`.
 pub fn create_kernel(
-    prio: ke.Thread.Priority,
+    prio: ke.Priority,
     entry: *const fn (arg: ?*anyopaque) void,
     arg: ?*anyopaque,
 ) !*Thread {
