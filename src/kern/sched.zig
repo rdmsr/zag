@@ -104,7 +104,7 @@ const pl = r.pl;
 const runqueues_n = 64;
 const interactivity_threshold = 30;
 const scaling_factor = 50;
-const preempt_threshold = @intFromEnum(ke.Thread.Priority.LowRealtime);
+const preempt_threshold = @intFromEnum(ke.Priority.LowRealtime);
 const balance_interval = @as(u64, config.sched_balance_interval);
 const steal_threshold = 1;
 const pct_window_target = 10 * std.time.us_per_s;
@@ -536,7 +536,7 @@ fn recompute_priority(td: *ke.Thread) void {
         // Choose a priority based on score, the lower the score,
         // the higher the priority it will be.
         // This is a simple formula I came up with that is probably good enough.
-        @intCast(@intFromEnum(ke.Thread.Priority.LowInteractive) +
+        @intCast(@intFromEnum(ke.Priority.LowInteractive) +
             ((interactivity_threshold - score) / 2))
     else blk: {
         // Thread is not interactive, compute priority from recent CPU usage.
@@ -544,7 +544,7 @@ fn recompute_priority(td: *ke.Thread) void {
         // thread has spent running, we want to punish threads that got to run
         // a lot and reward threads that got starved.
         const len = @max(1, td.acct.stamp - td.acct.pct_window_start);
-        const cpu_range = ke.Thread.Priority.cpu_range;
+        const cpu_range = ke.Priority.cpu_range;
 
         const cpu_pri_off: u8 = @intCast(@min(
             cpu_range - 1,
@@ -553,16 +553,16 @@ fn recompute_priority(td: *ke.Thread) void {
 
         // nice offset: negative nice increases priority value,
         // positive decreases it.
-        const nice_off: i16 = @as(i16, td.nice) + ke.Thread.Priority.nice_max;
+        const nice_off: i16 = @as(i16, td.nice) + ke.Priority.nice_max;
 
-        const raw: i16 = @as(i16, @intFromEnum(ke.Thread.Priority.HighBatch)) -
+        const raw: i16 = @as(i16, @intFromEnum(ke.Priority.HighBatch)) -
             @as(i16, cpu_pri_off) -
             nice_off;
 
         break :blk @intCast(std.math.clamp(
             raw,
-            @intFromEnum(ke.Thread.Priority.LowBatch),
-            @intFromEnum(ke.Thread.Priority.HighBatch),
+            @intFromEnum(ke.Priority.LowBatch),
+            @intFromEnum(ke.Priority.HighBatch),
         ));
     };
 
@@ -593,7 +593,7 @@ fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, migrate: bool) ?*ke.Thre
     if (runq.status == 0) return null;
 
     // Search higher priority queues first.
-    var i: usize = to_sched_prio(ke.Thread.Priority.max);
+    var i: usize = to_sched_prio(ke.Priority.max);
 
     qloop: while (i >= minprio and i > 0) : (i -= 1) {
         const bit = (@as(u64, 1) << @intCast(i));
@@ -754,7 +754,7 @@ fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, preempted: bool) void {
         // Insert in calendar queue.
         // The insertion index is determined by insidx and the the priority of the thread,
         // higher priority threads will be put closer to insidx, which ensures that they are ran more frequently.
-        var idx = (cpu.insidx + (@intFromEnum(ke.Thread.Priority.HighBatch) -
+        var idx = (cpu.insidx + (@intFromEnum(ke.Priority.HighBatch) -
             td.priority)) % runqueues_n;
 
         if (preempted) {
@@ -861,7 +861,7 @@ fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
 // Return whether or not a thread with given priority and interactivity should
 //  get preempted by `td`.
 fn should_prio_preempt(td: *ke.Thread, other_prio: u8, remote: bool) bool {
-    const class = ke.Thread.Priority.class_from_prio(other_prio);
+    const class = ke.Priority.class_from_prio(other_prio);
 
     if (td.priority <= other_prio) {
         // If our priority is lower or equal, ignore.
@@ -874,7 +874,7 @@ fn should_prio_preempt(td: *ke.Thread, other_prio: u8, remote: bool) bool {
     }
 
     if (class == .Timeshare and td.is_interactive() and
-        other_prio < @intFromEnum(ke.Thread.Priority.LowInteractive) and remote)
+        other_prio < @intFromEnum(ke.Priority.LowInteractive) and remote)
     {
         // Interactive threads always preempt batch non-interactive ones
         // on remote CPUs.

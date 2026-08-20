@@ -50,7 +50,7 @@ pub const WorkItem = struct {
         /// High priority work.
         High,
 
-        pub fn to_sched_prio(prio: Priority) ke.Thread.Priority {
+        pub fn to_sched_prio(prio: Priority) ke.Priority {
             return switch (prio) {
                 .Low => .LowBatch,
                 .Normal => .HighBatch,
@@ -128,7 +128,7 @@ const Pool = struct {
                 @ptrFromInt(ctx.value),
             );
 
-            td.kern.nice = -ke.Thread.Priority.nice_max;
+            td.kern.nice = -ke.Priority.nice_max;
 
             if (cpu != null) {
                 td.kern.last_cpu = cpu;

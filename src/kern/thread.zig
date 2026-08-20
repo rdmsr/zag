@@ -5,62 +5,62 @@ const rtl = @import("rtl");
 const ke = r.ke;
 const ki = ke.private;
 
-/// Structure representing a kernel thread.
-pub const Thread = struct {
-    pub const Priority = enum(u8) {
-        const Self = @This();
+pub const Priority = enum(u8) {
+    const Self = @This();
 
-        /// Reserved for the idle thread.
-        IdleThread = 0,
-        /// Background kernel work.
-        Idle = 1,
-        /// Low priority CPU-bound work
-        LowBatch = 2,
-        /// High priority CPU-bound work
-        HighBatch = 137,
-        /// Low priority interactive work.
-        LowInteractive = 138,
-        /// High priority interactive work.
-        HighInteractive = 223,
-        /// The default thread priority.
-        Default = 117,
-        /// Low priority real-time work.
-        LowRealtime = 224,
-        /// Mid priority real-time work.
-        MidRealtime = 239,
-        /// High priority real-time work.
-        HighRealtime = 255,
-        _,
+    /// Reserved for the idle thread.
+    IdleThread = 0,
+    /// Background kernel work.
+    Idle = 1,
+    /// Low priority CPU-bound work
+    LowBatch = 2,
+    /// High priority CPU-bound work
+    HighBatch = 137,
+    /// Low priority interactive work.
+    LowInteractive = 138,
+    /// High priority interactive work.
+    HighInteractive = 223,
+    /// The default thread priority.
+    Default = 117,
+    /// Low priority real-time work.
+    LowRealtime = 224,
+    /// Mid priority real-time work.
+    MidRealtime = 239,
+    /// High priority real-time work.
+    HighRealtime = 255,
+    _,
 
-        pub const Class = enum(u8) {
-            Realtime,
-            Timeshare,
-            Idle,
-        };
-
-        pub const max = 255;
-        pub const nice_max = 20;
-
-        // The low and top 20 priorities from the batch range are reserved
-        // for nice.
-        pub const cpu_range = @intFromEnum(Self.HighBatch) - (nice_max * 2) - 1;
-
-        pub fn class_from_prio(prio: u8) Class {
-            if (prio >= @intFromEnum(Self.LowRealtime) and
-                prio <= @intFromEnum(Self.HighRealtime))
-                return .Realtime;
-
-            if (prio >= @intFromEnum(Self.LowBatch) and
-                prio < @intFromEnum(Self.LowRealtime))
-                return .Timeshare;
-
-            if (prio <= @intFromEnum(Self.Idle))
-                return .Idle;
-
-            unreachable;
-        }
+    pub const Class = enum(u8) {
+        Realtime,
+        Timeshare,
+        Idle,
     };
 
+    pub const max = 255;
+    pub const nice_max = 20;
+
+    // The low and top 20 priorities from the batch range are reserved
+    // for nice.
+    pub const cpu_range = @intFromEnum(Self.HighBatch) - (nice_max * 2) - 1;
+
+    pub fn class_from_prio(prio: u8) Class {
+        if (prio >= @intFromEnum(Self.LowRealtime) and
+            prio <= @intFromEnum(Self.HighRealtime))
+            return .Realtime;
+
+        if (prio >= @intFromEnum(Self.LowBatch) and
+            prio < @intFromEnum(Self.LowRealtime))
+            return .Timeshare;
+
+        if (prio <= @intFromEnum(Self.Idle))
+            return .Idle;
+
+        unreachable;
+    }
+};
+
+/// Structure representing a kernel thread.
+pub const Thread = struct {
     /// Thread state.
     pub const State = enum(u8) {
         /// The thread is ready to run.
