@@ -36,10 +36,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // first pass
-    const empty_cmd = b.addSystemCommand(&.{ "python3", "build/ksyms.py", "--empty" });
-    empty_cmd.addArg("--output");
+    const ksyms_exe = b.addExecutable(.{
+        .name = "ksyms",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("build/ksyms.zig"),
+            .target = b.graph.host,
+        }),
+    });
+
+    const empty_cmd = b.addRunArtifact(ksyms_exe);
     const empty_ksyms_s = empty_cmd.addOutputFileArg("ksyms_empty.s");
+
+    empty_cmd.stdio = .inherit;
 
     const rtl_module = b.createModule(.{
         .root_source_file = b.path("src/rtl/root.zig"),
@@ -69,12 +77,10 @@ pub fn build(b: *std.Build) void {
     b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
 
     // generate symbols
-    const ksyms = b.addSystemCommand(&.{ "python3", "build/ksyms.py" });
-    ksyms.addArg("--input");
+    const ksyms = b.addRunArtifact(ksyms_exe);
     ksyms.step.dependOn(&kernel_nosym.step);
-    ksyms.addFileArg(kernel_nosym.getEmittedBin());
-    ksyms.addArg("--output");
     const ksyms_s = ksyms.addOutputFileArg("ksyms.s");
+    ksyms.addFileArg(kernel_nosym.getEmittedBin());
 
     // second pass
     const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
