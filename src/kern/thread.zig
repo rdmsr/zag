@@ -131,6 +131,7 @@ pub const Thread = struct {
     /// to complete.
     switching: std.atomic.Value(bool),
     smr_sections: rtl.List,
+    hard_affinity: ke.CpuMask,
 
     /// Initialize a thread.
     /// - `stack`: Address of the base of the stack used by the thread.
@@ -180,6 +181,7 @@ pub const Thread = struct {
             .avg = .{},
             .acct = .{},
             .smr_sections = undefined,
+            .hard_affinity = .init(true),
         };
 
         thread.turnstiles_owned.init();
