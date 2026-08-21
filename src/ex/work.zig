@@ -130,9 +130,8 @@ const Pool = struct {
 
             td.kern.nice = -ke.Priority.nice_max;
 
-            if (cpu != null) {
-                td.kern.last_cpu = cpu;
-                td.kern.pinned = true;
+            if (cpu) |c| {
+                ke.sched.pin_on(&td.kern, c);
             }
 
             ke.sched.enqueue(&td.kern);
@@ -181,9 +180,8 @@ const Pool = struct {
             @ptrFromInt(ctx.value),
         );
 
-        if (cpu != null) {
-            td.kern.last_cpu = cpu;
-            td.kern.pinned = true;
+        if (cpu) |c| {
+            ke.sched.pin_on(&td.kern, c);
         }
 
         ke.sched.enqueue(&td.kern);

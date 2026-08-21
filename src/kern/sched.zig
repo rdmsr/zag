@@ -1405,6 +1405,19 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
     // XXX: Handle Selected threads so that they are placed properly?
 }
 
+pub fn pin(td: *ke.Thread) void {
+    const ipl = td.lock.acquire();
+    td.pinned = true;
+    td.lock.release(ipl);
+}
+
+pub fn pin_on(td: *ke.Thread, cpu: u32) void {
+    const ipl = td.lock.acquire();
+    td.last_cpu = cpu;
+    td.pinned = true;
+    td.lock.release(ipl);
+}
+
 fn find_most_loaded(exclude: ?*ke.CpuMask, steal: bool) ?u32 {
     var most: ?u32 = null;
     var most_load: usize = 0;
