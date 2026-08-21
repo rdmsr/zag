@@ -106,6 +106,11 @@ const interactivity_threshold = 30;
 const scaling_factor = 50;
 const preempt_threshold = @intFromEnum(ke.Priority.LowRealtime);
 const balance_interval = @as(u64, config.sched_balance_interval);
+const sched_migration_cost = ke.Tunable(
+    u64,
+    500,
+    "sched_migration_cost_us",
+);
 const steal_threshold = 1;
 const pct_window_target = 10 * std.time.us_per_s;
 const pct_window_max = 11 * std.time.us_per_s;
@@ -752,8 +757,9 @@ fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, preempted: bool) void {
         td.runq_idx = @intCast(prio);
     } else if (td.priority_class() == .Timeshare) {
         // Insert in calendar queue.
-        // The insertion index is determined by insidx and the the priority of the thread,
-        // higher priority threads will be put closer to insidx, which ensures that they are ran more frequently.
+        // The insertion index is determined by insidx and the the priority of
+        // the thread, higher priority threads will be put closer to insidx,
+        // which ensures that they are ran more frequently in proportion.
         var idx = (cpu.insidx + (@intFromEnum(ke.Priority.HighBatch) -
             td.priority)) % runqueues_n;
 
@@ -764,7 +770,11 @@ fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, preempted: bool) void {
 
         cpu.calendar_queue.status |= (@as(u64, 1) << @intCast(idx));
 
-        insert_in_list(&cpu.calendar_queue.queues[idx], &td.runq_link, false);
+        insert_in_list(
+            &cpu.calendar_queue.queues[idx],
+            &td.runq_link,
+            false,
+        );
         td.runq = &cpu.calendar_queue;
         td.runq_idx = @intCast(idx);
     } else {
@@ -915,8 +925,8 @@ fn pick_cpu(td: *ke.Thread, slept: u64) u32 {
     const curcpu = ke.cpu.current();
 
     if (td.last_cpu) |cpu| {
-        // If we haven't been on this CPU in the last second, don't bother.
-        const ran_recently = slept <= std.time.us_per_s;
+        // If we haven't been on this CPU recently, don't bother.
+        const ran_recently = slept <= sched_migration_cost.load();
         const sched_cpu = percpu.remote(cpu);
 
         // If we can preempt and have ran recently on this CPU, run on it.
