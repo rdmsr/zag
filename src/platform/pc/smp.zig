@@ -47,7 +47,7 @@ fn make_thread(
 
     td.init(stack, size, .IdleThread, entrypoint, null);
 
-    td.pinned = true;
+    ke.sched.pin(td);
     return td;
 }
 

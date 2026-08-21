@@ -58,6 +58,8 @@ pub const sched = struct {
     pub const unblock = p.sched.unblock;
     pub const late_init = p.sched.late_init;
     pub const yield = p.sched.yield;
+    pub const pin = p.sched.pin;
+    pub const pin_on = p.sched.pin_on;
 };
 
 pub const timer = struct {
