@@ -589,7 +589,7 @@ fn calendar_queue_increment(cpu: *PerCpu) void {
     }
 }
 
-fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, migrate: bool) ?*ke.Thread {
+fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, target: ?u32) ?*ke.Thread {
     std.debug.assert(cpu.queues_lock.is_locked());
 
     const runq = &cpu.realtime_queue;
@@ -620,9 +620,9 @@ fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, migrate: bool) ?*ke.Thre
 
         td.state.store(.Selected, .monotonic);
 
-        if (migrate) {
-            // Find the first thread that is not pinned.
-            while (td.pinned) {
+        if (target) |tgt| {
+            // Find the first thread that is not pinned and can run on this CPU.
+            while (td.pinned or td.hard_affinity.get(tgt) == false) {
                 const entry = td.runq_link.next;
 
                 // Every thread is pinned, go through another queue
@@ -646,7 +646,7 @@ fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, migrate: bool) ?*ke.Thre
     return null;
 }
 
-fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
+fn pick_batch_thread(cpu: *PerCpu, target: ?u32) ?*ke.Thread {
     std.debug.assert(cpu.queues_lock.is_locked());
     const runq = &cpu.calendar_queue;
 
@@ -679,9 +679,9 @@ fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
 
         td.state.store(.Selected, .monotonic);
 
-        if (migrate) {
-            // Find the first thread that is not pinned.
-            while (td.pinned) {
+        if (target) |tgt| {
+            // Find the first thread that is not pinned and can run on this CPU.
+            while (td.pinned or td.hard_affinity.get(tgt) == false) {
                 const entry = td.runq_link.next;
 
                 // Every thread is pinned, go through another queue
@@ -698,7 +698,7 @@ fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
             // Queue is now empty, clear its bit and increment runidx.
             runq.status &= ~bit;
 
-            if (!migrate) {
+            if (target == null) {
                 calendar_queue_increment(cpu);
             }
         }
@@ -709,18 +709,24 @@ fn pick_batch_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
     return null;
 }
 
-fn pick_idle_thread(cpu: *PerCpu, migrate: bool) ?*ke.Thread {
+fn pick_idle_thread(cpu: *PerCpu, target: ?u32) ?*ke.Thread {
     std.debug.assert(cpu.queues_lock.is_locked());
     if (cpu.idle_queue.is_empty()) return null;
 
-    // Just get the first thread from the queue.
-    const td: *ke.Thread = @fieldParentPtr(
+    // Just get the first thread from the queue that can run.
+    var td: *ke.Thread = @fieldParentPtr(
         "runq_link",
         cpu.idle_queue.first(),
     );
 
-    if (migrate and td.pinned) {
-        return null;
+    if (target) |tgt| {
+        while (td.pinned or td.hard_affinity.get(tgt) == false) {
+            const entry = td.runq_link.next;
+
+            if (entry == &cpu.idle_queue.head) return null;
+
+            td = @fieldParentPtr("runq_link", entry);
+        }
     }
 
     td.state.store(.Selected, .monotonic);
@@ -820,12 +826,12 @@ fn remove_from_queue(cpu: *PerCpu, td: *ke.Thread) void {
 }
 
 // Find a thread to preempt `cur` with.
-fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
+fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, target: ?u32) ?*ke.Thread {
     // First try to pick from the realtime queues.
     if (pick_realtime_thread(
         cpu,
         if (cur) |c| c.priority else 0,
-        migrate,
+        target,
     )) |td| {
         _ = cpu.load.fetchSub(1, .monotonic);
         if (!td.pinned) {
@@ -842,7 +848,7 @@ fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
     }
 
     // Then try picking a batch thread.
-    if (pick_batch_thread(cpu, migrate)) |td| {
+    if (pick_batch_thread(cpu, target)) |td| {
         _ = cpu.load.fetchSub(1, .monotonic);
         if (!td.pinned) {
             _ = cpu.migratable.fetchSub(1, .monotonic);
@@ -856,7 +862,7 @@ fn select_thread(cur: ?*ke.Thread, cpu: *PerCpu, migrate: bool) ?*ke.Thread {
     }
 
     // Finally try picking from the idle queue.
-    if (pick_idle_thread(cpu, migrate)) |td| {
+    if (pick_idle_thread(cpu, target)) |td| {
         _ = cpu.load.fetchSub(1, .monotonic);
         if (!td.pinned) {
             _ = cpu.migratable.fetchSub(1, .monotonic);
@@ -939,9 +945,10 @@ fn pick_cpu(td: *ke.Thread, slept: u64) u32 {
     // least loaded preemptible one.
     // We try to pick the CPU on which we can run immediately, but if there is
     // a tie we use the average load to break it.
-
     const local = percpu.local();
     local.pick_offset +%= 1;
+
+    const mask = td.hard_affinity;
 
     var least: ?u32 = null;
     var least_load: usize = 0;
@@ -952,6 +959,11 @@ fn pick_cpu(td: *ke.Thread, slept: u64) u32 {
 
     for (0..ke.ncpus) |n| {
         const i = (local.pick_offset + n) % ke.ncpus;
+
+        if (!mask.get(i)) {
+            continue;
+        }
+
         const cpu: u32 = @truncate(i);
         const data = percpu.remote(cpu);
         const depth = data.load.load(.monotonic);
@@ -1158,7 +1170,7 @@ pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
     }
 
     // Pick a new thread to run.
-    const newtd = select_thread(curtd, cpu, false);
+    const newtd = select_thread(curtd, cpu, null);
 
     // Ensure the timer gets reloaded.
     cpu.start_timer = true;
@@ -1212,7 +1224,7 @@ pub fn yield_locked() void {
         sched_cpu.next_thread = null;
     } else {
         // Pick a new thread to run.
-        next = select_thread(null, sched_cpu, false);
+        next = select_thread(null, sched_cpu, null);
     }
 
     if (next == null) {
@@ -1364,7 +1376,7 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
         const next = pick_realtime_thread(
             cpu,
             new_prio + 1,
-            false,
+            null,
         ) orelse return;
 
         _ = cpu.load.fetchSub(1, .monotonic);
@@ -1474,14 +1486,14 @@ fn find_least_loaded(exclude: ?*ke.CpuMask) ?u32 {
     return least;
 }
 
-fn steal_thread_from_cpu(cpu: *PerCpu, curcpu: ?*PerCpu) ?*ke.Thread {
+fn steal_thread_from_cpu(cpu: *PerCpu, curcpu: ?*PerCpu, target: ?u32) ?*ke.Thread {
     cpu.queues_lock.acquire_no_ipl();
     defer cpu.queues_lock.release_no_ipl();
 
     if (curcpu != null and curcpu.?.load.load(.monotonic) > 0)
         return null;
 
-    const td = select_thread(null, cpu, true);
+    const td = select_thread(null, cpu, target);
 
     if (td) |t| {
         detach_load_avg(cpu, t);
@@ -1506,7 +1518,7 @@ fn steal_work(cpu: u32) ?*ke.Thread {
         }
 
         const ipl = ke.ipl.raise(.Dispatch);
-        const td = steal_thread_from_cpu(sched_other, c);
+        const td = steal_thread_from_cpu(sched_other, c, cpu);
         ke.ipl.lower(ipl);
         return td;
     }
@@ -1565,7 +1577,7 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
 
         // Steal a thread from the high CPU and put it on the low CPU.
         const sched_high = percpu.remote(high.?);
-        const td = steal_thread_from_cpu(sched_high, null);
+        const td = steal_thread_from_cpu(sched_high, null, low.?);
 
         if (td) |thread| {
             thread.lock.acquire_no_ipl();
