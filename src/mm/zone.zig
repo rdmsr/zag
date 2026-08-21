@@ -500,10 +500,12 @@ pub const Zone = struct {
     chunk_size: usize,
     /// Zone lock.
     lock: ke.Mutex,
-    /// List of full slabs in this zone.
+    /// List of full slabs (fully allocated) in this zone.
     full_slabs: rtl.List,
-    /// List of partial slabs in this zone.
+    /// List of partial slabs (partially allocated) in this zone.
     partial_slabs: rtl.List,
+    /// List of free slabs (fully unallocated) in this zone.
+    free_slabs: rtl.List,
     /// Linkage into the global zone list.
     next: ?*Zone,
     depot_lock: ke.QSpinLock,
@@ -559,6 +561,7 @@ pub const Zone = struct {
 
         self.full_slabs.init();
         self.partial_slabs.init();
+        self.free_slabs.init();
 
         self.name = name;
         self.obj_size = size;
@@ -930,7 +933,7 @@ pub const Zone = struct {
         if (slab.refcount == 0) {
             // No more outstanding allocations, it is safe to reclaim the slab.
             slab.link.remove();
-            self.slab_destroy(slab);
+            self.free_slabs.insert_tail(&slab.link);
             return;
         }
     }
@@ -1066,7 +1069,20 @@ pub const Zone = struct {
             self.maglist_destroy(depot.full_mags.head, magazine_size.load());
         }
 
+        // Destroy all free slabs. Swap the list under the lock.
+        const head = &self.free_slabs.head;
+        var entry = self.free_slabs.first();
+        self.free_slabs.init();
+
         self.lock.release();
+
+        while (true) {
+            const slab: *Slab = @fieldParentPtr("link", entry);
+            const next = entry.next;
+            self.slab_destroy(slab);
+            if (next == head) break;
+            entry = next;
+        }
     }
 
     /// Called when memory is low and we need to make memory ASAP.
