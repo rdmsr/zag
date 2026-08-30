@@ -1329,7 +1329,6 @@ pub const Zone = struct {
 
             mm.heap.free(slab.base, self.slab_size);
         } else {
-            std.log.info("slab is {*}", .{slab});
             free_page(@ptrFromInt(
                 std.mem.alignBackward(usize, @intFromPtr(slab), mm.page_size),
             ));
