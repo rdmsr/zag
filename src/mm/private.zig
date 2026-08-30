@@ -7,6 +7,7 @@ pub const heap = @import("heap.zig");
 pub const zone = @import("zone.zig");
 pub const PMap = pmap.PMap;
 pub const tlb = @import("tlb.zig");
+pub const balance = @import("balance.zig");
 
 const ke = @import("root").ke;
 

@@ -14,4 +14,5 @@ pub fn init() linksection(r.init) void {
 pub fn late_init() linksection(r.init) void {
     mi.zone.late_init();
     mi.tlb.init();
+    mi.balance.init();
 }

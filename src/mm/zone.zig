@@ -118,9 +118,7 @@ const ex = r.ex;
 const mi = mm.private;
 
 /// Interval at which we do housekeeping (working set update, reaping, etc.)
-const update_interval_s = 15;
-const update_interval: r.Nanoseconds = .from(r.Seconds.init(update_interval_s));
-var update_work_item: ex.DelayedWorkItem = undefined;
+pub const update_interval_s = 15;
 
 /// Fixed point conversion for WMA computation.
 const wma_unit = 256;
@@ -1076,11 +1074,10 @@ pub const Zone = struct {
 
         self.lock.release();
 
-        while (true) {
+        while (entry != head) {
             const slab: *Slab = @fieldParentPtr("link", entry);
             const next = entry.next;
             self.slab_destroy(slab);
-            if (next == head) break;
             entry = next;
         }
     }
@@ -1332,6 +1329,7 @@ pub const Zone = struct {
 
             mm.heap.free(slab.base, self.slab_size);
         } else {
+            std.log.info("slab is {*}", .{slab});
             free_page(@ptrFromInt(
                 std.mem.alignBackward(usize, @intFromPtr(slab), mm.page_size),
             ));
@@ -1503,7 +1501,7 @@ pub const Zone = struct {
 };
 
 /// Called periodically to do housekeeping tasks on zones.
-fn update(_: ?*anyopaque) void {
+pub fn update() void {
     zone_list_lock.acquire();
 
     var zone = all_zones;
@@ -1513,9 +1511,6 @@ fn update(_: ?*anyopaque) void {
     }
 
     zone_list_lock.release();
-
-    // Do it again.
-    ex.work.enqueue_in(&update_work_item, update_interval);
 }
 
 /// Parameterized version of Zone, useful for object caches.
@@ -1605,8 +1600,6 @@ pub fn late_init() linksection(r.init) void {
     zone_list_lock.release();
 
     magazines_initialized = true;
-    update_work_item.init(.Normal, update, null);
-    ex.work.enqueue_in(&update_work_item, update_interval);
 
     smr_zone.init("SMR", .{});
     smr_cpu_zone.init("SMR CPU", @sizeOf(ke.smr.Cpu) * ke.ncpus, .{});
