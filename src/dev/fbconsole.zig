@@ -188,7 +188,7 @@ fn write(_: ?*anyopaque, s: []const u8) void {
 
 var console: ex.Console = .{ .ctx = null, .link = undefined, .write = write };
 
-pub fn init(boot_info: *pl.BootInfo) void {
+pub fn init(boot_info: *r.BootInfo) void {
     framebuffer = @ptrFromInt(boot_info.framebuffer.?.address);
     framebuffer_width = boot_info.framebuffer.?.width;
     framebuffer_height = boot_info.framebuffer.?.height;
