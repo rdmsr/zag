@@ -12,22 +12,22 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     r.boot_info = boot_info;
 
     // Immediately initialize the context of what will eventually become
-    // our idle thread. We keep running on the loader stack up until we switch
-    // into the thread.
-    thread0.init(
-        boot_info.kernel_stack,
-        boot_info.kernel_stack_size,
-        .IdleThread,
-        init,
-        null,
-    );
+    // our idle thread. At this point we're already running on the kernel stack.
+    thread0.init(.{
+        .stack = boot_info.kernel_stack + boot_info.kernel_stack_size,
+        .priority = .IdleThread,
+        .entry = undefined,
+        // Shouldn't block
+        .turnstile = undefined,
+    });
+
+    thread0.continuation = null;
     thread0.pinned = true;
 
-    // Jump into the thread.
-    thread0.context.load();
+    init();
 }
 
-pub fn init(_: ?*anyopaque) linksection(r.init) void {
+fn init() linksection(r.init) void {
     ke.ncpus = 1;
     ki.impl.early_init();
     ki.tunable.init();

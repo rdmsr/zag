@@ -124,14 +124,15 @@ const Pool = struct {
 
             var td = try ps.thread.create_kernel(
                 WorkItem.Priority.to_sched_prio(self.prio),
-                work_loop,
-                @ptrFromInt(ctx.value),
+                .{ .func = work_loop, .arg = @ptrFromInt(ctx.value) },
+                true,
             );
 
             td.kern.nice = -ke.Priority.nice_max;
 
-            if (cpu) |c| {
-                ke.sched.pin_on(&td.kern, c);
+            if (cpu != null) {
+                td.kern.last_cpu = cpu;
+                td.kern.pinned = true;
             }
 
             ke.sched.enqueue(&td.kern);
@@ -176,12 +177,13 @@ const Pool = struct {
 
         var td = try ps.thread.create_kernel(
             WorkItem.Priority.to_sched_prio(self.prio),
-            work_loop,
-            @ptrFromInt(ctx.value),
+            .{ .func = work_loop, .arg = @ptrFromInt(ctx.value) },
+            true,
         );
 
-        if (cpu) |c| {
-            ke.sched.pin_on(&td.kern, c);
+        if (cpu != null) {
+            td.kern.last_cpu = cpu;
+            td.kern.pinned = true;
         }
 
         ke.sched.enqueue(&td.kern);
@@ -313,8 +315,8 @@ pub fn init() !void {
 
     var td = ps.thread.create_kernel(
         .Default,
-        pool_manager,
-        null,
+        .{ .func = pool_manager, .arg = null },
+        true,
     ) catch @panic("Failed to create pool manager");
 
     ke.sched.enqueue(&td.kern);

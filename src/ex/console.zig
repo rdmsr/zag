@@ -126,8 +126,8 @@ pub fn init() void {
 
     const td = ps.thread.create_kernel(
         .Default,
-        worker,
-        null,
+        .{ .func = worker, .arg = null },
+        true,
     ) catch @panic("handle me");
     ke.sched.enqueue(&td.kern);
 }

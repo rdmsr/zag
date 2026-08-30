@@ -4,7 +4,7 @@ const std = @import("std");
 const Entry = r.BootInfo.MemMap.Entry;
 const stack_size = 1024 * 16; // should be enough
 
-extern fn jump_to_kernel(loader_info: usize, entry: usize) void;
+extern fn jump_to_kernel(loader_info: usize, entry: usize, stack_top: usize) void;
 
 fn load_kernel(kernel: *anyopaque) usize {
     const elf: *std.elf.Elf64.Ehdr = @ptrCast(@alignCast(kernel));
@@ -103,5 +103,6 @@ pub fn loader_main(kernel: *anyopaque) void {
     jump_to_kernel(
         @intFromPtr(&r.loader_info),
         entry,
+        stack + stack_size,
     );
 }

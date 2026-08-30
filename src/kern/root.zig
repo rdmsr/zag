@@ -22,6 +22,8 @@ pub const Mutex = p.mutex.Mutex;
 pub const ShootdownState = p.shootdown.ShootdownState;
 pub const Tunable = p.tunable.Tunable;
 pub const Priority = p.thread.Priority;
+pub const Stack = p.thread.Stack;
+pub const Continuation = p.thread.Continuation;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
@@ -39,6 +41,9 @@ pub const thread = struct {
     pub const exit = p.thread.exit;
     pub const current = p.thread.current;
     pub const reaper_list = &p.thread.reaper_list;
+    pub const stack_cache_update = p.thread.stack_cache_update;
+    pub const thread_stack_queue = &p.thread.thread_stack_queue;
+    pub const call_continuation = p.thread.call_continuation;
 };
 
 pub const dpc = struct {

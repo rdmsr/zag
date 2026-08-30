@@ -72,7 +72,7 @@ fn reader(param: ?*anyopaque) void {
 
         _ = reads.fetchAdd(done, .monotonic);
 
-        if (iter % 512 == 0) ke.sched.yield();
+        if (iter % 512 == 0) ke.sched.yield(null);
     }
 }
 
@@ -109,7 +109,7 @@ fn writer(param: ?*anyopaque) void {
 
         _ = writes.fetchAdd(1, .monotonic);
 
-        if (iter % 256 == 0) ke.sched.yield();
+        if (iter % 256 == 0) ke.sched.yield(null);
     }
 }
 
@@ -130,12 +130,14 @@ fn poller(_: ?*anyopaque) void {
 
         _ = polls.fetchAdd(1, .monotonic);
 
-        ke.sched.yield();
+        ke.sched.yield(null);
     }
 }
 
 fn spawn(entry: *const fn (?*anyopaque) void, id: usize) void {
-    const t = ps.thread.create_kernel(.Default, entry, @ptrFromInt(id + 1)) catch @panic("oom");
+    const t = ps.thread.create_kernel(.Default, .{.func = entry, .arg = @ptrFromInt(id + 1)}, true)
+ catch
+@panic("oom");
     ke.sched.enqueue(&t.kern);
 }
 

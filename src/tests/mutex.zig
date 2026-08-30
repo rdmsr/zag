@@ -169,7 +169,11 @@ pub fn start(_: ?*anyopaque) void {
         is_parked[i] = .init(false);
 
         const prio: u8 = @intCast(2 + (i * 5) % 29);
-        const t = ps.thread.create_kernel(@enumFromInt(prio), &worker, @ptrFromInt(i + 1)) catch @panic("oom");
+        const t = ps.thread.create_kernel(
+            @enumFromInt(prio),
+            .{ .func = &worker, .arg = @ptrFromInt(i + 1) },
+            false,
+        ) catch @panic("oom");
         tds[i] = t;
         ke.sched.enqueue(&t.kern);
     }

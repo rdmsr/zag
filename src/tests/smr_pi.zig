@@ -150,7 +150,7 @@ fn writer(param: ?*anyopaque) void {
 
         _ = writes.fetchAdd(1, .monotonic);
 
-        ke.sched.yield();
+        ke.sched.yield(null);
     }
 }
 
@@ -162,7 +162,7 @@ fn poller(_: ?*anyopaque) void {
 
         _ = polls.fetchAdd(1, .monotonic);
 
-        ke.sched.yield();
+        ke.sched.yield(null);
     }
 }
 
@@ -279,7 +279,7 @@ fn quiesce_check() void {
 }
 
 fn spawn(prio: u8, entry: *const fn (?*anyopaque) void, id: usize) *ps.Thread {
-    const t = ps.thread.create_kernel(@enumFromInt(prio), entry, @ptrFromInt(id + 1)) catch @panic("oom");
+    const t = ps.thread.create_kernel(@enumFromInt(prio), .{.func = entry, .arg= @ptrFromInt(id + 1)}, true) catch @panic("oom");
     ke.sched.enqueue(&t.kern);
     return t;
 }

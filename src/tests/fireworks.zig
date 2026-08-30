@@ -12,6 +12,7 @@ var fb_height: usize = 0;
 var fb_pitch: usize = 0;
 var fb_bpp: usize = 0;
 var inited = std.atomic.Value(bool).init(false);
+var particle_count: std.atomic.Value(usize) = .init(0);
 
 const background_color = 0x09090F;
 
@@ -91,24 +92,61 @@ const FireworkData = struct {
     vel_x: i64,
     vel_y: i64,
     explosion_range: i32,
+    expire_in: i64,
+    i: u32,
 };
 
 fn get_random_color() u32 {
     return @intCast((rand() + 0x808080) & 0xFFFFFF); // Random pastel color
 }
 
-fn perform_delay(ms: usize) void {
-    var timer: ke.Timer = undefined;
-    timer.init();
-    ke.timer.set(&timer, .init(std.time.ns_per_ms * ms), .{});
-    _ = ke.wait.wait_one(&timer.hdr, "sleep", .{}) catch unreachable;
+fn sleep(ms: usize, continuation: ?ke.Continuation) void {
+    _ = ke.wait.wait_any(&.{}, "sleep", .{
+        .timeout = .from(r.Milliseconds.init(ms)),
+        .continuation = continuation,
+    }) catch {
+        return;
+    };
+    @panic("Not a timeout?");
+}
+
+const particle_delay = 16;
+
+fn particle_continuation(param: ?*anyopaque) void {
+    const data: *FireworkData = @ptrCast(@alignCast(param));
+    plot_pixel(@intCast(data.x), @intCast(data.y), background_color);
+
+    data.i += particle_delay;
+
+    if (data.i >= data.expire_in) {
+        mm.zone.gpa.destroy(data);
+
+        _ = particle_count.fetchSub(1, .monotonic);
+        ps.thread.exit();
+    }
+
+    data.act_x += @divTrunc(data.vel_x * particle_delay, 1000);
+    data.act_y += @divTrunc(data.vel_y * particle_delay, 1000);
+    data.x = fp_to_int(data.act_x);
+    data.y = fp_to_int(data.act_y);
+
+    data.vel_y += @divTrunc(int_to_fp(10) * particle_delay, 1000);
+
+    plot_pixel(@intCast(data.x), @intCast(data.y), data.color);
+    sleep(particle_delay, .{
+        .func = particle_continuation,
+        .arg = data,
+    });
 }
 
 fn particle(param: ?*anyopaque) void {
     const parent_data: *FireworkData = @ptrCast(@alignCast(param));
-    var data: FireworkData = undefined;
 
-    data = std.mem.zeroes(FireworkData);
+    const data = mm.zone.gpa.create(FireworkData) catch unreachable;
+
+    data.* = std.mem.zeroes(FireworkData);
+
+    _ = particle_count.fetchAdd(1, .monotonic);
 
     data.x = parent_data.x;
     data.y = parent_data.y;
@@ -124,42 +162,37 @@ fn particle(param: ?*anyopaque) void {
 
     const expire_in = 2000 + (@rem(rand(), 1000));
 
+    data.expire_in = expire_in;
+    data.i = 0;
+
     data.color = get_random_color();
 
-    var i: i32 = 0;
-    var t: i32 = 0;
+    plot_pixel(@intCast(data.x), @intCast(data.y), data.color);
 
-    while (i < expire_in) {
-        plot_pixel(@intCast(data.x), @intCast(data.y), data.color);
+    sleep(particle_delay, .{
+        .func = particle_continuation,
+        .arg = data,
+    });
 
-        const delay = @as(i32, 16) + @intFromBool(t != 0);
-        perform_delay(@intCast(delay));
-        i += delay;
-        t += 1;
-
-        if (t == 3)
-            t = 0;
-
-        plot_pixel(@intCast(data.x), @intCast(data.y), background_color);
-
-        data.act_x += @divTrunc(data.vel_x * delay, 1000);
-        data.act_y += @divTrunc(data.vel_y * delay, 1000);
-        data.x = fp_to_int(data.act_x);
-        data.y = fp_to_int(data.act_y);
-
-        data.vel_y += @divTrunc(int_to_fp(10) * delay, 1000);
-    }
-
-    ps.thread.exit();
+    @panic("shouldn't happen");
 }
 
 fn spawn_particle(arg: ?*anyopaque) void {
-    const t = ps.thread.create_kernel(.Default, &particle, arg) catch @panic("OOM");
+    const t = ps.thread.create_kernel(
+        .Default,
+        .{ .func = &particle, .arg = arg },
+        false,
+    ) catch @panic("OOM");
+
     ke.sched.enqueue(&t.kern);
 }
 
 fn spawn_explodeable() void {
-    const t = ps.thread.create_kernel(.Default, &explodeable, null) catch @panic("OOM");
+    const t = ps.thread.create_kernel(
+        .Default,
+        .{ .func = &explodeable, .arg = null },
+        false,
+    ) catch @panic("OOM");
     ke.sched.enqueue(&t.kern);
 }
 
@@ -186,7 +219,7 @@ fn explodeable(_: ?*anyopaque) void {
 
         const delay: i32 = @as(u8, 16) + @intFromBool(t != 0);
 
-        perform_delay(@intCast(delay));
+        sleep(@intCast(delay), null);
 
         i += delay;
         t += 1;
@@ -216,6 +249,24 @@ fn explodeable(_: ?*anyopaque) void {
     ps.thread.exit();
 }
 
+fn spawning_loop(_: ?*anyopaque) void {
+    const spawn_count: usize = @intCast(@rem(rand(), 20) + 1);
+
+    for (0..spawn_count) |_| {
+        spawn_explodeable();
+    }
+
+    std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for {} particles", .{
+        mm.private.tlb.async_shootdowns.load(.monotonic),
+        mm.private.tlb.sync_shootdowns.load(.monotonic),
+        mm.private.phys.usable_memory.load(.monotonic) / 1024,
+        ke.private.thread.stacks_count(),
+        particle_count.load(.monotonic),
+    });
+
+    sleep(2000, .{ .func = spawning_loop, .arg = null });
+}
+
 pub fn start(param: ?*anyopaque) void {
     const boot_info: *r.BootInfo = @ptrCast(@alignCast(param));
 
@@ -231,15 +282,5 @@ pub fn start(param: ?*anyopaque) void {
 
     fill_screen(0x09090F);
 
-    while (true) {
-        const spawn_count: usize = @intCast(@rem(rand(), 20) + 1);
-
-        for (0..spawn_count) |_| {
-            spawn_explodeable();
-        }
-
-        std.log.info("async: {}, sync: {}, usable memory: {} KiB", .{ mm.private.tlb.async_shootdowns.load(.monotonic), mm.private.tlb.sync_shootdowns.load(.monotonic), mm.private.phys.usable_memory.load(.monotonic) / 1024 });
-
-        perform_delay(2000);
-    }
+    spawning_loop(null);
 }

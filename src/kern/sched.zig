@@ -1061,6 +1061,15 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
 
     // queues_lock dropped
 }
+fn allocate_stack(td: *ke.Thread) ?usize {
+    if (ki.thread.stack_cache_pop()) |stack| {
+        return stack;
+    }
+
+    // Enqueue the thread for allocation
+    ki.thread.thread_stack_queue.insert(@ptrCast(&td.runq_link.next));
+    return null;
+}
 
 // Execute a context switch on `cpu`.
 fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
@@ -1078,28 +1087,76 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
         account(next, now_us, .Queued);
     }
 
+    if (next.context.stack_top == 0) {
+        std.debug.assert(next.continuation != null);
+    }
+
     next.state.store(.Running, .monotonic);
 
-    // Do machine-dependent switch.
-    cur.context.switch_to(&next.context);
+    if (cur.continuation != null) {
+        if (next.continuation) |c| {
+            // Both the incoming thread and outgoing thread have continuations
+            // set. Do stack hand-off.
+            next.context.stack_top = cur.context.stack_top;
+            cur.context.stack_top = 0;
+            next.continuation = null;
+
+            cur.switching.store(false, .release);
+            cur.lock.release_no_ipl();
+
+            ki.impl.call_continuation(&next.context, c);
+        }
+
+        ki.impl.switch_cont_to_normal(&cur.context, &next.context);
+    } else {
+        ki.impl.switch_normal_to_normal(&cur.context, &next.context);
+    }
 }
 
 /// Handle preemption.
 /// This is called in DPC dispatch when it notices `next_thread` is set.
 pub fn handle_preemption(cpu: *PerCpu) void {
-    cpu.queues_lock.acquire_no_ipl();
-
     const cur = cpu.current_thread.?;
+    var next: *ke.Thread = undefined;
 
-    const next = cpu.next_thread orelse {
+    while (true) {
+        cpu.queues_lock.acquire_no_ipl();
+
+        next = cpu.next_thread orelse select_thread(cur, cpu, null) orelse {
+            cpu.queues_lock.release_no_ipl();
+            return;
+        };
+
+        cpu.next_thread = null;
         cpu.queues_lock.release_no_ipl();
-        return;
-    };
 
-    cpu.next_thread = null;
+        while (next.switching.load(.monotonic) == true) {
+            std.atomic.spinLoopHint();
+        }
+
+        if (next.context.stack_top == 0) {
+            // This thread has no stack, try allocating one from the stack cache.
+            // Otherwise, the thread will be waiting for its stack to get
+            // allocated and we pick another one in the meantime.
+            const new_stack = allocate_stack(next);
+
+            if (new_stack) |new| {
+                next.context.reset(new, ke.thread.call_continuation, next);
+                break;
+            }
+
+            detach_load_avg(cpu, next);
+            continue;
+        }
+
+        // Found a thread with a a stack.
+        break;
+    }
+
+    std.debug.assert(cur != next);
+
     cpu.current_thread_prio.store(next.priority, .monotonic);
 
-    cpu.queues_lock.release_no_ipl();
     cur.lock.acquire_no_ipl();
 
     cur.switching.store(true, .monotonic);
@@ -1190,7 +1247,7 @@ pub fn enqueue(td: *ke.Thread) void {
 }
 
 /// Yield on the current CPU.
-pub fn yield() void {
+pub fn yield(continuation: ?ke.Continuation) void {
     const ipl = ke.ipl.raise(.Dispatch);
     const td = percpu.local().current_thread.?;
 
@@ -1205,71 +1262,108 @@ pub fn yield() void {
         cpu.queues_lock.release_no_ipl();
     }
 
-    yield_locked();
+    yield_locked(continuation);
 
     // td lock released
     ke.ipl.lower(ipl);
 }
 
 /// Yield the current CPU with the current thread already locked at Dispatch IPL.
-pub fn yield_locked() void {
+pub fn yield_locked(continuation: ?ke.Continuation) void {
     const sched_cpu = percpu.local();
 
     sched_cpu.queues_lock.acquire_no_ipl();
 
-    const cur = sched_cpu.current_thread;
+    const cur = sched_cpu.current_thread orelse unreachable;
     var next = sched_cpu.next_thread;
 
-    if (next != null) {
-        sched_cpu.next_thread = null;
-    } else {
-        // Pick a new thread to run.
-        next = select_thread(null, sched_cpu, null);
-    }
+    cur.continuation = continuation;
 
-    if (next == null) {
-        // Nothing to run, go idle.
-        next = sched_cpu.idle_thread;
-        sched_cpu.steal_work = true;
-    }
+    while (true) {
+        if (next != null) {
+            sched_cpu.next_thread = null;
+            sched_cpu.preemption_reason = .None;
+        } else {
+            // Pick a new thread to run.
+            next = select_thread(null, sched_cpu, null);
+        }
 
-    if (next) |n| {
-        sched_cpu.current_thread_prio.store(n.priority, .monotonic);
-    }
+        sched_cpu.queues_lock.release_no_ipl();
 
-    sched_cpu.queues_lock.release_no_ipl();
+        if (next == null) {
+            // Nothing to run, go idle.
+            next = sched_cpu.idle_thread;
+            sched_cpu.steal_work = true;
+            break;
+        }
 
-    if (next != null and cur.? != next.?) {
-        // Switch into the thread. Ensure it's not switching.
         while (next.?.switching.load(.monotonic) == true) {
             std.atomic.spinLoopHint();
         }
 
-        do_switch(sched_cpu, cur.?, next.?);
+        if (next) |n| {
+            const curstack = n.context.stack_top;
+            const can_handoff = cur.continuation != null;
+
+            if (curstack != 0 or can_handoff) {
+                break;
+            }
+
+            if (curstack == 0) {
+                const new_stack = allocate_stack(n);
+
+                if (new_stack) |new| {
+                    n.context.reset(new, ke.thread.call_continuation, n);
+                    break;
+                }
+
+                detach_load_avg(sched_cpu, n);
+                next = null;
+            }
+        }
+
+        sched_cpu.queues_lock.acquire_no_ipl();
+    }
+
+    const n = next orelse unreachable;
+
+    sched_cpu.current_thread_prio.store(n.priority, .monotonic);
+
+    if (cur != n) {
+        // Switch into the thread. Ensure it's not switching.
+        while (n.switching.load(.monotonic) == true) {
+            std.atomic.spinLoopHint();
+        }
+        do_switch(sched_cpu, cur, n);
     } else {
-        // Ensure curthread is not marked as selected.
-        cur.?.state.store(.Running, .monotonic);
-        cur.?.switching.store(false, .monotonic);
-        cur.?.lock.release_no_ipl();
+        // Same thread.
+        const cont = cur.continuation;
+        cur.continuation = null;
+
+        cur.state.store(.Running, .monotonic);
+        cur.switching.store(false, .monotonic);
+        cur.lock.release_no_ipl();
+
+        if (cont) |c| ki.impl.call_continuation(&cur.context, c);
     }
 
     // cur lock dropped
 }
 
 /// Block the currently running thread.
-pub fn block() void {
+pub fn block(cont: ?ke.Continuation) void {
     const ipl = ke.ipl.raise(.Dispatch);
     const td = percpu.local().current_thread.?;
 
     td.lock.acquire_no_ipl();
-    block_locked(td);
+    block_locked(td, cont);
 
     // td lock released
     ke.ipl.lower(ipl);
 }
 
 /// Block the currently running thread with its lock held.
-pub fn block_locked(curtd: *ke.Thread) void {
+pub fn block_locked(curtd: *ke.Thread, cont: ?ke.Continuation) void {
     curtd.state.store(.Blocked, .monotonic);
     curtd.runq = null;
 
@@ -1285,7 +1379,7 @@ pub fn block_locked(curtd: *ke.Thread) void {
         curtd.avg.est = (3 * curtd.avg.est + sample) / 4;
     }
 
-    yield_locked();
+    yield_locked(cont);
 }
 
 /// Unblock a thread.
@@ -1629,7 +1723,8 @@ pub fn idle(_: ?*anyopaque) noreturn {
         );
 
         if (cpu.load.load(.monotonic) != 0 or next != null) {
-            ke.sched.yield();
+            std.atomic.spinLoopHint();
+            ke.sched.yield(null);
             continue;
         }
 
