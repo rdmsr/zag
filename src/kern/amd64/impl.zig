@@ -1,5 +1,6 @@
 const r = @import("root");
 const ke = r.ke;
+const ki = ke.private;
 const pl = r.pl;
 const amd64 = r.arch;
 
@@ -23,19 +24,50 @@ const ThreadFrame = extern struct {
     rip: u64 align(1),
 };
 
+const Context = ke.Thread.Context;
+
 extern fn asm_thread_entry() void;
 
-extern fn do_context_switch(
-    old: *ThreadContext,
-    new: *ThreadContext,
+extern fn amd64_context_load(td: *ThreadContext) callconv(.c) void;
+
+extern fn amd64_context_switch(
+    old: *Context,
+    new: *Context,
     lock: *u8,
     switching: *bool,
 ) callconv(.c) void;
-extern fn do_context_load(td: *ThreadContext) callconv(.c) void;
+
+extern fn amd64_context_switch_cont_n(
+    old: *Context,
+    new: *Context,
+    lock: *u8,
+    switching: *bool,
+) callconv(.c) void;
+
+extern fn amd64_call_continuation(
+    td: *ke.Thread,
+    ctx: *Context,
+    func: usize,
+    arg: ?*anyopaque,
+) callconv(.c) noreturn;
+
+export fn ki_free_old_stack(stack_top: usize) callconv(.c) void {
+    ki.thread.stack_cache_free(stack_top);
+}
+
+/// Trampoline to match the zig ABI.
+export fn ki_continuation_trampoline(
+    func: usize,
+    arg: ?*anyopaque,
+) noreturn {
+    ke.ipl.lower(.Passive);
+    const f: *const fn (?*anyopaque) void = @ptrFromInt(func);
+    f(arg);
+    @panic("Continuation returned");
+}
 
 pub const ThreadContext = extern struct {
-    rsp: u64 align(1),
-    frame: ThreadFrame,
+    rsp: u64 align(1) = 0xDEADC0D3,
 
     export fn thread_entry(entry: usize, arg: usize) callconv(.c) void {
         const entry_fn: *const fn (?*anyopaque) void = @ptrFromInt(entry);
@@ -43,14 +75,21 @@ pub const ThreadContext = extern struct {
         entry_fn(@ptrFromInt(arg));
     }
 
-    pub fn init(
+    pub fn init_with_stack(
         stack: r.VAddr,
-        stack_size: usize,
+    ) @This() {
+        return .{
+            .rsp = stack,
+        };
+    }
+
+    pub fn reset(
+        self: *@This(),
+        stack_top: r.VAddr,
         entry: *const fn (?*anyopaque) void,
         arg: ?*anyopaque,
     ) @This() {
-        var ctx: @This() = undefined;
-        var sp: usize = stack + stack_size;
+        var sp: usize = stack_top;
 
         sp = sp & ~@as(usize, 15);
         sp = sp - @sizeOf(ThreadFrame);
@@ -60,31 +99,56 @@ pub const ThreadContext = extern struct {
 
         frame.* = std.mem.zeroes(ThreadFrame);
 
-        ctx.rsp = @intFromPtr(frame);
+        self.rsp = @intFromPtr(frame);
         frame.rip = @intFromPtr(&asm_thread_entry);
         frame.r12 = @intFromPtr(entry);
         frame.r13 = @intFromPtr(arg);
 
-        return ctx;
+        return self.*;
     }
 
-    pub fn switch_to(
-        self: *ThreadContext,
-        new: *ThreadContext,
-    ) callconv(.c) void {
-        const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", self));
-        do_context_switch(
-            self,
-            new,
-            &thread.lock.inner.locked.raw,
-            &thread.switching.raw,
-        );
-    }
-
-    pub fn load(self: *ThreadContext) callconv(.c) void {
-        do_context_load(self);
+    pub fn load(self: *ThreadContext) void {
+        amd64_context_load(self);
     }
 };
+
+pub fn switch_normal_to_normal(
+    old: *Context,
+    new: *Context,
+) void {
+    const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", old));
+    amd64_context_switch(
+        old,
+        new,
+        &thread.lock.inner.locked.raw,
+        &thread.switching.raw,
+    );
+}
+
+pub fn switch_cont_to_normal(
+    old: *Context,
+    new: *Context,
+) void {
+    const td: *ke.Thread = @alignCast(@fieldParentPtr("context", old));
+
+    amd64_context_switch_cont_n(
+        old,
+        new,
+        &td.lock.inner.locked.raw,
+        &td.switching.raw,
+    );
+}
+
+pub fn call_continuation(ctx: *Context, continuation: ke.Continuation) noreturn {
+    const td: *ke.Thread = @alignCast(@fieldParentPtr("context", ctx));
+
+    amd64_call_continuation(
+        td,
+        ctx,
+        @intFromPtr(continuation.func),
+        continuation.arg,
+    );
+}
 
 inline fn percpu_ptr_for(variable: anytype, cpu: u32) @TypeOf(variable) {
     return @ptrFromInt(@intFromPtr(variable) +% cpu_offsets[cpu]);

@@ -101,6 +101,7 @@ pub const Status = enum(u8) {
 const Options = struct {
     timeout: ?r.Nanoseconds = null,
     waitblocks: ?[*]WaitBlock = null,
+    continuation: ?ke.Continuation = null,
 };
 
 /// Wait for the provided object to be signaled.
@@ -139,6 +140,10 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
 
     var satisfier: ?usize = null;
     curtd.wait_status.store(.InProgress, .release);
+
+    if (has_timeout) {
+        timer.init();
+    }
 
     for (0..total_count) |i| {
         const is_timer = has_timeout and i == timer_i;
@@ -223,7 +228,7 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
 
         curtd.wait_reason = reason;
         // We're good, now actually block.
-        ki.sched.block_locked(curtd);
+        ki.sched.block_locked(curtd, opts.continuation);
     } else {
         queue = null;
 

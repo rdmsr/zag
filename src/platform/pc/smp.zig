@@ -38,16 +38,23 @@ fn ap_entry(cpu_id: u32) callconv(.c) noreturn {
 }
 
 fn make_thread(
-    entrypoint: *const fn (?*anyopaque) void,
     stack: usize,
-    size: usize,
+    cpu: u32,
 ) *ke.Thread {
     const td = mm.zone.gpa.create(ke.Thread) catch
         @panic("Failed to allocate thread for AP");
 
-    td.init(stack, size, .IdleThread, entrypoint, null);
+    td.init(.{
+        .stack = stack,
+        .priority = .IdleThread,
+        .entry = undefined,
+        // Shouldn't block.
+        .turnstile = undefined,
+    });
 
-    ke.sched.pin(td);
+    td.continuation = null;
+
+    ke.sched.pin_on(td, cpu);
     return td;
 }
 
@@ -139,9 +146,8 @@ pub fn init() linksection(r.init) void {
 
         start_stack.remote(@intCast(cpu_id)).* = stack_top & ~@as(usize, 15);
         start_thread.remote(@intCast(cpu_id)).* = make_thread(
-            @ptrCast(&ap_entry),
-            stack_top - stack_size,
-            stack_size,
+            stack_top,
+            @intCast(cpu_id),
         );
 
         rtl.barrier.fence(.release);

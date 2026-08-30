@@ -133,8 +133,8 @@ __interrupt_vectors:
 .endr
 
 
-.global do_context_switch
-do_context_switch:
+.global amd64_context_switch
+amd64_context_switch:
     /* Save callee-saved registers. */
     push %r15
     push %r14
@@ -166,8 +166,8 @@ do_context_switch:
     pop %r15
     ret
 
-.global do_context_load
-do_context_load:
+.global amd64_context_load
+amd64_context_load:
     /* Load new stack pointer. */
     mov (%rdi), %rsp
 
@@ -180,10 +180,59 @@ do_context_load:
     pop %r15
     ret
 
+.extern ki_free_old_stack
+.global amd64_context_switch_cont_n
+amd64_context_switch_cont_n:
+    /* Load new stack pointer. */
+    movq (%rsi), %rsp
+
+    movq %rdx, %r12
+    movq %rcx, %r13
+
+    /* Free the old stack. */
+    movq 8(%rdi), %rbx
+    movq $0, 8(%rdi)
+    movq %rbx, %rdi
+    call ki_free_old_stack
+
+    /* Set switching to false. */
+    xorl %eax, %eax
+    xchgb %al, (%r13)
+
+    /* Unlock passed lock. */
+    xorl %eax, %eax
+    xchgb %al, (%r12)
+
+    /* Restore callee-saved registers. */
+    pop %rbp
+    pop %rbx
+    pop %r12
+    pop %r13
+    pop %r14
+    pop %r15
+    ret
+
+
+.extern ki_continuation_trampoline
+.global amd64_call_continuation
+amd64_call_continuation:
+    /* Reset stack pointer. */
+    movq 8(%rsi), %rsp
+
+    /* Terminate stack frame. */
+    xorq %rbp, %rbp
+
+    /* Pass func and arg to the trampoline. */
+    mov %rdx, %rdi
+    mov %rcx, %rsi
+
+    /* Jump to the function. */
+    jmp ki_continuation_trampoline
+
 .extern thread_entry
 .global asm_thread_entry
 asm_thread_entry:
     mov %r12, %rdi
     mov %r13, %rsi
-    call thread_entry
+    jmp thread_entry
     ud2
