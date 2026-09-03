@@ -71,7 +71,7 @@ const std = @import("std");
 const r = @import("root");
 const rtl = @import("rtl");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 const BlkPos = struct {
     begin: usize,
@@ -645,7 +645,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
 
             var reservation: Reservation = undefined;
 
-            reservation.irq_state = ki.impl.disable_interrupts();
+            reservation.irq_state = kep.impl.disable_interrupts();
 
             const id = try self.reserve_desc();
 
@@ -703,7 +703,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             );
 
             // Restore IRQ state after publishing the new entry.
-            ki.impl.restore_interrupts(res.irq_state);
+            kep.impl.restore_interrupts(res.irq_state);
         }
 
         /// Return the first readable sequence currently retained by the ring.

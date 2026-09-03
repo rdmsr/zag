@@ -6,7 +6,7 @@ const rtl = @import("rtl");
 
 const ke = r.ke;
 const mm = r.mm;
-const mi = mm.private;
+const mmp = mm.private;
 const ps = r.ps;
 const ex = r.ex;
 
@@ -23,7 +23,7 @@ fn reclaim_state(obj: *anyopaque, _: ?*anyopaque) void {
     const state: *ke.ShootdownState = @fieldParentPtr("link", link);
 
     const space: *mm.Space = @ptrFromInt(state.payload[0]);
-    const pfn_list: mi.PfnList = @bitCast(state.payload[1]);
+    const pfn_list: mmp.PfnList = @bitCast(state.payload[1]);
     const base = state.base;
     const npages = state.npages;
 

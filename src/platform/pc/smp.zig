@@ -5,7 +5,7 @@ const rtl = @import("rtl");
 const config = @import("config");
 const mm = r.mm;
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const amd64 = @import("arch");
 
 const log = std.log.scoped(.smp);
@@ -34,7 +34,7 @@ const ApData = extern struct {
 };
 
 fn ap_entry(cpu_id: u32) callconv(.c) noreturn {
-    ki.impl.init.ap_entry(cpu_id, &aps_booted);
+    kep.impl.init.ap_entry(cpu_id, &aps_booted);
 }
 
 fn make_thread(
@@ -96,12 +96,12 @@ pub fn init() linksection(r.init) void {
         @panic("Failed to allocate AP local data offsets");
 
     // Allocate per-cpu offsets for CPU-local data.
-    ki.impl.cpu_offsets = @ptrCast(offsets);
+    kep.impl.cpu_offsets = @ptrCast(offsets);
     const percpu_size = @intFromPtr(&__percpu_end) - @intFromPtr(&__percpu_start);
 
     log.info("per-CPU data size: {} bytes", .{percpu_size});
 
-    ki.impl.cpu_offsets[0] = 0;
+    kep.impl.cpu_offsets[0] = 0;
 
     cpu_id_to_apic_id[0] = apic.get_id();
 
@@ -125,16 +125,16 @@ pub fn init() linksection(r.init) void {
             @as([*]u8, @ptrCast(&__percpu_start))[0..percpu_size],
         );
 
-        const self_offset_offset = @intFromPtr(&ki.impl.cpu_self_offset) -
+        const self_offset_offset = @intFromPtr(&kep.impl.cpu_self_offset) -
             @intFromPtr(&__percpu_start);
 
-        ki.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -%
+        kep.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -%
             @intFromPtr(&__percpu_start);
 
         const off: *usize = @ptrCast(@alignCast(&cpu_data[self_offset_offset]));
 
         // copy the offset into the AP's self_offset variable
-        off.* = ki.impl.cpu_offsets[cpu_id];
+        off.* = kep.impl.cpu_offsets[cpu_id];
 
         const stack_size = r.kib(16);
 

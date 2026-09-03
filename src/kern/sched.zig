@@ -98,7 +98,7 @@ const rtl = @import("rtl");
 const config = @import("config");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const pl = r.pl;
 
 const runqueues_n = 64;
@@ -268,7 +268,7 @@ fn init_cpu() linksection(r.init) void {
         .est_load_avg = .init(0),
         .migratable = .init(0),
         .current_thread_prio = .init(0),
-        .resched_dpc = .init(ki.sched.clock),
+        .resched_dpc = .init(kep.sched.clock),
         .resched_timer = undefined,
         .start_timer = false,
         .preemption_reason = .None,
@@ -1034,7 +1034,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
             cpu.preemption_reason = .HigherPriority;
             td.cpu = c;
             td.state.store(.Selected, .monotonic);
-            ki.ipl.set_softint_pending(c, .Dispatch);
+            kep.ipl.set_softint_pending(c, .Dispatch);
 
             cpu.current_thread_prio.store(td.priority, .monotonic);
 
@@ -1056,19 +1056,19 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
 
     if (cpu.resched_timer.state.load(.monotonic) == .Stopped) {
         cpu.start_timer = true;
-        ki.ipl.set_softint_pending(c, .Dispatch);
+        kep.ipl.set_softint_pending(c, .Dispatch);
     }
 
     // queues_lock dropped
 }
 
 fn allocate_stack(td: *ke.Thread) ?usize {
-    if (ki.thread.stack_cache_pop()) |stack| {
+    if (kep.thread.stack_cache_pop()) |stack| {
         return stack;
     }
 
     // Enqueue the thread for allocation
-    ki.thread.thread_stack_queue.insert(@ptrCast(&td.runq_link.next));
+    kep.thread.thread_stack_queue.insert(@ptrCast(&td.runq_link.next));
     return null;
 }
 
@@ -1122,13 +1122,13 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
         cur.switching.store(false, .release);
         cur.lock.release_no_ipl();
 
-        ki.impl.call_continuation(&next.context, continuation);
+        kep.impl.call_continuation(&next.context, continuation);
     }
 
     if (relinquish) {
-        ki.impl.switch_cont_to_normal(&cur.context, &next.context);
+        kep.impl.switch_cont_to_normal(&cur.context, &next.context);
     } else {
-        ki.impl.switch_normal_to_normal(&cur.context, &next.context);
+        kep.impl.switch_normal_to_normal(&cur.context, &next.context);
     }
 }
 
@@ -1206,7 +1206,7 @@ pub fn handle_preemption(cpu: *PerCpu) void {
 /// Called every time slice in DPC context.
 pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
     const cpu = percpu.local();
-    std.debug.assert(ki.ipl.current() == .Dispatch);
+    std.debug.assert(kep.ipl.current() == .Dispatch);
 
     const curtd = cpu.current_thread orelse return;
 
@@ -1369,7 +1369,7 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
         cur.switching.store(false, .monotonic);
         cur.lock.release_no_ipl();
 
-        if (cont) |c| ki.impl.call_continuation(&cur.context, c);
+        if (cont) |c| kep.impl.call_continuation(&cur.context, c);
     }
 
     // cur lock dropped
@@ -1508,7 +1508,7 @@ pub fn update_priority_locked(td: *ke.Thread, new_prio: u8) void {
         cpu.preemption_reason = .HigherPriority;
         cpu.current_thread_prio.store(next.priority, .monotonic);
 
-        ki.ipl.set_softint_pending(c, .Dispatch);
+        kep.ipl.set_softint_pending(c, .Dispatch);
 
         if (c != ke.cpu.current()) {
             pl.send_ipi(c);
@@ -1770,8 +1770,8 @@ pub fn idle(_: ?*anyopaque) noreturn {
         }
 
         // Dispatch any pending DPCs.
-        if (ki.ipl.is_softint_pending(.Dispatch)) {
-            ki.dpc.dispatch();
+        if (kep.ipl.is_softint_pending(.Dispatch)) {
+            kep.dpc.dispatch();
         }
 
         std.atomic.spinLoopHint();

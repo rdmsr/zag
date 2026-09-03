@@ -7,7 +7,7 @@ const std = @import("std");
 const config = @import("config");
 
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 pub const Sequence = u64;
 
@@ -70,7 +70,7 @@ pub const Tracker = struct {
     dom: *Domain,
     seq: Sequence,
     cpu: ?*Cpu,
-    owner: ki.turnstile.Owner,
+    owner: kep.turnstile.Owner,
 };
 
 /// Used by tests.
@@ -152,18 +152,18 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence 
                 cpu.stall_goal = goal;
                 cpu.stall_lock.release_no_ipl();
 
-                const ts = ki.turnstile.lookup(cpu);
+                const ts = kep.turnstile.lookup(cpu);
 
                 seq = cpu.stall_seq.load(.monotonic);
 
                 // Re-check under the chain lock.
                 if (seq == seq_invalid or goal <= seq) {
-                    ki.turnstile.exit(cpu);
+                    kep.turnstile.exit(cpu);
                     ke.ipl.lower(ipl);
                     break;
                 }
 
-                ki.turnstile.block(
+                kep.turnstile.block(
                     ts,
                     cpu,
                     .{ .shared = &cpu.stalled },
@@ -354,7 +354,7 @@ pub fn mark_thread_stalled(td: *ke.Thread) void {
         const entry = it.get();
         it.advance();
 
-        const owner: *ki.turnstile.Owner = @fieldParentPtr("link", entry);
+        const owner: *kep.turnstile.Owner = @fieldParentPtr("link", entry);
         const tracker: *Tracker = @fieldParentPtr("owner", owner);
 
         if (tracker.cpu == null) {
@@ -370,16 +370,16 @@ pub fn mark_thread_stalled(td: *ke.Thread) void {
 
             cpu.current_seq.store(seq_invalid, .release);
 
-            const turnstile = ki.turnstile.lookup(cpu);
+            const turnstile = kep.turnstile.lookup(cpu);
 
             entry.remove();
             cpu.stalled.insert_tail(&tracker.owner.link);
 
             if (turnstile) |ts| {
-                ki.turnstile.owner_enter(ts, &tracker.owner);
+                kep.turnstile.owner_enter(ts, &tracker.owner);
             }
 
-            ki.turnstile.exit(cpu);
+            kep.turnstile.exit(cpu);
 
             cpu.stall_lock.release_no_ipl();
         }
@@ -424,12 +424,12 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
     // We got preempted.
     cpu.stall_lock.acquire_no_ipl();
 
-    const turnstile = ki.turnstile.lookup(cpu);
+    const turnstile = kep.turnstile.lookup(cpu);
 
     // Remove ourselves from the stalled list.
     tracker.owner.link.remove();
 
-    ki.turnstile.owner_leave(&tracker.owner);
+    kep.turnstile.owner_leave(&tracker.owner);
 
     var wake = false;
 
@@ -437,7 +437,7 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
         cpu.stall_seq.store(seq_invalid, .release);
         wake = true;
     } else {
-        const first_owner: *ki.turnstile.Owner = @fieldParentPtr(
+        const first_owner: *kep.turnstile.Owner = @fieldParentPtr(
             "link",
             cpu.stalled.first(),
         );
@@ -449,10 +449,10 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
 
     if (wake) {
         if (turnstile) |ts|
-            ki.turnstile.wakeup(ts, .Exclusive, ts.waiters, null);
+            kep.turnstile.wakeup(ts, .Exclusive, ts.waiters, null);
     }
 
-    ki.turnstile.exit(cpu);
+    kep.turnstile.exit(cpu);
     cpu.stall_lock.release_no_ipl();
 
     ke.ipl.lower(ipl);

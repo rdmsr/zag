@@ -115,7 +115,7 @@ const config = @import("config");
 const ke = r.ke;
 const mm = r.mm;
 const ex = r.ex;
-const mi = mm.private;
+const mmp = mm.private;
 
 /// Interval at which we do housekeeping (working set update, reaping, etc.)
 pub const update_interval_s = 15;
@@ -907,7 +907,7 @@ pub const Zone = struct {
                 @intFromPtr(obj),
                 mm.page_size,
             );
-            const phys = mi.kernel_space.pmap.query(page_va).?;
+            const phys = mmp.kernel_space.pmap.query(page_va).?;
             const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys));
             break :blk page.alloced.slab_data.slab;
         } else blk: {
@@ -1227,7 +1227,7 @@ pub const Zone = struct {
     }
 
     fn alloc_page(policy: mm.WaitPolicy) !*anyopaque {
-        const alloc_ret = mi.phys.alloc_opts(.{ .policy = policy }) orelse
+        const alloc_ret = mmp.phys.alloc_opts(.{ .policy = policy }) orelse
             return error.OutOfMemory;
         return @ptrFromInt(mm.p2v(alloc_ret));
     }
@@ -1235,7 +1235,7 @@ pub const Zone = struct {
     fn free_page(p: *anyopaque) void {
         const phys = mm.v2p(@intFromPtr(p));
 
-        mi.phys.free(phys);
+        mmp.phys.free(phys);
     }
 
     fn slab_create_small(self: *Self, policy: mm.WaitPolicy) mm.Error!*Slab {
@@ -1273,7 +1273,7 @@ pub const Zone = struct {
 
     fn slab_create_large(self: *Self, policy: mm.WaitPolicy) mm.Error!*Slab {
         const capacity = (self.slab_size) / self.chunk_size;
-        const buf = try mi.heap.alloc(self.slab_size, policy);
+        const buf = try mmp.heap.alloc(self.slab_size, policy);
 
         var ret: *Slab = @ptrCast(
             @alignCast(
@@ -1296,7 +1296,7 @@ pub const Zone = struct {
         ret.alloc_rr = 0;
 
         for (0..self.slab_size / mm.page_size) |i| {
-            const phys_page = mi.kernel_space.pmap.query(
+            const phys_page = mmp.kernel_space.pmap.query(
                 @intFromPtr(buf) + i * mm.page_size,
             ) orelse @panic("Could not query page");
             const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys_page));
@@ -1650,7 +1650,7 @@ fn gpa_alloc(
     if (len > 2048) {
         if (ptr_align.toByteUnits() > mm.page_size) return null;
         const pages = std.mem.alignForward(usize, len, mm.page_size);
-        const ptr = mi.heap.alloc(pages, .WaitForMemory) catch return null;
+        const ptr = mmp.heap.alloc(pages, .WaitForMemory) catch return null;
         return @ptrCast(ptr);
     }
 

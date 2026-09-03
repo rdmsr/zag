@@ -5,12 +5,12 @@ const std = @import("std");
 const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const pl = r.pl;
 
 const PerCpu = struct {
     /// Heap of pending timers on this CPU.
-    timers: rtl.PairingHeap(.min, ki.timer.cmp_timer),
+    timers: rtl.PairingHeap(.min, kep.timer.cmp_timer),
     /// Lock over the timer heap.
     lock: ke.SpinLock,
     dpc: ke.Dpc,
@@ -26,7 +26,7 @@ pub const Timer = struct {
         Stopped,
     };
 
-    hdr: ki.wait.DispatchHeader,
+    hdr: kep.wait.DispatchHeader,
 
     /// Timer state.
     state: std.atomic.Value(State),
@@ -150,12 +150,12 @@ pub fn clock() void {
     // Check for overflows.
     // This is fine to call a lot, as the function only gets expensive
     // (i.e seqlock store) when an overflow actually happens.
-    ki.time.update_overflow();
+    kep.time.update_overflow();
 }
 
 // Called in a DPC when a timer has expired.
 fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
-    std.debug.assert(ki.ipl.current() == .Dispatch);
+    std.debug.assert(kep.ipl.current() == .Dispatch);
     const cpu = percpu.local();
 
     while (true) {
@@ -217,7 +217,7 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
         timer.state.store(.Stopped, .release);
 
         // Wake whomever was waiting on the timer.
-        ki.wait.satisfy_wait(&timer.hdr);
+        kep.wait.satisfy_wait(&timer.hdr);
         timer.hdr.lock.release_no_ipl();
 
         if (maybe_dpc) |dpc| ke.dpc.enqueue(dpc, null);

@@ -1,7 +1,7 @@
 const std = @import("std");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 /// Interrupt priority level (IPL)
 pub const Ipl = enum(u8) {
@@ -44,7 +44,7 @@ pub fn current() Ipl {
 pub fn raise(new: Ipl) Ipl {
     var old: ke.Ipl = undefined;
 
-    if (ki.impl.raise_software_ipl(new, &old)) {
+    if (kep.impl.raise_software_ipl(new, &old)) {
         @branchHint(.unlikely);
         std.debug.panic(
             "ke.ipl.raise(): Target IPL ({}) is lower than current IPL ({})",
@@ -55,7 +55,7 @@ pub fn raise(new: Ipl) Ipl {
     if (@intFromEnum(new) > @intFromEnum(Ipl.get_max_software())) {
         // Moving between hardware levels is rare.
         @branchHint(.unlikely);
-        ki.impl.set_hardware_ipl(new);
+        kep.impl.set_hardware_ipl(new);
     }
 
     return old;
@@ -66,7 +66,7 @@ pub fn raise(new: Ipl) Ipl {
 pub fn lower(new: Ipl) void {
     var old: ke.Ipl = undefined;
 
-    if (ki.impl.lower_software_ipl(new, &old)) {
+    if (kep.impl.lower_software_ipl(new, &old)) {
         @branchHint(.unlikely);
         std.debug.panic(
             "ke.ipl.lower(): Target IPL ({}) is higher than current IPL ({})",
@@ -78,27 +78,27 @@ pub fn lower(new: Ipl) void {
         @intFromEnum(old) > @intFromEnum(Ipl.get_max_software()))
     {
         @branchHint(.unlikely);
-        ki.impl.set_hardware_ipl(.Passive);
+        kep.impl.set_hardware_ipl(.Passive);
     }
 
     if (@intFromEnum(new) < @intFromEnum(Ipl.Dispatch) and
         is_softint_pending(.Dispatch))
     {
         // Dispatch DPCs if necessary.
-        ki.dpc.dispatch();
+        kep.dpc.dispatch();
     }
 }
 
 /// Set the hardware IPL to `new`.
 pub fn set_hardware(new: Ipl) Ipl {
-    const ints = ki.impl.disable_interrupts();
+    const ints = kep.impl.disable_interrupts();
     const cpu = cpu_ipl.local();
     const old = cpu.*;
 
     cpu.* = new;
 
-    ki.impl.set_hardware_ipl(new);
-    ki.impl.restore_interrupts(ints);
+    kep.impl.set_hardware_ipl(new);
+    kep.impl.restore_interrupts(ints);
 
     return old;
 }

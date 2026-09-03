@@ -1,9 +1,9 @@
 const ke = @import("root").ke;
-const ki = ke.private;
+const kep = ke.private;
 
 /// Generic waitable Event, exported for use everywhere in the kernel.
 pub const Event = struct {
-    hdr: ki.wait.DispatchHeader,
+    hdr: kep.wait.DispatchHeader,
 
     const Self = @This();
 
@@ -26,7 +26,7 @@ pub const Event = struct {
     pub fn signal(self: *Self) void {
         const ipl = self.hdr.lock.acquire();
         self.hdr.signaled = 1;
-        ki.wait.satisfy_wait(&self.hdr);
+        kep.wait.satisfy_wait(&self.hdr);
         self.hdr.lock.release(ipl);
     }
 

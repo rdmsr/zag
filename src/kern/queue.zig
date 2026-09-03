@@ -8,11 +8,11 @@
 const r = @import("root");
 const rtl = @import("rtl");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const std = @import("std");
 
 pub const Queue = struct {
-    hdr: ki.wait.DispatchHeader,
+    hdr: kep.wait.DispatchHeader,
     items: rtl.List,
     active: usize,
     max_active: usize,
@@ -49,14 +49,14 @@ pub const Queue = struct {
             },
         }
 
-        ki.wait.satisfy_wait(&self.hdr);
+        kep.wait.satisfy_wait(&self.hdr);
     }
 
     /// Remove the item at the head.
     /// This blocks until an item is actually popped.
     pub fn remove(self: *Queue, timeout: ?r.Nanoseconds) !*rtl.List.Entry {
         const ipl = self.hdr.lock.acquire();
-        const td = ki.sched.percpu.local().current_thread.?;
+        const td = kep.sched.percpu.local().current_thread.?;
 
         if (td.queue) |q| {
             std.debug.assert(q == self);
@@ -64,7 +64,7 @@ pub const Queue = struct {
 
             self.active -= 1;
             if (self.hdr.signaled > 0 and self.active < self.max_active) {
-                ki.wait.satisfy_wait(&self.hdr);
+                kep.wait.satisfy_wait(&self.hdr);
             }
         } else {
             td.queue = self;
@@ -95,7 +95,7 @@ pub fn signal_wait(queue: *Queue) void {
     queue.active -= 1;
 
     if (queue.hdr.signaled > 0 and queue.active < queue.max_active) {
-        ki.wait.satisfy_wait(&queue.hdr);
+        kep.wait.satisfy_wait(&queue.hdr);
     }
 
     queue.hdr.lock.release(ipl);

@@ -58,7 +58,7 @@
 const std = @import("std");
 const rtl = @import("rtl");
 const mm = @import("root").mm;
-const mi = mm.private;
+const mmp = mm.private;
 
 pub const Policy = enum {
     /// Use the smallest free segment that can satisfy the request.
@@ -127,7 +127,7 @@ const Segment = struct {
 /// address space.
 const freelist_count = @bitSizeOf(usize);
 
-var seg_zone: mi.zone.TypedZone(Segment) = undefined;
+var seg_zone: mmp.zone.TypedZone(Segment) = undefined;
 
 pub const Arena = struct {
     /// Name of the arena, for debugging purposes.

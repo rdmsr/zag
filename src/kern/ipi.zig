@@ -4,7 +4,7 @@ const r = @import("root");
 const std = @import("std");
 
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const pl = r.pl;
 
 const State = enum(u8) {
@@ -138,7 +138,7 @@ pub fn ipi_handler() void {
             _ = frozen_cpus.fetchAdd(1, .monotonic);
 
             while (true) {
-                ki.impl.halt();
+                kep.impl.halt();
             }
         }
 

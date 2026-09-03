@@ -7,7 +7,7 @@ const pvclock = @import("pvclock.zig");
 pub const apic = @import("apic.zig");
 pub const smp = @import("smp.zig");
 
-const ki = r.ke.private;
+const kep = r.ke.private;
 
 pub const name: []const u8 = "PC";
 

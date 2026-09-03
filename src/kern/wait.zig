@@ -5,7 +5,7 @@ const rtl = @import("rtl");
 const std = @import("std");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 /// Header for waitable objects.
 /// This must be added to any structured which is considered waitable.
@@ -122,7 +122,7 @@ pub fn wait_one(object: *DispatchHeader, reason: []const u8, opts: Options) !usi
 pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
-    const curtd = ki.sched.percpu.local().current_thread.?;
+    const curtd = kep.sched.percpu.local().current_thread.?;
     const obj_count = objects.len;
     const has_timeout = opts.timeout != null;
     const blocks = opts.waitblocks orelse blk: {
@@ -222,13 +222,13 @@ pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !
     ) == null) {
         if (queue == null) {
             if (curtd.queue) |q| {
-                ki.queue.signal_wait(q);
+                kep.queue.signal_wait(q);
             }
         }
 
         curtd.wait_reason = reason;
         // We're good, now actually block.
-        ki.sched.block_locked(curtd, opts.continuation);
+        kep.sched.block_locked(curtd, opts.continuation);
     } else {
         queue = null;
 
@@ -323,11 +323,11 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
 
             if (obj.type != .Queue) {
                 if (td.queue) |q| {
-                    ki.queue.signal_wake(q);
+                    kep.queue.signal_wake(q);
                 }
             }
 
-            ki.sched.unblock_locked(td);
+            kep.sched.unblock_locked(td);
             td.lock.release(ipl);
         }
 

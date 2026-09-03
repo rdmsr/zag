@@ -3,7 +3,7 @@ const r = @import("root");
 const rtl = @import("rtl");
 
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 pub const Priority = enum(u8) {
     const Self = @This();
@@ -79,7 +79,7 @@ pub const Thread = struct {
 
     pub const Context = extern struct {
         /// Implementation-dependent context.
-        impl: ki.impl.ThreadContext,
+        impl: kep.impl.ThreadContext,
 
         stack_top: usize,
 
@@ -127,20 +127,20 @@ pub const Thread = struct {
     /// CPU this thread is enqueued on.
     cpu: ?u32,
     /// Run queue this thread is in
-    runq: ?*ki.sched.RunQueue,
+    runq: ?*kep.sched.RunQueue,
     /// Index into the run queue this thread is currently in.
     /// Only valid when `runq` is non-null.
     runq_idx: u8,
     /// Current wait status.
-    wait_status: std.atomic.Value(ki.wait.Status),
-    waitblocks: [4]ki.wait.WaitBlock,
+    wait_status: std.atomic.Value(kep.wait.Status),
+    waitblocks: [4]kep.wait.WaitBlock,
     /// Reason for the wait, if any.
     wait_reason: ?[]const u8,
     /// Timer used for timeouts.
     timer: ke.Timer,
     /// Turnstile.
-    turnstile: *ki.turnstile.Turnstile,
-    turnstile_waiter: ?*ki.turnstile.Waiter,
+    turnstile: *kep.turnstile.Turnstile,
+    turnstile_waiter: ?*kep.turnstile.Waiter,
     turnstiles_owned: rtl.List,
     /// Object this thread is currently blocked on, or null.
     waiting_on: ?*anyopaque,
@@ -148,9 +148,9 @@ pub const Thread = struct {
     queue: ?*ke.Queue,
     queue_item: ?*rtl.List.Entry,
     /// PELT load average,
-    avg: ki.sched.Average,
+    avg: kep.sched.Average,
     /// Accounting statistics.
-    acct: ki.sched.Accounting,
+    acct: kep.sched.Accounting,
     /// Set whenever the thread is switching off its stack.
     /// This is used to avoid taking thread next lock to wait for switch off
     /// to complete.
@@ -165,7 +165,7 @@ pub const Thread = struct {
         /// Top of the stack for the thread.
         stack: r.VAddr,
         /// Turnstile associated with the thread.
-        turnstile: *ki.turnstile.Turnstile,
+        turnstile: *kep.turnstile.Turnstile,
         /// Thread's priority.
         priority: Priority,
     };
@@ -272,13 +272,13 @@ pub fn exit() void {
     // Reuse the runq linkage to put on reaper list.
     reaper_list.insert(@ptrCast(&curtd.runq_link.next));
 
-    ki.sched.detach_load_avg(ki.sched.percpu.local(), curtd);
-    ki.sched.yield_locked(Continuation.dummy);
+    kep.sched.detach_load_avg(kep.sched.percpu.local(), curtd);
+    kep.sched.yield_locked(Continuation.dummy);
 }
 
 /// Return the currently running thread.
 pub fn current() *ke.Thread {
-    return ki.sched.percpu.local().current_thread.?;
+    return kep.sched.percpu.local().current_thread.?;
 }
 
 // -- Stack allocation and continuations ---------------------------------------
@@ -350,7 +350,7 @@ pub fn call_continuation(ptr: ?*anyopaque) noreturn {
     const cont = td.continuation.?;
     td.continuation = null;
 
-    ki.impl.call_continuation(&td.context, cont);
+    kep.impl.call_continuation(&td.context, cont);
 }
 
 /// Try to get a stack from the stack cache.

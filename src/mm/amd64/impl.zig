@@ -1,7 +1,7 @@
 const amd64 = @import("arch");
 const r = @import("root");
 const mm = r.mm;
-const mi = mm.private;
+const mmp = mm.private;
 
 pub const hhdm_minimum_max_address = r.gib(4);
 
@@ -17,7 +17,7 @@ pub const hhdm_base = 0xffff800000000000;
 pub const kernel_heap_base = 0xffffc00000000000;
 pub const pfndb_base = 0xffffd00000000000;
 
-pub const levels = [_]mi.PMapLevel{
+pub const levels = [_]mmp.PMapLevel{
     .{ .shift = 12, .mask = 0x1ff, .leaf = true }, // 4K
     .{ .shift = 21, .mask = 0x1ff, .leaf = true }, // 2M
     .{ .shift = 30, .mask = 0x1ff, .leaf = true }, // 1G
@@ -117,5 +117,5 @@ pub fn is_leaf_level_enabled(level: usize) bool {
 }
 
 pub fn init_kernel() void {
-    mi.kernel_space.pmap.root_pa = amd64.read_cr(3);
+    mmp.kernel_space.pmap.root_pa = amd64.read_cr(3);
 }

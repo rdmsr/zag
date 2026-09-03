@@ -5,7 +5,7 @@ const ke = r.ke;
 const mm = r.mm;
 const ps = r.ps;
 
-const ki = ke.private;
+const kep = ke.private;
 
 const nslots = 128;
 const obj_words = 8;
@@ -50,7 +50,7 @@ fn reader(param: ?*anyopaque) void {
     var iter: u64 = 0;
 
     while (true) : (iter += 1) {
-        const ipl = ki.smr.enter(dom);
+        const ipl = kep.smr.enter(dom);
         var done: u64 = 0;
 
         for (0..reads_per_section) |_| {
@@ -68,7 +68,7 @@ fn reader(param: ?*anyopaque) void {
             done += 1;
         }
 
-        ki.smr.exit(dom, ipl);
+        kep.smr.exit(dom, ipl);
 
         _ = reads.fetchAdd(done, .monotonic);
 
@@ -135,9 +135,8 @@ fn poller(_: ?*anyopaque) void {
 }
 
 fn spawn(entry: *const fn (?*anyopaque) void, id: usize) void {
-    const t = ps.thread.create_kernel(.Default, .{.func = entry, .arg = @ptrFromInt(id + 1)}, true)
- catch
-@panic("oom");
+    const t = ps.thread.create_kernel(.Default, .{ .func = entry, .arg = @ptrFromInt(id + 1) }, true) catch
+        @panic("oom");
     ke.sched.enqueue(&t.kern);
 }
 

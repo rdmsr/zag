@@ -1,5 +1,5 @@
 const ke = @import("root").ke;
-const ki = ke.private;
+const kep = ke.private;
 const rtl = @import("rtl");
 const std = @import("std");
 
@@ -170,7 +170,7 @@ fn recompute_inherited(td: *ke.Thread) void {
 
 fn update_prio(td: *ke.Thread) void {
     const pri = td.effective_priority();
-    if (pri != td.priority) ki.sched.update_priority_locked(td, pri);
+    if (pri != td.priority) kep.sched.update_priority_locked(td, pri);
 }
 
 /// Donate priority `pri` to `to` along the edge `boost`. The caller holds
@@ -392,7 +392,7 @@ pub fn block(
     queue: Queue,
 ) void {
     const chain = chain_for(obj);
-    const curtd = ki.sched.percpu.local().current_thread.?;
+    const curtd = kep.sched.percpu.local().current_thread.?;
     const ipl = ke.ipl.current();
 
     var ts = turnstile;

@@ -1,6 +1,6 @@
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const pl = r.pl;
 const amd64 = r.arch;
 
@@ -52,7 +52,7 @@ extern fn amd64_call_continuation(
 ) callconv(.c) noreturn;
 
 export fn ki_free_old_stack(stack_top: usize) callconv(.c) void {
-    ki.thread.stack_cache_free(stack_top);
+    kep.thread.stack_cache_free(stack_top);
 }
 
 /// Trampoline to match the zig ABI.

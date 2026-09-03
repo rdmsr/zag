@@ -4,7 +4,7 @@ const r = @import("root");
 const std = @import("std");
 const impl = @import("impl.zig");
 const ke = r.ke;
-const ki = r.ke.private;
+const kep = r.ke.private;
 const pl = r.pl;
 
 var gdt = extern struct {
@@ -85,13 +85,13 @@ fn early_cpu_init() linksection(r.init) void {
 }
 
 pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
-    amd64.write_msr(.GsBase, ki.impl.cpu_offsets[cpu_id]);
+    amd64.write_msr(.GsBase, kep.impl.cpu_offsets[cpu_id]);
 
     early_cpu_init();
-    ki.cpu.init_cpu(cpu_id);
+    kep.cpu.init_cpu(cpu_id);
     pl.impl.init_ap();
 
-    const sched = ki.sched.percpu.local();
+    const sched = kep.sched.percpu.local();
 
     sched.current_thread = pl.impl.smp.start_thread.local().*;
     sched.idle_thread = sched.current_thread;
@@ -101,7 +101,7 @@ pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
     _ = booted.fetchAdd(1, .monotonic);
     ke.ipl.lower(.Passive);
 
-    ki.sched.idle(null);
+    kep.sched.idle(null);
 }
 
 var initial_offsets: [1]usize = .{0};

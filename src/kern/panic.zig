@@ -3,7 +3,7 @@ const config = @import("config");
 const r = @import("root");
 const ksyms = @import("ksyms");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 extern var text_start_addr: u8;
 extern var text_end_addr: u8;
@@ -77,7 +77,7 @@ pub fn panic_with_frame(
     msg: []const u8,
     frame: usize,
 ) noreturn {
-    _ = ki.impl.disable_interrupts();
+    _ = kep.impl.disable_interrupts();
 
     std.log.info("Crash count is {} on cpu {}", .{ crash_count.load(.monotonic), ke.cpu.current() });
 
@@ -86,21 +86,21 @@ pub fn panic_with_frame(
         // Another CPU has already crashed, just freeze manually right now.
 
         while (true) {
-            ki.impl.halt();
+            kep.impl.halt();
         }
     }
 
     // We're the first one who actually crashed, that means we get to handle
     // things like dumping the system info and freezing other CPUs. Start by
     // doing the freeze.
-    ki.ipi.freeze_cpus();
+    kep.ipi.freeze_cpus();
 
     _ = ke.ipl.raise(.High);
 
     std.log.err("KERNEL PANIC: {s} on CPU {}, curthread is {*}", .{
         msg,
         ke.cpu.current(),
-        ki.sched.percpu.local().current_thread.?,
+        kep.sched.percpu.local().current_thread.?,
     });
 
     std.log.err("Stack trace:", .{});
@@ -108,7 +108,7 @@ pub fn panic_with_frame(
     walk_stack_frame(frame);
 
     while (true) {
-        ki.impl.halt();
+        kep.impl.halt();
     }
 }
 

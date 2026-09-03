@@ -9,7 +9,7 @@ const mm = r.mm;
 const ps = r.ps;
 const rtl = @import("rtl");
 
-const ki = ke.private;
+const kep = ke.private;
 
 const prio_reader: u8 = 4;
 const prio_writer: u8 = 6;
@@ -90,8 +90,8 @@ fn reader(param: ?*anyopaque) void {
     while (true) {
         park_point();
 
-        var tracker: ki.smr.Tracker = undefined;
-        ki.smr.enter_preempt(dom, &tracker);
+        var tracker: kep.smr.Tracker = undefined;
+        kep.smr.enter_preempt(dom, &tracker);
         var done: u64 = 0;
 
         for (0..reads_per_section) |_| {
@@ -113,7 +113,7 @@ fn reader(param: ?*anyopaque) void {
         // land on the stalled list. A blocked poller must boost us out of here.
         spin_us(section_us);
 
-        ki.smr.exit_preempt(dom, &tracker);
+        kep.smr.exit_preempt(dom, &tracker);
 
         _ = reads.fetchAdd(done, .monotonic);
     }
@@ -175,13 +175,13 @@ fn cur_inherited(td: *ke.Thread) u8 {
 }
 
 /// Highest priority among the threads blocked on `ts`, or null if none.
-fn blocked_prio(ts: *ki.turnstile.Turnstile) ?u8 {
+fn blocked_prio(ts: *kep.turnstile.Turnstile) ?u8 {
     var best: ?u8 = null;
 
     for (&ts.queues) |*q| {
         var it = q.iterator();
         while (it.next()) : (it.advance()) {
-            const w: *ki.turnstile.Waiter = @fieldParentPtr("link", it.get());
+            const w: *kep.turnstile.Waiter = @fieldParentPtr("link", it.get());
             best = @max(best orelse 0, cur_prio(w.thread));
         }
     }
@@ -195,7 +195,7 @@ fn check_cpu(cpu: *ke.smr.Cpu) void {
     const ipl = ke.ipl.raise(.Dispatch);
     cpu.stall_lock.acquire_no_ipl();
 
-    const turnstile = ki.turnstile.lookup(cpu);
+    const turnstile = kep.turnstile.lookup(cpu);
 
     if (turnstile) |ts| {
         if (blocked_prio(ts)) |want| {
@@ -203,8 +203,8 @@ fn check_cpu(cpu: *ke.smr.Cpu) void {
             var it = cpu.stalled.iterator();
 
             while (it.next()) : (it.advance()) {
-                const owner: *ki.turnstile.Owner = @fieldParentPtr("link", it.get());
-                const tracker: *ki.smr.Tracker = @fieldParentPtr("owner", owner);
+                const owner: *kep.turnstile.Owner = @fieldParentPtr("link", it.get());
+                const tracker: *kep.smr.Tracker = @fieldParentPtr("owner", owner);
                 const td = tracker.owner.thread;
                 stalled += 1;
 
@@ -226,7 +226,7 @@ fn check_cpu(cpu: *ke.smr.Cpu) void {
         }
     }
 
-    ki.turnstile.exit(cpu);
+    kep.turnstile.exit(cpu);
     cpu.stall_lock.release_no_ipl();
     ke.ipl.lower(ipl);
 }
@@ -279,13 +279,13 @@ fn quiesce_check() void {
 }
 
 fn spawn(prio: u8, entry: *const fn (?*anyopaque) void, id: usize) *ps.Thread {
-    const t = ps.thread.create_kernel(@enumFromInt(prio), .{.func = entry, .arg= @ptrFromInt(id + 1)}, true) catch @panic("oom");
+    const t = ps.thread.create_kernel(@enumFromInt(prio), .{ .func = entry, .arg = @ptrFromInt(id + 1) }, true) catch @panic("oom");
     ke.sched.enqueue(&t.kern);
     return t;
 }
 
 pub fn start(_: ?*anyopaque) void {
-    std.log.info("{}", .{@sizeOf(ki.smr.Tracker)});
+    std.log.info("{}", .{@sizeOf(kep.smr.Tracker)});
 
     dom = mm.zone.smr_domain_create(true) catch @panic("failed to create SMR domain");
     zone.init("smr-pi", @sizeOf(Object), .{

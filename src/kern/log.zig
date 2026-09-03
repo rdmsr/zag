@@ -4,7 +4,7 @@ const r = @import("root");
 
 const pl = r.pl;
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 var out_lock: ke.SpinLock = .init();
 
@@ -41,7 +41,7 @@ const DebugWriter = struct {
 // Messages are on average 2^5 = 32 bytes.
 const avg_msg_size_bits = 5;
 
-pub var ringbuffer = ki.log_ring.RingBuffer(
+pub var ringbuffer = kep.log_ring.RingBuffer(
     config.log_buffer_shift,
     avg_msg_size_bits,
 ).init();
