@@ -46,6 +46,9 @@ const ImplSchema = struct {
         return false;
     }
 
+    /// Halt the CPU. This is called on crashes.
+    pub fn halt() void {}
+
     /// Restore the state of interrupts.
     pub fn restore_interrupts(state: bool) void {
         _ = state;

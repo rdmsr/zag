@@ -71,24 +71,50 @@ fn walk_stack_frame(base: usize) void {
 }
 
 pub var panic_lock: ke.SpinLock = .init();
+var crash_count: std.atomic.Value(u8) = .init(0);
 
 pub fn panic_with_frame(
     msg: []const u8,
     frame: usize,
 ) noreturn {
-    std.log.err("KERNEL PANIC: {s} on CPU {}, curthread is {*}", .{ msg, ke.cpu.current(), ki.sched.percpu.local().current_thread.? });
+    _ = ki.impl.disable_interrupts();
+
+    std.log.info("Crash count is {} on cpu {}", .{ crash_count.load(.monotonic), ke.cpu.current() });
+
+    if (crash_count.fetchAdd(1, .monotonic) != 0) {
+        std.log.err("Recursive panic from CPU {}", .{ke.cpu.current()});
+        // Another CPU has already crashed, just freeze manually right now.
+
+        while (true) {
+            ki.impl.halt();
+        }
+    }
+
+    // We're the first one who actually crashed, that means we get to handle
+    // things like dumping the system info and freezing other CPUs. Start by
+    // doing the freeze.
+    ki.ipi.freeze_cpus();
+
+    _ = ke.ipl.raise(.High);
+
+    std.log.err("KERNEL PANIC: {s} on CPU {}, curthread is {*}", .{
+        msg,
+        ke.cpu.current(),
+        ki.sched.percpu.local().current_thread.?,
+    });
+
     std.log.err("Stack trace:", .{});
+
     walk_stack_frame(frame);
 
-    panic_lock.release_no_ipl();
-
-    while (true) {}
+    while (true) {
+        ki.impl.halt();
+    }
 }
 
 pub fn panic(
     msg: []const u8,
     _: ?usize,
 ) noreturn {
-    panic_lock.acquire_no_ipl();
     panic_with_frame(msg, @frameAddress());
 }

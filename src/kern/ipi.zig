@@ -4,7 +4,7 @@ const r = @import("root");
 const std = @import("std");
 
 const ke = r.ke;
-const ki = r.ki;
+const ki = ke.private;
 const pl = r.pl;
 
 const State = enum(u8) {
@@ -30,6 +30,8 @@ const PerCpu = struct {
 };
 
 const percpu = ke.CpuLocal(PerCpu, undefined);
+
+var frozen_cpus: std.atomic.Value(u32) = .init(0);
 
 /// Call a function on another CPU.
 /// The function will be executed synchronously, i.e this will block until
@@ -63,6 +65,10 @@ pub fn unicast(
     ke.ipl.lower(ipl);
 }
 
+/// Call a function on all other CPUs.
+/// The function will be executed synchronously, i.e this will block until
+/// the function finishes running. The callback is called with the sender cpu
+/// and provided argument as arguments.
 pub fn broadcast(func: *const fn (u32, ?*anyopaque) void, arg: ?*anyopaque) void {
     const ipl = ke.ipl.raise(.Dispatch);
     const curcpu = percpu.local();
@@ -91,6 +97,28 @@ pub fn broadcast(func: *const fn (u32, ?*anyopaque) void, arg: ?*anyopaque) void
     ke.ipl.lower(ipl);
 }
 
+/// Freeze all other CPUs.
+/// Called at IPL >= Dispatch.
+pub fn freeze_cpus() void {
+    frozen_cpus.store(1, .monotonic);
+
+    for (0..ke.ncpus) |i| {
+        if (i == ke.cpu.current()) continue;
+        const remote = percpu.remote(@intCast(i));
+        remote.pending.set(ke.cpu.current(), .monotonic);
+
+        const state = remote.state.swap(.Pending, .release);
+
+        if (state == .Idle) {
+            pl.send_ipi(@intCast(i));
+        }
+    }
+
+    while (frozen_cpus.load(.monotonic) != ke.ncpus) {
+        std.atomic.spinLoopHint();
+    }
+}
+
 pub fn ipi_handler() void {
     const curcpu = percpu.local();
 
@@ -104,6 +132,15 @@ pub fn ipi_handler() void {
             .acquire,
             .monotonic,
         );
+
+        if (frozen_cpus.load(.monotonic) != 0) {
+            // We have been requested to freeze, ack and do it now.
+            _ = frozen_cpus.fetchAdd(1, .monotonic);
+
+            while (true) {
+                ki.impl.halt();
+            }
+        }
 
         if (val != null) {
             // CAS failed.
