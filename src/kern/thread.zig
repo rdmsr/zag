@@ -238,6 +238,22 @@ pub const Thread = struct {
         return self.priority >= @intFromEnum(Priority.LowInteractive) and
             self.priority <= @intFromEnum(Priority.HighInteractive);
     }
+
+    pub fn can_relinquish_stack(self: *Thread) bool {
+        const state = self.state.load(.monotonic);
+
+        // Stack donation for realtime threads is disabled, unless they are
+        // exiting.
+        return self.base_priority_class() != .Realtime or
+            state == .Zombie or
+            state == .Terminated;
+    }
+
+    pub fn can_receive_stack(self: *Thread) bool {
+        // Realtime threads shouldn't donate their stack, so they can't receive
+        // them.
+        return self.base_priority_class() != .Realtime;
+    }
 };
 
 /// HandoffList of threads waiting to be reaped.
