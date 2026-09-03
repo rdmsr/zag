@@ -5,7 +5,7 @@ const r = @import("root");
 const ex = r.ex;
 const psp = r.ps.private;
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const mm = r.mm;
 
 pub const kernel_thread_stack_size = r.kib(16);

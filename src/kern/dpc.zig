@@ -3,7 +3,7 @@ const config = @import("config");
 const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 /// Deferred Procedure Call (DPC) structure.
 /// Used for scheduling work to be done when IPL is lowered below `.Dispatch`.
@@ -63,7 +63,7 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
         dpc_cpu.queue.insert_tail(&dpc.link);
 
         // Mark the DPC as pending on this CPU
-        ki.ipl.set_softint_pending(mycpu, .Dispatch);
+        kep.ipl.set_softint_pending(mycpu, .Dispatch);
 
         dpc_cpu.lock.release_no_ipl();
     }
@@ -72,17 +72,17 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
 }
 
 fn dispatch_queue(cpu: u32) void {
-    const ipl_cpu = ki.ipl.cpu_ipl.local();
+    const ipl_cpu = kep.ipl.cpu_ipl.local();
     const dpc_cpu = pcpu.local();
-    const sched_cpu = ki.sched.percpu.local();
+    const sched_cpu = kep.sched.percpu.local();
 
     ipl_cpu.* = .Dispatch;
 
     // Mark as handled, this must be done before enabling interrupts or we will
     // race.
-    ki.ipl.clear_softint_pending(cpu, .Dispatch);
+    kep.ipl.clear_softint_pending(cpu, .Dispatch);
 
-    _ = ki.impl.enable_interrupts();
+    _ = kep.impl.enable_interrupts();
 
     while (true) {
         const ipl = dpc_cpu.lock.acquire_at(.High);
@@ -133,35 +133,35 @@ fn dispatch_queue(cpu: u32) void {
     sched_cpu.start_timer = false;
     sched_cpu.preemption_reason = .None;
 
-    ki.shootdown.process_shootdowns();
+    kep.shootdown.process_shootdowns();
 
     if (sched_cpu.next_thread != null) {
         const curtd = sched_cpu.current_thread.?;
 
         if (!curtd.smr_sections.is_empty()) {
-            ki.smr.mark_thread_stalled(curtd);
+            kep.smr.mark_thread_stalled(curtd);
         }
 
-        ki.sched.handle_preemption(sched_cpu);
+        kep.sched.handle_preemption(sched_cpu);
     }
 
-    _ = ki.impl.disable_interrupts();
+    _ = kep.impl.disable_interrupts();
 }
 
 /// Dispatch the DPC queue on the current CPU.
 pub fn dispatch() void {
     // DPC processing is done at IPL Dispatch.
     // Don't call lower/raise here because they might call us again recursively.
-    const int_state = ki.impl.disable_interrupts();
-    const old_ipl = ki.ipl.cpu_ipl.local().*;
+    const int_state = kep.impl.disable_interrupts();
+    const old_ipl = kep.ipl.cpu_ipl.local().*;
     var mycpu = ke.cpu.current();
 
-    while (ki.ipl.is_softint_pending(.Dispatch)) {
+    while (kep.ipl.is_softint_pending(.Dispatch)) {
         dispatch_queue(mycpu);
         // Our CPU might have changed.
         mycpu = ke.cpu.current();
     }
 
-    ki.ipl.cpu_ipl.local().* = old_ipl;
-    ki.impl.restore_interrupts(int_state);
+    kep.ipl.cpu_ipl.local().* = old_ipl;
+    kep.impl.restore_interrupts(int_state);
 }

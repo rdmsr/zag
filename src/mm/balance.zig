@@ -10,7 +10,7 @@ const std = @import("std");
 const ps = r.ps;
 const ke = r.ke;
 const mm = r.mm;
-const mi = mm.private;
+const mmp = mm.private;
 
 const balance_interval = ke.Tunable(u32, 1000, "mm.balance.interval_ms");
 

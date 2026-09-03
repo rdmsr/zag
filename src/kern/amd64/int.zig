@@ -2,9 +2,9 @@ const amd64 = @import("arch");
 const std = @import("std");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const pl = r.pl;
-const mi = r.mm.private;
+const mmp = r.mm.private;
 
 extern const __interrupt_vectors: [256]usize;
 
@@ -49,7 +49,7 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.{ .x86_64_sys
     const ipl = ke.ipl.set_hardware(.Device);
 
     if (frame.intno < 32) {
-        ki.panic.panic_lock.acquire_no_ipl();
+        kep.panic.panic_lock.acquire_no_ipl();
         std.log.err("Unhandled exception: 0x{x} ({s}), err=0x{x}, pc=0x{x}", .{ frame.intno, exception_msg[frame.intno], frame.errcode, frame.rip });
         std.log.err("RAX=0x{x:0>16} RBX=0x{x:0>16} RCX=0x{x:0>16} RDX=0x{x:0>16}", .{ frame.rax, frame.rbx, frame.rcx, frame.rdx });
         std.log.err("RSI=0x{x:0>16} RDI=0x{x:0>16} RBP=0x{x:0>16} RSP=0x{x:0>16}", .{ frame.rsi, frame.rdi, frame.rbp, frame.rsp });
@@ -78,16 +78,16 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.{ .x86_64_sys
 
         std.log.err("CR2=0x{x:0>16} CR3=0x{x:0>16} RFLAGS={s}", .{ cr2, cr3, buf[0..writer.end] });
 
-        ki.panic.panic_with_frame("Unhandled exception", frame.rbp);
+        kep.panic.panic_with_frame("Unhandled exception", frame.rbp);
     }
 
     if (frame.intno == 32) {
-        ki.timer.clock();
+        kep.timer.clock();
     }
 
     // Platform IPI number.
     if (frame.intno == 240) {
-        ki.ipi.ipi_handler();
+        kep.ipi.ipi_handler();
     }
 
     if (frame.intno >= 32) {
@@ -97,9 +97,9 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.{ .x86_64_sys
     _ = ke.ipl.set_hardware(ipl);
 
     if (@intFromEnum(ipl) < @intFromEnum(ke.Ipl.get_max_software()) and
-        ki.ipl.is_softint_pending(.Dispatch))
+        kep.ipl.is_softint_pending(.Dispatch))
     {
-        ki.dpc.dispatch();
+        kep.dpc.dispatch();
     }
 }
 

@@ -5,7 +5,7 @@ const config = @import("config");
 const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 const mm = r.mm;
 const pl = r.pl;
 
@@ -87,14 +87,14 @@ fn allocate_slot(cpu: *PerCpu) ?usize {
 }
 
 fn flush_range(va: r.VAddr, npages: usize) void {
-    if (npages > ki.impl.tlb_max_pages) {
+    if (npages > kep.impl.tlb_max_pages) {
         // Just flush the entire thing.
-        ki.impl.flush_full_tlb();
+        kep.impl.flush_full_tlb();
         return;
     }
 
     for (0..npages) |i| {
-        ki.impl.flush_tlb(va + i * mm.page_size);
+        kep.impl.flush_tlb(va + i * mm.page_size);
     }
 }
 
@@ -148,12 +148,12 @@ pub fn process_shootdowns() void {
     if (nreq == 0) return;
 
     // npages is just a hint, we don't need it to be accurate.
-    const full = cpu.npages.load(.monotonic) >= ki.impl.tlb_max_pages;
+    const full = cpu.npages.load(.monotonic) >= kep.impl.tlb_max_pages;
     cpu.npages.store(0, .monotonic);
 
     if (full) {
         // Just flush the entire thing.
-        ki.impl.flush_full_tlb();
+        kep.impl.flush_full_tlb();
     }
 
     // Go through every sender and release their states.
@@ -220,6 +220,6 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
         remote.senders.set(curcpu, .release);
 
         rtl.barrier.fence(.release);
-        ki.ipl.set_softint_pending(@truncate(bit), .Dispatch);
+        kep.ipl.set_softint_pending(@truncate(bit), .Dispatch);
     }
 }

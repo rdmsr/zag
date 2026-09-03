@@ -3,7 +3,7 @@ const rtl = @import("rtl");
 const r = @import("root");
 
 const ke = r.ke;
-const ki = r.ke.private;
+const kep = r.ke.private;
 
 const id = CpuLocal(u32, 0);
 
@@ -29,12 +29,12 @@ pub fn CpuLocal(comptime T: type, comptime init: T) type {
 
         /// Return a pointer to local CPU data.
         pub fn local() *T {
-            return ki.impl.percpu_ptr(&storage);
+            return kep.impl.percpu_ptr(&storage);
         }
 
         /// Return a pointer to remote CPU data.
         pub fn remote(cpu: u32) *T {
-            return ki.impl.percpu_ptr_other(&storage, cpu);
+            return kep.impl.percpu_ptr_other(&storage, cpu);
         }
     };
 }
@@ -48,11 +48,11 @@ pub fn ExportedCpuLocal(
     const S = struct {
         var storage: T linksection(".data.percpu") = init;
 
-        pub fn local() @TypeOf(ki.impl.percpu_ptr(&storage)) {
-            return ki.impl.percpu_ptr(&storage);
+        pub fn local() @TypeOf(kep.impl.percpu_ptr(&storage)) {
+            return kep.impl.percpu_ptr(&storage);
         }
         pub fn remote(cpu: u32) *T {
-            return ki.impl.percpu_ptr_other(&storage, cpu);
+            return kep.impl.percpu_ptr_other(&storage, cpu);
         }
     };
     @export(&S.storage, .{ .name = name, .linkage = .strong });

@@ -3,7 +3,7 @@ const r = @import("root");
 const pl = r.pl;
 const ke = r.ke;
 const arch = r.arch;
-const ki = ke.private;
+const kep = ke.private;
 const ex = r.ex;
 
 var thread0: ke.Thread = undefined;
@@ -29,16 +29,16 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
 
 fn init() linksection(r.init) void {
     ke.ncpus = 1;
-    ki.impl.early_init();
-    ki.tunable.init();
+    kep.impl.early_init();
+    kep.tunable.init();
     std.log.info("Welcome to the machine", .{});
     pl.early_init();
-    ki.log.init();
-    ki.cpu.init_cpu(0);
-    ki.turnstile.init_turnstiles();
+    kep.log.init();
+    kep.cpu.init_cpu(0);
+    kep.turnstile.init_turnstiles();
 
-    ki.sched.percpu.local().current_thread = &thread0;
-    ki.sched.percpu.local().idle_thread = &thread0;
+    kep.sched.percpu.local().current_thread = &thread0;
+    kep.sched.percpu.local().idle_thread = &thread0;
 
     std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{
         pl.name,
@@ -47,5 +47,5 @@ fn init() linksection(r.init) void {
     });
 
     ex.init();
-    ki.sched.idle(null);
+    kep.sched.idle(null);
 }

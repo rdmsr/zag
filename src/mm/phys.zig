@@ -3,7 +3,7 @@ const std = @import("std");
 const rtl = @import("rtl");
 const pl = r.pl;
 const mm = r.mm;
-const mi = mm.private;
+const mmp = mm.private;
 const ke = r.ke;
 
 const log = std.log.scoped(.@"mm/phys");
@@ -173,7 +173,7 @@ pub fn init() linksection(r.init) void {
 
     // Get the kernel pagemap from the loader,
     // we are already in it so no need to activate it.
-    mi.impl.init_kernel();
+    mmp.impl.init_kernel();
 
     // Calculate the minimum amount of free memory we accept,
     // this formula is from Linux and does not grow linearly;

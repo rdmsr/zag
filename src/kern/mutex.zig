@@ -1,6 +1,6 @@
 const std = @import("std");
 const ke = @import("root").ke;
-const ki = ke.private;
+const kep = ke.private;
 
 /// Number of spins before blocking.
 const optimistic_spins = 100;
@@ -19,7 +19,7 @@ pub const Mutex = struct {
 
     pub fn acquire(m: *Mutex) void {
         const ipl = ke.ipl.raise(.Dispatch);
-        const curtd = ki.sched.percpu.local().current_thread.?;
+        const curtd = kep.sched.percpu.local().current_thread.?;
 
         // Very fast path: the lock is uncontended and we can acquire it
         //immediately.
@@ -57,12 +57,12 @@ pub const Mutex = struct {
 
         // Slow path: contended, block on a turnstile.
         while (true) {
-            const ts = ki.turnstile.lookup(m);
+            const ts = kep.turnstile.lookup(m);
             const owner = m.owner.load(.monotonic);
 
             if (owner == null) {
                 // Lock was released between lookup and here.
-                ki.turnstile.exit(m);
+                kep.turnstile.exit(m);
                 if (m.owner.cmpxchgStrong(
                     null,
                     curtd,
@@ -75,7 +75,7 @@ pub const Mutex = struct {
             }
 
             // Block until woken.
-            ki.turnstile.block(
+            kep.turnstile.block(
                 ts,
                 m,
                 .{ .single = owner.? },
@@ -99,12 +99,12 @@ pub const Mutex = struct {
     pub fn release(m: *Mutex) void {
         const ipl = ke.ipl.raise(.Dispatch);
 
-        const ts = ki.turnstile.lookup(m);
+        const ts = kep.turnstile.lookup(m);
 
         m.owner.store(null, .release);
 
         if (ts == null) {
-            ki.turnstile.exit(m);
+            kep.turnstile.exit(m);
             ke.ipl.lower(ipl);
             return;
         }
@@ -114,13 +114,13 @@ pub const Mutex = struct {
         // to be better because this avoids lock convoys,
         // see this mysterious 70s paper:
         // https://dl.acm.org/doi/pdf/10.1145/850657.850659
-        ki.turnstile.wakeup(
+        kep.turnstile.wakeup(
             ts.?,
             .Exclusive,
             ts.?.waiters,
             null,
         );
-        ki.turnstile.exit(m);
+        kep.turnstile.exit(m);
 
         ke.ipl.lower(ipl);
     }

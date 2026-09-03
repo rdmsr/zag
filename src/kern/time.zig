@@ -2,7 +2,7 @@ const std = @import("std");
 const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
-const ki = ke.private;
+const kep = ke.private;
 
 /// TimeCounter structure.
 /// Represents a time-keeping source upon which the kernel can rely.
