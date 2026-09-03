@@ -158,6 +158,10 @@ pub inline fn percpu_ptr_other(variable: anytype, id: u32) @TypeOf(variable) {
     return percpu_ptr_for(variable, id);
 }
 
+pub inline fn halt() void {
+    asm volatile ("hlt");
+}
+
 pub inline fn percpu_ptr(variable: anytype) @TypeOf(variable) {
     const offset = asm volatile ("mov %%gs:(%[self]), %[out]"
         : [out] "=r" (-> u64),
