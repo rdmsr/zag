@@ -1061,6 +1061,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
 
     // queues_lock dropped
 }
+
 fn allocate_stack(td: *ke.Thread) ?usize {
     if (ki.thread.stack_cache_pop()) |stack| {
         return stack;
@@ -1087,26 +1088,44 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
         account(next, now_us, .Queued);
     }
 
+    const relinquish = cur.continuation != null and
+        cur.can_relinquish_stack();
+
+    const handoff = relinquish and
+        next.continuation != null and
+        next.context.stack_top == 0 and
+        next.can_receive_stack();
+
+    if (next.continuation != null and !handoff) {
+        std.debug.assert(next.context.stack_top != 0);
+
+        next.context.reset(
+            next.context.stack_top,
+            ke.thread.call_continuation,
+            next,
+        );
+    }
+
     if (next.context.stack_top == 0) {
-        std.debug.assert(next.continuation != null);
+        std.debug.assert(handoff);
     }
 
     next.state.store(.Running, .monotonic);
 
-    if (cur.continuation != null) {
-        if (next.continuation) |c| {
-            // Both the incoming thread and outgoing thread have continuations
-            // set. Do stack hand-off.
-            next.context.stack_top = cur.context.stack_top;
-            cur.context.stack_top = 0;
-            next.continuation = null;
+    if (handoff) {
+        const continuation = next.continuation.?;
 
-            cur.switching.store(false, .release);
-            cur.lock.release_no_ipl();
+        next.context.stack_top = cur.context.stack_top;
+        cur.context.stack_top = 0;
+        next.continuation = null;
 
-            ki.impl.call_continuation(&next.context, c);
-        }
+        cur.switching.store(false, .release);
+        cur.lock.release_no_ipl();
 
+        ki.impl.call_continuation(&next.context, continuation);
+    }
+
+    if (relinquish) {
         ki.impl.switch_cont_to_normal(&cur.context, &next.context);
     } else {
         ki.impl.switch_normal_to_normal(&cur.context, &next.context);
@@ -1134,7 +1153,7 @@ pub fn handle_preemption(cpu: *PerCpu) void {
             std.atomic.spinLoopHint();
         }
 
-        if (next.context.stack_top == 0) {
+        if (next.context.stack_top == 0 and next.continuation != null) {
             // This thread has no stack, try allocating one from the stack cache.
             // Otherwise, the thread will be waiting for its stack to get
             // allocated and we pick another one in the meantime.
@@ -1147,9 +1166,11 @@ pub fn handle_preemption(cpu: *PerCpu) void {
 
             detach_load_avg(cpu, next);
             continue;
+        } else if (next.continuation != null) {
+            next.context.reset(next.context.stack_top, ke.thread.call_continuation, next);
         }
 
-        // Found a thread with a a stack.
+        // Found a thread with a stack.
         break;
     }
 
@@ -1303,17 +1324,21 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
 
         if (next) |n| {
             const curstack = n.context.stack_top;
-            const can_handoff = cur.continuation != null;
+
+            const can_handoff =
+                cur.continuation != null and
+                cur.can_relinquish_stack() and
+                n.continuation != null and
+                n.context.stack_top == 0 and
+                n.can_receive_stack();
 
             if (curstack != 0 or can_handoff) {
                 break;
             }
 
             if (curstack == 0) {
-                const new_stack = allocate_stack(n);
-
-                if (new_stack) |new| {
-                    n.context.reset(new, ke.thread.call_continuation, n);
+                if (allocate_stack(n)) |new| {
+                    n.context.stack_top = new;
                     break;
                 }
 
