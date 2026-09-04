@@ -8,9 +8,6 @@ const ps = r.ps;
 const exp = ex.private;
 const rtl = @import("rtl");
 
-// XXX
-const fbconsole = @import("../dev/fbconsole.zig");
-
 pub fn init() void {
     mm.init();
     ps.init();
@@ -33,9 +30,5 @@ pub fn init() void {
                 std.log.info("invalid test: \"{s}\"", .{tst});
             }
         }
-    }
-
-    if (r.boot_info.framebuffer != null) {
-        //        fbconsole.init(r.boot_info);
     }
 }

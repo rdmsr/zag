@@ -5,6 +5,7 @@ const r = @import("root");
 const pl = r.pl;
 const ke = r.ke;
 const kep = ke.private;
+const bv = r.bv;
 
 var out_lock: ke.SpinLock = .init();
 
@@ -29,6 +30,7 @@ const DebugWriter = struct {
         var total_written: usize = 0;
         for (data) |slice| {
             for (slice) |byte| {
+                bv.write_char(byte);
                 pl.impl.debug_write(byte);
             }
             total_written += slice.len;

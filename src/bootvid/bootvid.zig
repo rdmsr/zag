@@ -1,9 +1,9 @@
 //! Very bad and slow framebuffer console.
 const r = @import("root");
+const std = @import("std");
 
 const pl = r.pl;
 const ke = r.ke;
-const ex = r.ex;
 
 const PSF1_MAGIC: u16 = 0x0436;
 const PSF2_MAGIC: u32 = 0x864ab572;
@@ -28,25 +28,33 @@ const Psf2Header = extern struct {
 const FontInfo = struct {
     header_size: usize,
     glyph_size: usize,
-    width: usize,
-    height: usize,
+    width: u16,
+    height: u16,
 };
 
-const font_file = @embedFile("sun12x22.psfu");
+const Cursor = struct {
+    x: u16 = 0,
+    y: u16 = 0,
+};
+
+const font_file = @embedFile("sun12x22-ascii.psf");
+const text_color: u32 = 0xFFFFFFFF;
+const bg_color: u32 = 0xFF000000;
+const crash_bg_color: u32 = 0xFF0000FF;
+const window_padding: usize = 10;
+
 var font: FontInfo = undefined;
 var framebuffer: [*]u32 = undefined;
 var framebuffer_width: usize = 0;
 var framebuffer_height: usize = 0;
 
-const bg_color: u32 = 0xFFFFFFFF;
-const text_color: u32 = 0xFF000000;
-const window_padding: usize = 10;
+var cursor: Cursor = .{};
+var console_width: u16 = 0;
+var console_height: u16 = 0;
 
-var content_x: usize = 0;
-var content_y: usize = 0;
 var content_w: usize = 0;
 var content_h: usize = 0;
-var visible_h: usize = 0;
+var enabled = true;
 
 fn load_font() void {
     if (font_file.len >= @sizeOf(Psf2Header)) {
@@ -61,6 +69,7 @@ fn load_font() void {
             return;
         }
     }
+
     if (font_file.len >= @sizeOf(Psf1Header)) {
         const h1: *const Psf1Header = @ptrCast(@alignCast(font_file.ptr));
         if (h1.magic == PSF1_MAGIC) {
@@ -73,120 +82,94 @@ fn load_font() void {
             return;
         }
     }
-    font = .{ .header_size = 0, .glyph_size = 0, .width = 0, .height = 0 };
+
+    font = .{
+        .header_size = 0,
+        .glyph_size = 0,
+        .width = 0,
+        .height = 0,
+    };
 }
 
 fn plot_character(x: usize, y: usize, c: u8) void {
     const bytes_per_row = font.glyph_size / font.height;
     const glyph_offset = font.header_size + (@as(usize, c) * font.glyph_size);
     const glyph_data = font_file[glyph_offset..(glyph_offset + font.glyph_size)];
+    const start_x = window_padding + x;
+    const start_y = window_padding + y;
+
     for (0..font.height) |row| {
         var row_data: u32 = 0;
+
         for (0..bytes_per_row) |b| {
             row_data = (row_data << 8) | @as(u32, glyph_data[row * bytes_per_row + b]);
         }
+
         const shift_base = bytes_per_row * 8;
+
         for (0..font.width) |col| {
             if ((row_data & (@as(u32, 1) << @intCast(shift_base - 1 - col))) != 0) {
-                framebuffer[(y + row) * framebuffer_width + (x + col)] = text_color;
+                framebuffer[(start_y + row) * framebuffer_width + (start_x + col)] = text_color;
             }
         }
     }
 }
 
-var cursor_x: usize = 0;
-var cursor_y: usize = 0;
+fn scroll() void {
+    const rows_to_shift = (console_height - 1) * font.height;
 
-fn clear_content_rows(y: usize, height: usize) void {
-    for (0..height) |row| {
-        const dst_y = content_y + y + row;
-        if (dst_y >= content_y + visible_h) break;
+    // Move all lines up.
+    for (0..rows_to_shift) |row| {
+        const dst_y = window_padding + row;
+        const src_y = dst_y + font.height;
 
         for (0..content_w) |col| {
-            framebuffer[dst_y * framebuffer_width + content_x + col] = bg_color;
+            framebuffer[dst_y * framebuffer_width + window_padding + col] =
+                framebuffer[src_y * framebuffer_width + window_padding + col];
+        }
+    }
+
+    // Clear the last line.
+    for (0..font.height) |row| {
+        const dst_y = window_padding + (console_height - 1) * font.height + row;
+
+        for (0..content_w) |col| {
+            framebuffer[dst_y * framebuffer_width + window_padding + col] = bg_color;
         }
     }
 }
 
-fn scroll_up(pixels: usize) void {
-    if (pixels >= visible_h) {
-        clear_content_rows(0, visible_h);
-        return;
-    }
-
-    const remaining_h = visible_h - pixels;
-    for (0..remaining_h) |row| {
-        const dst_y = content_y + row;
-        const src_y = dst_y + pixels;
-
-        for (0..content_w) |col| {
-            framebuffer[dst_y * framebuffer_width + content_x + col] =
-                framebuffer[src_y * framebuffer_width + content_x + col];
-        }
-    }
-
-    clear_content_rows(remaining_h, pixels);
+pub fn disable() void {
+    enabled = false;
 }
 
-fn ensure_cursor_visible() void {
-    while (cursor_y + font.height > visible_h) {
-        scroll_up(font.height);
-        cursor_y -= font.height;
-    }
-}
+pub fn crash() void {
+    cursor.x = 0;
+    cursor.y = 0;
 
-fn newline() void {
-    cursor_x = 0;
-    cursor_y += font.height;
-
-    while (cursor_y > visible_h) {
-        scroll_up(font.height);
-        cursor_y -= font.height;
+    for (0..framebuffer_width * framebuffer_height) |i| {
+        framebuffer[i] = crash_bg_color;
     }
 }
 
 pub fn write_char(c: u8) void {
-    if (font.width == 0 or font.height == 0 or content_w < font.width or visible_h < font.height) {
-        return;
-    }
-
-    // Backspace.
-    if (c == '\x08') {
-        if (cursor_x >= font.width) {
-            cursor_x -= font.width;
-            ensure_cursor_visible();
-            for (0..font.height) |row| {
-                const dst_y = content_y + cursor_y + row;
-                for (0..font.width) |col| {
-                    framebuffer[dst_y * framebuffer_width + content_x + cursor_x + col] = bg_color;
-                }
-            }
-        }
-        return;
-    }
+    if (!enabled) return;
 
     if (c == '\n') {
-        newline();
-    } else if (c == '\r') {
-        cursor_x = 0;
-    } else {
-        if (cursor_x + font.width > content_w) {
-            newline();
+        cursor.x = 0;
+        cursor.y += 1;
+
+        if (cursor.y >= console_height) {
+            cursor.y = console_height - 1;
+            scroll();
         }
-
-        ensure_cursor_visible();
-        plot_character(content_x + cursor_x, content_y + cursor_y, c);
-        cursor_x += font.width;
+    } else if (c == '\r') {
+        cursor.x = 0;
+    } else {
+        plot_character(cursor.x * font.width, cursor.y * font.height, c);
+        cursor.x += 1;
     }
 }
-
-fn write(_: ?*anyopaque, s: []const u8) void {
-    for (s) |c| {
-        write_char(c);
-    }
-}
-
-var console: ex.Console = .{ .ctx = null, .link = undefined, .write = write };
 
 pub fn init(boot_info: *r.BootInfo) void {
     framebuffer = @ptrFromInt(boot_info.framebuffer.?.address);
@@ -195,15 +178,17 @@ pub fn init(boot_info: *r.BootInfo) void {
 
     load_font();
 
-    content_x = window_padding;
-    content_y = window_padding;
     content_w = framebuffer_width - (window_padding * 2);
     content_h = framebuffer_height - (window_padding * 2);
-    visible_h = if (font.height == 0) 0 else content_h - (content_h % font.height);
+
+    console_width = @intCast(content_w / font.width);
+    console_height = std.math.divCeil(
+        u16,
+        @intCast(content_h),
+        font.height,
+    ) catch unreachable;
 
     for (0..framebuffer_width * framebuffer_height) |i| {
         framebuffer[i] = bg_color;
     }
-
-    ex.console.register(&console);
 }

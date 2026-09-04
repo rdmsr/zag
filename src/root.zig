@@ -10,6 +10,7 @@ pub const ps = @import("proc/root.zig");
 pub const BootInfo = @import("loader/info.zig");
 pub const tests = @import("tests/root.zig");
 pub const rcu = @import("rcu/root.zig");
+pub const bv = @import("bootvid/bootvid.zig");
 
 const config = @import("config");
 
