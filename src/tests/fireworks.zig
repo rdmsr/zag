@@ -4,7 +4,7 @@ const r = @import("root");
 const ke = r.ke;
 const mm = r.mm;
 const ps = r.ps;
-const sintab = @import("sintab.zig");
+const bv = r.bv;
 
 var pixel_buffer: [*]u8 = undefined;
 var fb_width: usize = 0;
@@ -39,15 +39,14 @@ fn rand_tsc_based() u32 {
     return lo ^ hi;
 }
 
-var rand_gen: i64 = 0x9521af17;
+var rand_gen: u32 = 0x9521af17;
 
 fn rand() i64 {
-    rand_gen += @as(i32, @bitCast(@as(u32, 0xe120fc15)));
-    var tmp: u64 = @bitCast(rand_gen *% 0x4a39b70d);
-    const m1 = (tmp >> 32) ^ tmp;
-    tmp = m1 *% 0x12fad5c9;
-    const m2 = (tmp >> 32) ^ tmp;
-    return @intCast(m2 & 0x7FFFFFFF); //make it always positive.
+    rand_gen +%= 0xe120fc15;
+    var tmp: u64 = @as(u64, rand_gen) *% 0x4a39b70d;
+    const m1: u32 = @truncate((tmp >> 32) ^ tmp);
+    tmp = @as(u64, m1) *% 0x12fad5c9;
+    return @as(u32, @truncate((tmp >> 32) ^ tmp));
 }
 
 const fixed_point_shift = 16;
@@ -65,18 +64,20 @@ fn mul_fp_fp(a: i64, b: i64) i64 {
 }
 
 fn rand_fp() i64 {
-    return @rem(rand(), (1 << fixed_point_shift));
+    return rand() & 0xFFFF;
 }
 
 fn rand_fp_sign() i64 {
-    if (@rem(rand(), 2) != 0)
-        return -rand_fp();
-
-    return rand_fp();
+    const v = rand();
+    const m = -((v >> 16) & 1);
+    return ((v & 0xFFFF) ^ m) - m;
 }
 
 fn sin(angle: i64) i64 {
-    return @divFloor(int_to_fp(sintab.SinTable[@intCast(@rem(angle, 65536))]), 32768);
+    const x: i32 = @as(i16, @truncate(angle));
+    const mask = x >> 31;
+    const ax = (x ^ mask) - mask;
+    return (x * (32768 - ax)) >> 12;
 }
 
 fn cos(angle: i64) i64 {
@@ -97,7 +98,7 @@ const FireworkData = struct {
 };
 
 fn get_random_color() u32 {
-    return @intCast((rand() + 0x808080) & 0xFFFFFF); // Random pastel color
+    return @intCast((rand() + 0x808080) & 0xFFFFFF);
 }
 
 fn sleep(ms: usize, continuation: ?ke.Continuation) void {
@@ -156,9 +157,10 @@ fn particle(param: ?*anyopaque) void {
 
     mm.zone.gpa.destroy(parent_data);
 
-    const angle = @rem(rand(), 65536);
-    data.vel_x = mul_fp_fp(cos(angle), rand_fp_sign()) * explosion_range;
-    data.vel_y = mul_fp_fp(sin(angle), rand_fp_sign()) * explosion_range;
+    const angle = rand();
+    const speed = @max(rand_fp(), rand_fp());
+    data.vel_x = mul_fp_fp(cos(angle), speed) * explosion_range;
+    data.vel_y = mul_fp_fp(sin(angle), speed) * explosion_range;
 
     const expire_in = 2000 + (@rem(rand(), 1000));
 
@@ -271,6 +273,8 @@ pub fn start(param: ?*anyopaque) void {
     const boot_info: *r.BootInfo = @ptrCast(@alignCast(param));
 
     rand_gen ^= rand_tsc_based();
+
+    bv.disable();
 
     if (boot_info.framebuffer) |fb| {
         fb_bpp = fb.bpp / 8;
