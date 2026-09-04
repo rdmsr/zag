@@ -4,6 +4,7 @@ const r = @import("root");
 const ksyms = @import("ksyms");
 const ke = r.ke;
 const kep = ke.private;
+const bv = r.bv;
 
 extern var text_start_addr: u8;
 extern var text_end_addr: u8;
@@ -78,8 +79,7 @@ pub fn panic_with_frame(
     frame: usize,
 ) noreturn {
     _ = kep.impl.disable_interrupts();
-
-    std.log.info("Crash count is {} on cpu {}", .{ crash_count.load(.monotonic), ke.cpu.current() });
+    bv.crash();
 
     if (crash_count.fetchAdd(1, .monotonic) != 0) {
         std.log.err("Recursive panic from CPU {}", .{ke.cpu.current()});
@@ -97,10 +97,9 @@ pub fn panic_with_frame(
 
     _ = ke.ipl.raise(.High);
 
-    std.log.err("KERNEL PANIC: {s} on CPU {}, curthread is {*}", .{
+    std.log.err("KERNEL PANIC: {s} on CPU {}", .{
         msg,
         ke.cpu.current(),
-        kep.sched.percpu.local().current_thread.?,
     });
 
     std.log.err("Stack trace:", .{});

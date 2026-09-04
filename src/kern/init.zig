@@ -5,6 +5,7 @@ const ke = r.ke;
 const arch = r.arch;
 const kep = ke.private;
 const ex = r.ex;
+const bv = r.bv;
 
 var thread0: ke.Thread = undefined;
 
@@ -31,6 +32,7 @@ fn init() linksection(r.init) void {
     ke.ncpus = 1;
     kep.impl.early_init();
     kep.tunable.init();
+    bv.init(r.boot_info);
     std.log.info("Welcome to the machine", .{});
     pl.early_init();
     kep.log.init();
