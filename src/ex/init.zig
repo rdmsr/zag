@@ -16,7 +16,6 @@ pub fn init() void {
     mm.late_init();
     ke.sched.late_init();
     exp.work.init() catch @panic("e");
-    exp.console.init();
     exp.string.init();
 
     if (r.boot_info.cmdline) |cline| {
