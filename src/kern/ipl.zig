@@ -17,6 +17,10 @@ pub const Ipl = enum(u8) {
     pub fn get_max_software() Ipl {
         return .Dispatch;
     }
+
+    pub fn value(self: Ipl) u8 {
+        return @intFromEnum(self);
+    }
 };
 
 const PerCpu = struct {
@@ -52,7 +56,7 @@ pub fn raise(new: Ipl) Ipl {
         );
     }
 
-    if (@intFromEnum(new) > @intFromEnum(Ipl.get_max_software())) {
+    if (new.value() > Ipl.get_max_software().value()) {
         // Moving between hardware levels is rare.
         @branchHint(.unlikely);
         kep.impl.set_hardware_ipl(new);
@@ -74,14 +78,14 @@ pub fn lower(new: Ipl) void {
         );
     }
 
-    if (@intFromEnum(new) <= @intFromEnum(Ipl.get_max_software()) and
-        @intFromEnum(old) > @intFromEnum(Ipl.get_max_software()))
+    if (new.value() <= Ipl.get_max_software().value() and
+        old.value() > Ipl.get_max_software().value())
     {
         @branchHint(.unlikely);
         kep.impl.set_hardware_ipl(.Passive);
     }
 
-    if (@intFromEnum(new) < @intFromEnum(Ipl.Dispatch) and
+    if (new.value() < Ipl.Dispatch.value() and
         is_softint_pending(.Dispatch))
     {
         // Dispatch DPCs if necessary.
@@ -105,18 +109,18 @@ pub fn set_hardware(new: Ipl) Ipl {
 
 /// Mark a software interrupt of IPL `ipl` on `cpu` as pending.
 pub fn set_softint_pending(cpu: u32, ipl: Ipl) void {
-    std.debug.assert(@intFromEnum(ipl) <= @intFromEnum(Ipl.Dispatch));
+    std.debug.assert(ipl.value() <= Ipl.Dispatch.value());
     _ = percpu.remote(cpu).pending_softints.bitSet(
-        @intCast(@intFromEnum(ipl)),
+        @intCast(ipl.value()),
         .monotonic,
     );
 }
 
 /// Mark a software interrupt of IPL `ipl` on `cpu` as handled.
 pub fn clear_softint_pending(cpu: u32, ipl: Ipl) void {
-    std.debug.assert(@intFromEnum(ipl) <= @intFromEnum(Ipl.Dispatch));
+    std.debug.assert(ipl.value() <= Ipl.Dispatch.value());
     _ = percpu.remote(cpu).pending_softints.bitReset(
-        @intCast(@intFromEnum(ipl)),
+        @intCast(ipl.value()),
         .monotonic,
     );
 }
@@ -124,8 +128,8 @@ pub fn clear_softint_pending(cpu: u32, ipl: Ipl) void {
 /// Check whether a software interrupt of IPL `ipl`
 /// is pending on the current CPU.
 pub fn is_softint_pending(ipl: Ipl) bool {
-    std.debug.assert(@intFromEnum(ipl) <= @intFromEnum(Ipl.Dispatch));
-    const shift: u3 = @intCast(@intFromEnum(ipl));
+    std.debug.assert(ipl.value() <= Ipl.Dispatch.value());
+    const shift: u3 = @intCast(ipl.value());
     const bit: u8 = @as(u8, 1) << shift;
     return percpu.local().pending_softints.load(.monotonic) & bit != 0;
 }
