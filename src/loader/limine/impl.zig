@@ -63,10 +63,64 @@ pub fn get_image_layout() r.ImageLayout {
 }
 
 export fn loader_entry() callconv(.c) void {
+    var kernel: ?*anyopaque = null;
+    var module_start: usize = 0;
+    var module_end: usize = 0;
+
+    if (module_request.response) |resp| {
+        const modules = resp.modules.?[0..resp.module_count];
+
+        for (modules) |mod| {
+            if (std.mem.eql(u8, std.mem.span(mod.string), "kernel")) {
+                kernel = mod.address;
+                const phys = @intFromPtr(mod.address) -
+                    hhdm_request.response.?.offset;
+                const size: usize = @intCast(mod.size);
+
+                module_start = std.mem.alignForward(usize, phys, r.page_size);
+                module_end = std.mem.alignBackward(usize, phys + size, r.page_size);
+                break;
+            }
+        }
+    }
+
+    if (kernel == null) {
+        @panic("loader: kernel not found");
+    }
+
     const mmap = memmap_request.response.?;
 
     for (0..mmap.entry_count) |i| {
         const entry = mmap.entries.?[i];
+
+        if (entry.type == .KernelAndModules) {
+            const end = entry.base + entry.length;
+            const reclaim_start = std.mem.alignForward(
+                usize,
+                @max(entry.base, module_start),
+                r.page_size,
+            );
+            const reclaim_end = std.mem.alignBackward(
+                usize,
+                @min(end, module_end),
+                r.page_size,
+            );
+
+            // Ensure the kernel is marked as reclaiamble, we load it ourselves
+            // anyway.
+            if (reclaim_start < reclaim_end) {
+                if (entry.base < reclaim_start) {
+                    r.mem.add_entry(entry.base, reclaim_start - entry.base, .Reserved);
+                }
+
+                r.mem.add_entry(reclaim_start, reclaim_end - reclaim_start, .LoaderReclaimable);
+
+                if (reclaim_end < end) {
+                    r.mem.add_entry(reclaim_end, end - reclaim_end, .Reserved);
+                }
+                continue;
+            }
+        }
 
         r.mem.add_entry(entry.base, entry.length, switch (entry.type) {
             .AcpiNvs => .AcpiNvs,
@@ -95,24 +149,6 @@ export fn loader_entry() callconv(.c) void {
 
     if (cmdline_request.response) |resp| {
         r.loader_info.cmdline = std.mem.span(resp.cmdline);
-    }
-
-    var kernel: ?*anyopaque = null;
-
-    if (module_request.response) |resp| {
-        const modules = resp.modules.?[0..resp.module_count];
-
-        for (modules) |mod| {
-            const str = std.mem.span(mod.string);
-
-            if (std.mem.eql(u8, str, "kernel")) {
-                kernel = mod.address;
-            }
-        }
-    }
-
-    if (kernel == null) {
-        @panic("loader: kernel not found");
     }
 
     r.main(kernel.?);

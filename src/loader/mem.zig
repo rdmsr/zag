@@ -101,6 +101,10 @@ pub fn alloc(size: usize) usize {
 }
 
 pub fn add_entry(base: usize, size: usize, @"type": r.BootInfo.MemMap.Entry.Type) void {
+    if (memory_map.entry_count == memory_map.entries.len) {
+        @panic("loader: memory map is full");
+    }
+
     memory_map.entries[memory_map.entry_count] = .{
         .base = base,
         .size = size,
