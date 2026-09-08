@@ -30,41 +30,64 @@ pub fn init() void {
     ke.sched.enqueue(&td.kern);
 }
 
+fn reap_stacks() void {
+    if (ke.thread.stack_cache_update()) |lst| {
+        // Reap all the excess stacks.
+        var entry: ?*ke.Stack = lst;
+
+        while (entry != null) {
+            const next = entry.?.next;
+            mm.heap.free(
+                (@intFromPtr(entry) + @sizeOf(ke.Stack)) -
+                    ps.thread.kernel_thread_stack_size,
+                ps.thread.kernel_thread_stack_size,
+            );
+            entry = next;
+        }
+    }
+}
+
 fn balance_manager(_: ?*anyopaque) void {
+    const low_memory = 0;
+    const timeout = 1;
+
+    var timer: ke.Timer = undefined;
+    timer.init();
+
+    var which: usize = timeout;
+
     while (true) {
-        var timer: ke.Timer = undefined;
-        timer.init();
-        ke.timer.set(
-            &timer,
-            .from(r.Milliseconds.init(balance_interval.load())),
-            .{},
-        );
-
-        _ = ke.wait.wait_one(&timer.hdr, "balmgr", .{}) catch unreachable;
-
-        stack_reap_time -= 1;
-        zone_update_time -= 1;
-
-        if (zone_update_time == 0) {
-            zone_update_time = zone_update_interval;
-            mm.zone.update();
+        if (which == timeout) {
+            ke.timer.set(
+                &timer,
+                .from(r.Milliseconds.init(balance_interval.load())),
+                .{},
+            );
         }
 
-        if (stack_reap_time == 0) {
-            stack_reap_time = stack_reap_interval;
+        which = ke.wait.wait_any(&.{
+            &mmp.phys.low_memory_event.hdr,
+            &timer.hdr,
+        }, "balmgr", .{}) catch
+            unreachable;
 
-            if (ke.thread.stack_cache_update()) |lst| {
-                // Reap all the excess stacks.
-                var entry: ?*ke.Stack = lst;
+        if (which == low_memory) {
+            reap_stacks();
+            mm.zone.drain();
+            mmp.phys.low_memory_event.reset();
+        } else if (which == timeout) {
+            stack_reap_time -= 1;
+            zone_update_time -= 1;
 
-                while (entry != null) {
-                    const next = entry.?.next;
-                    mm.heap.free(
-                        (@intFromPtr(entry) + @sizeOf(ke.Stack)) - ps.thread.kernel_thread_stack_size,
-                        ps.thread.kernel_thread_stack_size,
-                    );
-                    entry = next;
-                }
+            if (zone_update_time == 0) {
+                zone_update_time = zone_update_interval;
+                mm.zone.update();
+            }
+
+            if (stack_reap_time == 0) {
+                stack_reap_time = stack_reap_interval;
+
+                reap_stacks();
             }
         }
     }
