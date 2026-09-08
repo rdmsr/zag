@@ -17,6 +17,8 @@ pub var min_memory_threshold: usize = 0;
 pub var low_memory_threshold: usize = 0;
 /// Threshold at which reclamation stops.
 pub var high_memory_threshold: usize = 0;
+/// Event triggered when memory is low.
+pub var low_memory_event: ke.Event = undefined;
 
 var memory_map: *r.BootInfo.MemMap = undefined;
 var early_allocs: usize = 0;
@@ -71,6 +73,10 @@ pub fn alloc() r.PAddr {
     _ = usable_memory.fetchSub(mm.page_size, .monotonic);
     free_pages -= 1;
 
+    if (free_pages < min_memory_threshold) {
+        low_memory_event.signal();
+    }
+
     const elem: *mm.PageFree = @fieldParentPtr("link", head);
     const page: *mm.Page = @ptrCast(elem);
     const phys_addr = mm.pfn_to_page(mm.struct_page_to_pfn(page));
@@ -96,6 +102,10 @@ pub fn alloc_opts(opts: struct { policy: mm.WaitPolicy }) ?r.PAddr {
 
     _ = usable_memory.fetchSub(mm.page_size, .monotonic);
     free_pages -= 1;
+
+    if (free_pages < min_memory_threshold) {
+        low_memory_event.signal();
+    }
 
     const elem: *mm.PageFree = @fieldParentPtr("link", head);
     const page: *mm.Page = @ptrCast(elem);
@@ -144,6 +154,7 @@ pub fn init() linksection(r.init) void {
     memory_map = &r.boot_info.memory_map;
     free_list.init();
     free_page_event.init(.Notification);
+    low_memory_event.init(.Notification);
 
     var total_usable_memory: usize = memory_map.loader_memory_used;
     log.info("physical memory map:", .{});
