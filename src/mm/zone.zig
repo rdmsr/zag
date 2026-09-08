@@ -1106,7 +1106,19 @@ pub const Zone = struct {
         self.maglist_destroy(depot.empty_mags.head, 0);
         self.maglist_destroy(depot.full_mags.head, magazine_size.load());
 
+        // Destroy all free slabs. Swap the list under the lock.
+        const head = &self.free_slabs.head;
+        var entry = self.free_slabs.first();
+        self.free_slabs.init();
+
         self.lock.release();
+
+        while (entry != head) {
+            const slab: *Slab = @fieldParentPtr("link", entry);
+            const next = entry.next;
+            self.slab_destroy(slab);
+            entry = next;
+        }
     }
 
     fn trim_maglist(self: *Self, maglist: *MagazineList, rounds: usize) void {
@@ -1324,10 +1336,11 @@ pub const Zone = struct {
 
     fn slab_destroy(self: *Self, slab: *Slab) void {
         if (self.obj_size > small_slab_size) {
+            const base = slab.base;
             const alloc_size = @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity);
             gpa.free(@as([*]u8, @ptrCast(slab))[0..alloc_size]);
 
-            mm.heap.free(slab.base, self.slab_size);
+            mm.heap.free(base, self.slab_size);
         } else {
             free_page(@ptrFromInt(
                 std.mem.alignBackward(usize, @intFromPtr(slab), mm.page_size),
