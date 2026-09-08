@@ -119,7 +119,7 @@ pub fn wait_one(object: *DispatchHeader, reason: []const u8, opts: Options) !usi
 /// If `waitblocks` is specified, then the wait will use those waitblocks
 /// for the operation. Note that if `timeout` is provided, then one additional
 /// waitblock must be allocated.
-pub fn wait_any(objects: []*DispatchHeader, reason: []const u8, opts: Options) !usize {
+pub fn wait_any(objects: []const *DispatchHeader, reason: []const u8, opts: Options) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
     const curtd = kep.sched.percpu.local().current_thread.?;
