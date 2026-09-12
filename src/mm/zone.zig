@@ -40,10 +40,17 @@
 //! as to avoid overly holding the zone depot lock and satisfy the desired
 //! per-CPU depot size.
 //!
+//! ## Import layer
+//! ---------------
+//! The import layer is used as a fallback when all previous layers failed.
+//! This layer can be replaced by clients via the `import` and `release`
+//! callbacks, which "import" magazines and release to/from a backing store.
+//! This is used by e.g, vmem's quantum caches.
+//! By default, the slab layer is used as the import layer.
+//!
 //! ## Slab layer
 //! -------------
-//! The slab layer is the fallback when all previous layers failed. A slab
-//! represents a contiguous chunk of memory holding a fixed number of
+//! A slab represents a contiguous chunk of memory holding a fixed number of
 //! constructed objects, and is allocated via the kernel's virtual memory
 //! allocator. Allocation in the slab is managed by a bitmap and slab metadata
 //! is retrieved through the `mm.Page` structure representing the page
@@ -516,6 +523,8 @@ pub const Zone = struct {
     /// Maximum size of the per-CPU depot.
     cpu_depot_limit: usize,
     trim_depot: bool,
+    /// Don't assume that the memory we're managing is actually memory.
+    dont_touch: bool,
 
     /// Per-CPU state.
     cpus: []rtl.CachePadded(Cpu),
@@ -530,6 +539,21 @@ pub const Zone = struct {
     smr: ?*ke.smr.Domain,
     smr_reclaim: ?*const fn (obj: *anyopaque) void,
 
+    import: *const fn (
+        arg: ?*anyopaque,
+        elems: []*anyopaque,
+        elem_size: usize,
+        policy: mm.WaitPolicy,
+    ) mm.Error!usize,
+
+    release: *const fn (
+        arg: ?*anyopaque,
+        elems: []*anyopaque,
+        elem_size: usize,
+    ) void,
+
+    arg: ?*anyopaque,
+
     const Self = @This();
 
     const InitOptions = struct {
@@ -540,6 +564,20 @@ pub const Zone = struct {
         reuse_policy: ReusePolicy = .FIFO,
         smr: ?*ke.smr.Domain = null,
         smr_reclaim: ?*const fn (obj: *anyopaque) void = null,
+
+        import: ?*const fn (
+            arg: ?*anyopaque,
+            elems: []*anyopaque,
+            elem_size: usize,
+            policy: mm.WaitPolicy,
+        ) mm.Error!usize = null,
+
+        release: ?*const fn (
+            arg: ?*anyopaque,
+            elems: []*anyopaque,
+            elem_size: usize,
+        ) void = null,
+        arg: ?*anyopaque = null,
     };
 
     /// Initialize a zone.
@@ -569,6 +607,7 @@ pub const Zone = struct {
         self.ctor = options.ctor;
         self.dtor = options.dtor;
         self.lock = .init();
+        self.depot_lock = .init();
         self.use_magazines = options.magazines;
 
         self.depot = std.mem.zeroes(Depot);
@@ -578,6 +617,7 @@ pub const Zone = struct {
         self.cpu_depot_limit = max_local_memory.load() /
             (self.chunk_size * magazine_size.load());
         self.trim_depot = false;
+        self.dont_touch = options.import != null;
 
         // SMR zones have to be FIFO so that the minimum sequence can be
         // obtained by checking the list head.
@@ -588,6 +628,17 @@ pub const Zone = struct {
 
         self.smr = options.smr;
         self.smr_reclaim = options.smr_reclaim;
+
+        if (options.import) |i| {
+            std.debug.assert(options.release != null);
+            self.import = i;
+            self.release = options.release.?;
+            self.arg = options.arg;
+        } else {
+            self.import = zone_import;
+            self.release = zone_release;
+            self.arg = self;
+        }
 
         zone_list_lock.acquire();
 
@@ -615,16 +666,14 @@ pub const Zone = struct {
 
     /// Allocate an object from the zone.
     pub fn alloc(self: *Self, opts: AllocOpts) mm.Error!*anyopaque {
-        var buf: *anyopaque = undefined;
-
         // Try grabbing an object from the magazine layer.
         if (magazines_initialized and self.use_magazines) {
             @branchHint(.likely);
 
-            const ipl = ke.ipl.raise(.Dispatch);
+            var buf: *anyopaque = undefined;
+            var ipl = ke.ipl.raise(.Dispatch);
             var cpu = &self.cpus[ke.cpu.current()].value;
             cpu.lock.acquire_no_ipl();
-            defer cpu.lock.release(ipl);
 
             while (true) {
                 if (cpu.alloc_rounds > 0) {
@@ -632,7 +681,7 @@ pub const Zone = struct {
                     cpu.alloc_rounds -= 1;
                     buf = cpu.alloc.?.rounds_ptr()[cpu.alloc_rounds];
 
-                    if (is_poison_enabled) {
+                    if (is_poison_enabled and !self.dont_touch) {
                         if (!check_poison(buf, self.obj_size, free_poison)) {
                             @panic("slab poison mismatch: object corrupted after free");
                         }
@@ -644,6 +693,7 @@ pub const Zone = struct {
                         }
                     }
 
+                    cpu.lock.release(ipl);
                     return buf;
                 }
 
@@ -704,60 +754,84 @@ pub const Zone = struct {
                     continue;
                 }
 
-                // Zone depot has no full magazines, fall back to the slab layer...
-                break;
+                // Nothing was found. Allocate a new magazine and fill it from the
+                // import layer, then replace the CPU's alloc magazine with it.
+                // It is preferable (maybe even required?) to drop the CPU lock
+                // while we do this work; when we do re-acquire the lock we then
+                // might notice that someone has already done the work for us and
+                // put a magazine in the CPU's alloc storage. In that case, it would
+                // be better to take our fresh magazine and insert it into the depot
+                // instead, since there is a higher chance the impostor magazine
+                // contains objects that are hotter in cache.
+                cpu.lock.release(ipl);
+
+                const raw_mag = try magazine_zone.alloc(
+                    .{ .policy = opts.policy },
+                );
+
+                const new_mag: ?*Magazine = @ptrCast(@alignCast(raw_mag));
+
+                if (new_mag) |nm| {
+                    const cnt = try self.import(
+                        self.arg,
+                        nm.rounds_ptr()[0..magazine_size.load()],
+                        self.chunk_size,
+                        opts.policy,
+                    );
+
+                    // We dropped the lock and IPL, so we might've been migrated.
+                    ipl = ke.ipl.raise(.Dispatch);
+                    cpu = &self.cpus[ke.cpu.current()].value;
+                    cpu.lock.acquire_no_ipl();
+
+                    if (cpu.alloc == null) {
+                        cpu.alloc = nm;
+                        cpu.alloc_rounds = cnt;
+                        continue;
+                    } else {
+                        // We lost the race. If the magazine we got was fully filled,
+                        // then put it in the depot. Otherwise, dispose of it.
+                        if (cnt == magazine_size.load()) {
+                            Depot.free(nm, &cpu.depot.full_mags, self.reuse_policy);
+                            continue;
+                        }
+
+                        // Dispose of the partial magazine. This hopefully
+                        // happens very rarely, only when the lower layer is
+                        // genuinely in some kind of resource exhaustion, which
+                        // we'd probably detect sooner anyway.
+                        // XXX: a proper solution would be to keep track of how
+                        // many rounds a magazine has in the `Magazine` struct.
+                        // This should be fine for now though.
+
+                        cpu.lock.release(ipl);
+
+                        self.release(
+                            self.arg,
+                            nm.rounds_ptr()[0..cnt],
+                            self.chunk_size,
+                        );
+                        magazine_zone.free(raw_mag);
+
+                        // Fallback to single object alloc.
+                        break;
+                    }
+                }
             }
         }
 
-        // Fall back to the slab layer.
-        self.lock.acquire();
+        // Fallback in case this is a zone with magazines disabled or we got into trouble above,
+        // just fetch an object from the import layer.
+        var elems: [1]*anyopaque = undefined;
 
-        var slab: *Slab = undefined;
+        _ = try self.import(
+            self.arg,
+            elems[0..],
+            self.chunk_size,
+            opts.policy,
+        );
 
-        if (self.partial_slabs.is_empty()) {
-            self.lock.release();
-
-            slab = try self.slab_create(opts.policy);
-
-            self.lock.acquire();
-
-            // Note: this is racy and could lead to two threads creating a slab
-            // at the same time. Worst case scenario, we have one slab too many,
-            // so we don't care; we already did the work required for slab
-            // construction and this ideally should not happen very often.
-            self.partial_slabs.insert_tail(&slab.link);
-        } else {
-            slab = @fieldParentPtr("link", self.partial_slabs.first());
-        }
-
-        const idx = slab.bitmap_alloc() orelse {
-            self.lock.release();
-            return error.OutOfMemory;
-        };
-
-        buf = @ptrFromInt(slab.base + idx * self.chunk_size);
-
-        slab.refcount += 1;
-
-        if (slab.refcount == slab.capacity) {
-            slab.link.remove();
-            self.full_slabs.insert_tail(&slab.link);
-        }
-
-        if (is_poison_enabled) {
-            if (!check_poison(buf, self.obj_size, free_poison)) {
-                @panic("slab poison mismatch: object corrupted after free");
-            }
-
-            fill_with_poison(buf, self.obj_size, alloc_poison);
-        }
-
-        if (self.ctor) |ctor| {
-            ctor(buf);
-        }
-
-        self.lock.release();
-        return buf;
+        return elems[0];
     }
 
     /// Free an object back to the zone.
@@ -775,8 +849,8 @@ pub const Zone = struct {
                 {
                     // Fast path: push directly to free magazine.
                     // For SMR zones the dtor and poisoning are deferred until
-                    // the magazine is reused, readers may still hold the object.
-                    if (is_poison_enabled and self.smr == null) {
+                    // the magazine is reused, as readers may still hold the object.
+                    if (is_poison_enabled and self.smr == null and !self.dont_touch) {
                         if (self.dtor) |dtor| {
                             dtor(obj);
                         }
@@ -884,19 +958,18 @@ pub const Zone = struct {
             if (self.smr_reclaim) |reclaim| reclaim(obj);
         }
 
-        self.lock.acquire();
-        self.slab_free(obj, true);
-        self.lock.release();
+        var slice = [_]*anyopaque{obj};
+        self.release(self.arg, &slice, self.chunk_size);
     }
 
     fn slab_free(self: *Self, obj: *anyopaque, poison: bool) void {
-        if (!is_poison_enabled or poison) {
+        if (!is_poison_enabled or poison and !self.dont_touch) {
             if (self.dtor) |dtor| {
                 dtor(obj);
             }
         }
 
-        if (is_poison_enabled and poison) {
+        if (is_poison_enabled and poison and !self.dont_touch) {
             fill_with_poison(obj, self.obj_size, free_poison);
         }
 
@@ -934,6 +1007,99 @@ pub const Zone = struct {
             self.free_slabs.insert_tail(&slab.link);
             return;
         }
+    }
+
+    fn zone_import(
+        arg: ?*anyopaque,
+        elems: []*anyopaque,
+        elem_size: usize,
+        policy: mm.WaitPolicy,
+    ) mm.Error!usize {
+        const self: *Self = @ptrCast(@alignCast(arg));
+
+        _ = elem_size;
+
+        // Refill a magazine from the slab layer.
+        self.lock.acquire();
+
+        var i: usize = 0;
+        const requested = elems.len;
+
+        while (i < requested) {
+            var slab: *Slab = undefined;
+
+            if (self.partial_slabs.is_empty()) {
+                self.lock.release();
+
+                slab = self.slab_create(policy) catch |err| {
+                    if (i != 0) return i;
+                    return err;
+                };
+
+                self.lock.acquire();
+
+                // Note: this is racy and could lead to two threads creating a slab
+                // at the same time. Worst case scenario, we have one slab too many,
+                // so we don't care; we already did the work required for slab
+                // construction and this ideally should not happen very often.
+                self.partial_slabs.insert_tail(&slab.link);
+            } else {
+                slab = @fieldParentPtr("link", self.partial_slabs.first());
+            }
+
+            while (slab.refcount != slab.capacity and i < requested) {
+                const idx = slab.bitmap_alloc().?;
+                const buf: *anyopaque = @ptrFromInt(slab.base + idx * self.chunk_size);
+
+                slab.refcount += 1;
+
+                if (slab.refcount == slab.capacity) {
+                    slab.link.remove();
+                    self.full_slabs.insert_tail(&slab.link);
+                }
+
+                if (is_poison_enabled) {
+                    if (!check_poison(buf, self.obj_size, free_poison)) {
+                        @panic("slab poison mismatch: object corrupted after free");
+                    }
+
+                    fill_with_poison(buf, self.obj_size, alloc_poison);
+                }
+
+                if (self.ctor) |ctor| {
+                    ctor(buf);
+                }
+
+                elems[i] = buf;
+                i += 1;
+            }
+        }
+
+        self.lock.release();
+        return i;
+    }
+
+    fn zone_release(arg: ?*anyopaque, elems: []*anyopaque, elem_size: usize) void {
+        const self: *Self = @ptrCast(@alignCast(arg));
+
+        _ = elem_size;
+
+        // If elems == 1, this means we got called from the normal free path,
+        // which means we poison already. Otherwise, we need to avoid doing it
+        // now for SMR zones.
+        const poison = if (elems.len == 1)
+            true
+        else
+            self.smr != null;
+
+        // Free a magazine back to the slab layer.
+        self.lock.acquire();
+
+        for (elems) |elem| {
+            self.slab_free(elem, poison);
+        }
+
+        self.lock.release();
     }
 
     /// Periodic updates on the zone.
@@ -1048,24 +1214,28 @@ pub const Zone = struct {
     /// Called periodically to trim our magazines.
     /// This frees the excess magazines.
     fn trim(self: *Self, trim_depot: bool) void {
-        // Note: we do all of this under the zone lock, but it *should* be a
-        // a fairly quick operation, even though it is O(ncpus).
+        // Detach magazines under the locks, then release their objects unlocked.
         self.lock.acquire();
 
-        self.trim_maglist(&self.depot.empty_mags, 0);
-        self.trim_maglist(&self.depot.full_mags, magazine_size.load());
+        const empty_mags = self.trim_maglist(&self.depot.empty_mags);
+        const full_mags = self.trim_maglist(&self.depot.full_mags);
+        var depot = std.mem.zeroes(Depot);
 
         if (trim_depot) {
             // The depot has size changed, trim the CPU depots.
-            var depot = std.mem.zeroes(Depot);
-
             for (0..ke.ncpus) |i| {
                 self.trim_cpu(&self.cpus[i].value, &depot, self.cpu_depot_size);
             }
-
-            self.maglist_destroy(depot.empty_mags.head, 0);
-            self.maglist_destroy(depot.full_mags.head, magazine_size.load());
         }
+
+        self.lock.release();
+
+        self.maglist_destroy(empty_mags, 0);
+        self.maglist_destroy(full_mags, magazine_size.load());
+        self.maglist_destroy(depot.empty_mags.head, 0);
+        self.maglist_destroy(depot.full_mags.head, magazine_size.load());
+
+        self.lock.acquire();
 
         // Destroy all free slabs. Swap the list under the lock.
         const head = &self.free_slabs.head;
@@ -1087,7 +1257,7 @@ pub const Zone = struct {
     fn drain(self: *Self) void {
         if (!self.use_magazines) return;
 
-        // Note: we do all of this under the zone lock, same as above.
+        // Detach magazines before invoking release callbacks.
         self.lock.acquire();
 
         const ipl = self.depot_lock.acquire();
@@ -1103,8 +1273,12 @@ pub const Zone = struct {
             self.trim_cpu(&self.cpus[i].value, &depot, 0);
         }
 
+        self.lock.release();
+
         self.maglist_destroy(depot.empty_mags.head, 0);
         self.maglist_destroy(depot.full_mags.head, magazine_size.load());
+
+        self.lock.acquire();
 
         // Destroy all free slabs. Swap the list under the lock.
         const head = &self.free_slabs.head;
@@ -1121,7 +1295,8 @@ pub const Zone = struct {
         }
     }
 
-    fn trim_maglist(self: *Self, maglist: *MagazineList, rounds: usize) void {
+    /// Detach excess magazines for destruction.
+    fn trim_maglist(self: *Self, maglist: *MagazineList) ?*Magazine {
         const ipl = self.depot_lock.acquire();
 
         // Grab the magazines and WSS under the depot lock.
@@ -1158,8 +1333,7 @@ pub const Zone = struct {
 
         self.depot_lock.release(ipl);
 
-        // Destroy each magazine.
-        self.maglist_destroy(removed_head, rounds);
+        return removed_head;
     }
 
     /// Trim a CPU's depot to `target`.
@@ -1231,7 +1405,14 @@ pub const Zone = struct {
             if (self.smr_reclaim) |reclaim| {
                 reclaim(obj);
             }
-            self.slab_free(obj, self.smr != null);
+        }
+
+        if (rounds != 0) {
+            self.release(
+                self.arg,
+                magazine.rounds_ptr()[0..rounds],
+                self.chunk_size,
+            );
         }
 
         // Free the magazine.
