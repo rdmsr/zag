@@ -6,20 +6,21 @@ const mmp = mm.private;
 pub fn init() void {
     mmp.kernel_space.arena.init(
         "kernel heap",
-        mmp.impl.kernel_heap_base,
-        r.tib(16),
-        mm.page_size,
+        .{
+            .base = mmp.impl.kernel_heap_base,
+            .size = r.tib(16),
+            .quantum = mm.page_size,
+            .qcache_max = 8 * mm.page_size,
+        },
     ) catch @panic("failed to initialize kernel heap arena");
 }
 
 pub fn alloc(size: usize, policy: mm.WaitPolicy) mm.Error!*anyopaque {
-    mmp.kernel_space.lock.acquire();
-
     const addr = mmp.kernel_space.arena.alloc(size, .{}) catch {
-        mmp.kernel_space.lock.release();
         return mm.Error.OutOfMemory;
     };
 
+    mmp.kernel_space.lock.acquire();
     const npages = size / mm.page_size;
 
     for (0..npages) |i| {
