@@ -1,64 +1,12 @@
 //! Generic resource allocator, based on the vmem allocator described in:
 //! Jeff Bonwick and Jonathan Adams'
 //! "Magazines and Vmem: Extending the Slab Allocator to Many CPUs and Arbitrary Resources"
-//!
-//! ## Overview
-//!
-//! A vmem arena manages a contiguous range of an arbitrary resource (virtual address
-//! space, PIDs, etc.) by tracking free and allocated regions as a list of segments.
-//! Each segment has a base address and a size.
-//!
-//! ## Data structures
-//!
-//! An arena is composed of three data structures:
-//!
-//! 1. Segment list: an address-ordered doubly-linked list of all segments, both
-//!    free and allocated. Used for coalescing on free (adjacent free segments are
-//!    merged) and for NextFit traversal.
-//!
-//! 2. Power-of-two free lists: an array of 64 lists, where bucket n holds free
-//!    segments whose size falls in [2^n, 2^(n+1)).
-//!
-//! 3. Allocated segment RB-tree: a tree of allocated segments keyed by base address.
-//!    Used for O(log n) lookup on free() given only an address.
-//!
-//! ## Allocation
-//!
-//! Three policies are supported:
-//!
-//! - `InstantFit`: find the first segment in the appropriate freelist bucket. O(1) for
-//!   unconstrained allocations; degrades under alignment or address constraints.
-//!
-//! - `BestFit`: scan freelist buckets for the smallest segment that satisfies the
-//!   request. Minimizes fragmentation at the cost of a fuller scan.
-//!
-//! - `NextFit`: continue searching from where the last allocation left off, wrapping
-//!   around at the end of the arena. Avoids reusing recently-freed addresses, making
-//!   it useful for resources like PIDs where cycling through values is desirable.
-//!
-//! ## Differences from the original paper
-//!
-//! This implementation omits several features from the original Solaris vmem:
-//!   - No importing: arenas are initialized with a fixed set of spans and cannot
-//!     grow by importing from a parent arena. This simplifies the implementation
-//!     significantly and is sufficient for fixed virtual address space management.
-//!
-//!   - No span markers: without importing there is no need to track which spans
-//!     were imported, so span segment types are omitted entirely.
-//!
-//!   - No quantum caching: the original vmem uses per-size slab caches (qcaches)
-//!     to accelerate small allocations. This is unnecessary here because vmem is
-//!     only called by the slab allocator for large slab-sized chunks, not for
-//!     individual small objects. This could change in the future if we find
-//!     more uses for the allocator.
-//!
-//!   - No hash table: allocated segments are tracked in an RB-tree rather than
-//!     the dynamic hash table used by Solaris vmem, avoiding the resize
-//!     complexity.
 const std = @import("std");
 const rtl = @import("rtl");
-const mm = @import("root").mm;
+const r = @import("root");
+const mm = r.mm;
 const mmp = mm.private;
+const ke = r.ke;
 
 pub const Policy = enum {
     /// Use the smallest free segment that can satisfy the request.
@@ -126,6 +74,7 @@ const Segment = struct {
 /// One freelist for each power of two size that can fit within the host's
 /// address space.
 const freelist_count = @bitSizeOf(usize);
+const max_qcaches = 16;
 
 var seg_zone: mmp.zone.TypedZone(Segment) = undefined;
 
@@ -146,33 +95,63 @@ pub const Arena = struct {
     allocated_segments: rtl.RBTree(Segment.cmp),
     /// Last segment allocated from, for NextFit policy.
     rotor: ?*Segment,
+    /// Maximum size to do quantum caching on.
+    qcache_max: usize,
+    /// Quantum caches.
+    qcaches: [max_qcaches]*mm.zone.Zone,
+    lock: ke.Mutex,
 
     const Self = @This();
+
+    const InitOptions = struct {
+        base: usize,
+        size: usize,
+        quantum: usize,
+        qcache_max: ?usize = null,
+    };
 
     /// Initialize the area for use.
     pub fn init(
         self: *Self,
         name: []const u8,
-        base: usize,
-        size: usize,
-        quantum: usize,
+        opts: InitOptions,
     ) !void {
         self.name = name;
-        self.base = base;
-        self.size = size;
-        self.quantum = quantum;
+        self.base = opts.base;
+        self.size = opts.size;
+        self.quantum = opts.quantum;
+        self.qcache_max = opts.qcache_max orelse 0;
 
-        rtl.List.init(&self.list);
+        self.list.init();
 
         for (&self.freelists) |*freelist| {
             freelist.init();
         }
 
+        if (opts.qcache_max) |qc| {
+            const num_qcaches = @min(qc / opts.quantum, max_qcaches);
+
+            for (0..num_qcaches) |i| {
+                const size = (i + 1) * opts.quantum;
+
+                self.qcaches[i] = mm.zone.gpa.create(mm.zone.Zone) catch
+                    unreachable;
+
+                self.qcaches[i].init(name, size, .{
+                    .import = import,
+                    .release = release,
+                    .arg = self,
+                });
+            }
+        }
+
+        self.lock = .init();
+
         self.allocated_segments = .init();
         self.rotor = null;
 
         // Add initial span
-        try self.add(base, size);
+        try self.add(self.base, self.size);
     }
 
     pub fn deinit(self: *Self) void {
@@ -184,6 +163,51 @@ pub const Arena = struct {
             free_segment(seg);
             entry = next;
         }
+    }
+
+    fn import(
+        arg: ?*anyopaque,
+        elems: []*anyopaque,
+        elem_size: usize,
+        policy: mm.WaitPolicy,
+    ) mm.Error!usize {
+        const self: *Self = @ptrCast(@alignCast(arg));
+
+        _ = policy;
+
+        self.lock.acquire();
+
+        for (0..elems.len) |i| {
+            elems[i] = @ptrFromInt(self.alloc_impl(
+                elem_size,
+                .{},
+            ) catch |err| {
+                if (i != 0) return i;
+                return err;
+            });
+        }
+
+        self.lock.release();
+
+        return elems.len;
+    }
+
+    fn release(
+        arg: ?*anyopaque,
+        elems: []*anyopaque,
+        elem_size: usize,
+    ) void {
+        const self: *Self = @ptrCast(@alignCast(arg));
+
+        self.lock.acquire();
+
+        for (elems) |elem| {
+            self.free_impl(@intFromPtr(elem), elem_size) catch {
+                // We did our best...
+            };
+        }
+
+        self.lock.release();
     }
 
     /// Add a span of memory to the arena.
@@ -218,6 +242,27 @@ pub const Arena = struct {
     /// - max: if specified, the returned segment will be at most on this address.
     /// Returns the base address of the allocated segment.
     pub fn alloc(
+        self: *Self,
+        size: usize,
+        options: AllocOptions,
+    ) mm.Error!usize {
+        if (size % self.quantum != 0) {
+            return error.InvalidSize;
+        }
+
+        if (size <= self.qcache_max) {
+            const i = size / self.quantum;
+            const ret = try self.qcaches[i - 1].alloc(.{});
+            return @intFromPtr(ret);
+        }
+
+        self.lock.acquire();
+        defer self.lock.release();
+
+        return self.alloc_impl(size, options);
+    }
+
+    fn alloc_impl(
         self: *Self,
         size: usize,
         options: AllocOptions,
@@ -304,6 +349,20 @@ pub const Arena = struct {
     }
 
     pub fn free(self: *Self, addr: usize, size: usize) mm.Error!void {
+        if (size <= self.qcache_max) {
+            const i = size / self.quantum;
+            self.qcaches[i - 1].free(@ptrFromInt(addr));
+            return;
+        }
+
+        self.lock.acquire();
+        defer self.lock.release();
+
+        return self.free_impl(addr, size);
+    }
+
+    fn free_impl(self: *Self, addr: usize, size: usize) mm.Error!void {
+
         // Find the allocated segment containing addr.
         var search_node = Segment{
             .type = .Allocated,
@@ -371,13 +430,16 @@ pub const Arena = struct {
         size: usize,
         options: AllocOptions,
     ) ?struct { usize, *Segment } {
-        var idx = freelist_index(size);
+        const is_pow2 = std.math.isPowerOfTwo(size);
+        const orig_idx = freelist_index(size);
 
-        if (!std.math.isPowerOfTwo(size)) idx += 1;
+        var idx = orig_idx;
+
+        if (!is_pow2) idx += 1;
 
         // Simply grab the first segment from the appropriate freelist
         // that can satisfy the request.
-        // This is O(1) unless there are contraints.
+        // This is O(1) unless there are constraints.
         while (idx < freelist_count) : (idx += 1) {
             var it = self.freelists[idx].iterator();
             while (it.next()) : (it.advance()) {
@@ -386,6 +448,20 @@ pub const Arena = struct {
                     return .{ addr, seg };
             }
         }
+
+        // If we found nothing and it's not a power of two, there may still be
+        // something in the lower freelist, so check there.
+        if (!is_pow2) {
+            std.debug.assert(orig_idx != 0);
+
+            var it = self.freelists[orig_idx].iterator();
+            while (it.next()) : (it.advance()) {
+                const seg = Segment.from_free_link(it.get());
+                if (self.try_to_fit(seg, size, options)) |addr|
+                    return .{ addr, seg };
+            }
+        }
+
         return null;
     }
 
@@ -427,7 +503,7 @@ pub const Arena = struct {
         options: AllocOptions,
     ) ?struct { usize, *Segment } {
         // Start from rotor if we have one, otherwise from the beginning.
-        const start_entry = if (self.rotor) |r| r.link.next else self.list.first();
+        const start_entry = if (self.rotor) |ro| ro.link.next else self.list.first();
 
         // Search from rotor to end of list.
         var entry = start_entry;
