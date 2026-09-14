@@ -30,7 +30,7 @@ fn reclaim_state(obj: *anyopaque, _: ?*anyopaque) void {
     // Reclaim the virtual address space.
     space.lock.acquire();
 
-    space.arena.free(base, @as(usize, npages) * mm.page_size) catch unreachable;
+    space.arena.free(base, @as(usize, npages) * mm.page_size);
 
     space.lock.release();
 
@@ -59,7 +59,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
     // Unmap the virtual addresses and get the backing physical pages.
     const list = space.pmap.unmap(va, size) orelse {
         // If no physical pages, free the VA directly.
-        space.arena.free(va, size) catch unreachable;
+        space.arena.free(va, size);
         return;
     };
 
@@ -90,7 +90,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
 
         ke.ipl.lower(ipl);
         space.lock.acquire();
-        space.arena.free(va, size) catch unreachable;
+        space.arena.free(va, size);
 
         // Free the physical pages
         mm.phys.free_batch(
