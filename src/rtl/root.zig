@@ -84,6 +84,19 @@ pub fn assert_interface(T: type, I: type) void {
     }
 }
 
+pub fn assert(condition: bool, comptime msg: []const u8, args: anytype) void {
+    if (!condition) {
+        @branchHint(.unlikely);
+
+        switch (@import("builtin").mode) {
+            .ReleaseFast, .ReleaseSmall => unreachable,
+            .Debug, .ReleaseSafe => {
+                std.debug.panicExtra(@returnAddress(), "Assertion failed: " ++ msg, args);
+            },
+        }
+    }
+}
+
 test {
     std.testing.refAllDecls(@This());
 }
