@@ -7,10 +7,12 @@ pub fn init() void {
     mmp.kernel_space.arena.init(
         "kernel heap",
         .{
-            .base = mmp.impl.kernel_heap_base,
-            .size = r.tib(16),
+            .span = .{
+                .addr = mmp.impl.kernel_heap_base,
+                .size = r.tib(16),
+            },
             .quantum = mm.page_size,
-            .qcache_max = 8 * mm.page_size,
+            .cache_max_quanta = 8,
         },
     ) catch @panic("failed to initialize kernel heap arena");
 }
