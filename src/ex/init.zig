@@ -9,12 +9,14 @@ const exp = ex.private;
 const rtl = @import("rtl");
 
 pub fn init() void {
+    exp.vmem.init();
     mm.init();
     ps.init();
 
     pl.late_init();
     mm.late_init();
     ke.sched.late_init();
+
     exp.work.init() catch @panic("e");
     exp.string.init();
 

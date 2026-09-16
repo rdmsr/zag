@@ -2,7 +2,6 @@ const config = @import("config");
 pub const phys = @import("phys.zig");
 pub const pmap = @import("pmap.zig");
 pub const init = @import("init.zig");
-pub const vmem = @import("vmem.zig");
 pub const heap = @import("heap.zig");
 pub const zone = @import("zone.zig");
 pub const PMap = pmap.PMap;
@@ -10,10 +9,11 @@ pub const tlb = @import("tlb.zig");
 pub const balance = @import("balance.zig");
 
 const ke = @import("root").ke;
+const ex = @import("root").ex;
 
 pub const Space = struct {
     pmap: PMap,
-    arena: vmem.Arena,
+    arena: ex.Arena,
     lock: ke.Mutex,
 };
 

@@ -561,7 +561,10 @@ pub const Arena = struct {
         options: AllocOptions,
     ) ?struct { usize, *Segment } {
         // Start from rotor if we have one, otherwise from the beginning.
-        const start_entry = if (self.rotor) |ro| ro.link.next else self.list.first();
+        const start_entry = if (self.rotor) |ro|
+            ro.link.next
+        else
+            self.list.first();
 
         // Search from rotor to end of list.
         var entry = start_entry;
