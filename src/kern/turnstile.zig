@@ -1,3 +1,51 @@
+//! # Turnstiles
+//! --------------
+//! Turnstiles are a mechanism that originated in Solaris
+//! that tracks a contended lock's state and its associated priority inheritance
+//! state.
+//!
+//! ## Basic mechanism
+//! ------------------
+//! The basic idea is that there is one turnstile allocated per thread
+//! - in case it may ever contend on a lock - and when a it contends on a lock,
+//! its turnstile is inserted into global hash table (indexed by the hash of the
+//! lock's address). When another thread goes to contend on that lock, it looks
+//! up the hash table to see whether or not a turnstile was already registered,
+//! in that case, it'll *donate* its turnstile to a free list. When the waiter
+//! threads are woken up, they all steal a turnstile from the free list (a
+//! turnstile does not stay associated with a thread for its entire lifetime).
+//!
+//! ## Priority inheritance
+//! -----------------------
+//! Priority inheritance is done to avoid *priority inversion*, a case where a
+//! high-priority thread is blocked waiting for a low-priority thread to release
+//! a lock, which might get preempted by another medium-priority thread.
+//!
+//! Priority inheritance is achieved through turnstiles by walking a
+//! given turnstile's owner chain and willing the priority of the highest priority
+//! waiter, i.e it will go through turnstile.owner.turnstile.owner...
+//! until the end of the chain, inheriting the waiter's priority along the way.
+//!
+//! ## Locking
+//! ----------
+//! There is one spinlock per turnstile hash chain, which should hopefully be
+//! fine-grained enough such that there are no scalability issues (contention
+//! *should* be pretty rare in a well-designed algorithm anyway!).
+//!
+//! When doing priority inheritance, things get a bit tricky because we need to
+//! hold multiple chain locks at once (the original turnstile's chain lock, and
+//! each subsequent turnstile we visit in the owner chain), to avoid deadlocks,
+//! subsequent buckets are trylocked. Each thread lock is also held and released
+//! subsequently, as to avoid a thread changing its state under us without us
+//! knowing about it.
+//!
+//! ## Resources
+//! ------------
+//! See the original Illumos implementation, the Solaris book or FreeBSD book for
+//! a more in-depth description.
+//! I have also written more about turnstiles here:
+//! https://rdmsr.github.io/writing/turnstiles/.
+
 const ke = @import("root").ke;
 const kep = ke.private;
 const rtl = @import("rtl");
@@ -174,20 +222,16 @@ fn update_prio(td: *ke.Thread) void {
 }
 
 /// Donate priority `pri` to `to` along the edge `boost`. The caller holds
-/// `to.lock` and the owning turnstile's chain lock. Returns whether `to`'s
-/// priority actually rose (false means the chain stops here).
-fn donate_to(boost: *Boost, to: *ke.Thread, pri: u8) bool {
+/// `to.lock` and the owning turnstile's chain lock.
+fn donate_to(boost: *Boost, to: *ke.Thread, pri: u8) void {
     // A lend only ever raises.
-    if (boost.donated != null and pri <= boost.donated.?) return false;
-
-    const before = to.priority;
+    if (boost.donated != null and pri <= boost.donated.?) return;
 
     if (boost.donated == null) to.turnstiles_owned.insert_head(&boost.link);
     boost.donated = pri;
     if (pri > to.inherited_prio) to.inherited_prio = pri;
 
     update_prio(to);
-    return to.priority > before;
 }
 
 /// Undo the donation currently boosting `to`. The caller
@@ -244,7 +288,7 @@ fn attached(ts: *Turnstile, own: Ownership) bool {
 }
 
 /// Lend `curtd`'s effective priority down the blocking chain, boosting each
-/// successive owner until one is already at least as high.
+/// successive owner.
 ///
 /// Locking:
 ///   - `root` is held by the caller on entry and is held again on return.
@@ -267,9 +311,19 @@ fn propagate(curtd: *ke.Thread, root: *Chain) void {
             if (!bucket.lock.try_acquire_no_ipl()) {
                 std.debug.assert(held == null);
 
-                // Drop everything and try again. This avoids a livelock
-                // between two PI walks holding different roots and trying to
-                // acquire each other.
+                // Drop everything and try again. This avoids a deadlock
+                // between two PI walks holding different roots and acquiring each
+                // other.
+                //
+                // There is technically a possible livelock here, where two
+                // CPUs are concurrently trylocking each other and ending up in
+                // this block repeatedly. This could be fixed by defining a
+                // "winner" and a "loser" based on a defined lock ordering
+                // (using e.g each's lock address).
+                // However, this scenario seems extremely unlikely,
+                // and may be physically impossible, considering it would require
+                // both CPUs to be essentially in lockstep for an unbounded
+                // period of time.
                 thread.lock.release_no_ipl();
                 root.lock.release_no_ipl();
 
@@ -294,16 +348,12 @@ fn propagate(curtd: *ke.Thread, root: *Chain) void {
             if (owner == curtd) @panic("turnstile: cycle in blocking chain");
 
             owner.lock.acquire_no_ipl();
-            if (!donate_to(o.boost, owner, donate)) {
-                owner.lock.release_no_ipl();
-                break;
-            }
+            _ = donate_to(o.boost, owner, donate);
 
             // The next hop blocks owner, so lend the owner's priority
             // down the chain.
             donate = owner.priority;
 
-            // Keep the owner locked, drop everything below it.
             thread.lock.release_no_ipl();
             if (held) |h| h.lock.release_no_ipl();
             held = null;
