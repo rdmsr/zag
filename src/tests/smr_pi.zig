@@ -226,7 +226,7 @@ fn check_cpu(cpu: *ke.smr.Cpu) void {
         }
     }
 
-    kep.turnstile.exit(cpu);
+    kep.turnstile.exit(cpu, turnstile);
     cpu.stall_lock.release_no_ipl();
     ke.ipl.lower(ipl);
 }

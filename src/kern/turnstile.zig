@@ -28,14 +28,14 @@
 //!
 //! ## Locking
 //! ----------
-//! There is one spinlock per turnstile hash chain, which should hopefully be
-//! fine-grained enough such that there are no scalability issues (contention
-//! *should* be pretty rare in a well-designed algorithm anyway!).
+//! There is one spinlock per turnstile hash chain and one per turnstile,
+//! which should hopefully be fine-grained enough such that there are no
+//! scalability issues.
 //!
 //! When doing priority inheritance, things get a bit tricky because we need to
-//! hold multiple chain locks at once (the original turnstile's chain lock, and
+//! hold multiple turnstile locks at once (the original turnstile's lock, and
 //! each subsequent turnstile we visit in the owner chain), to avoid deadlocks,
-//! subsequent buckets are trylocked. Each thread lock is also held and released
+//! subsequent locks are trylocked. Each thread lock is also held and released
 //! subsequently, as to avoid a thread changing its state under us without us
 //! knowing about it.
 //!
@@ -97,19 +97,24 @@ const Target = struct {
     boost: *Boost,
 };
 
+/// Turnstile structure.
+/// ts: turnstile lock
+/// b: bucket lock
 pub const Turnstile = struct {
-    /// Linkage for hash chain.
+    /// Linkage for hash chain (b).
     link: rtl.List.Entry,
-    /// Linkage on freelist.
+    /// Linkage on freelist (b).
     next_free: ?*Turnstile,
-    /// Waiter queues, indexed by the queue type specified in `Queue`.
+    /// Waiter queues, indexed by the queue type specified in `Queue` (ts).
     queues: [2]rtl.List,
-    /// Number of waiters on this turnstile.
+    /// Number of waiters on this turnstile (ts).
     waiters: usize,
     /// Object threads are waiting on.
     obj: *anyopaque,
-    /// Threads this turnstile donates to.
+    /// Threads this turnstile donates to (ts).
     owners: OwnerSet,
+    /// Lock protecting the turnstile's state.
+    lock: ke.SpinLock,
 
     fn detach(ts: *Turnstile) void {
         ts.owners = .none;
@@ -162,8 +167,7 @@ fn highest_waiter(ts: *Turnstile) ?u8 {
     return best;
 }
 
-/// Walks the threads a turnstile donates to, this is to abstract over the
-/// different kinds of ownership.
+/// Walks the threads a turnstile donates to.
 const Targets = struct {
     single: ?Target,
     list: ?rtl.List.Iterator,
@@ -193,7 +197,7 @@ fn targets(ts: *Turnstile) Targets {
     };
 }
 
-/// The turnstile's owner when there is exactly one to follow, else null.
+/// The turnstile's owner when there is only one.
 fn sole_owner(ts: *Turnstile) ?Target {
     return switch (ts.owners) {
         .single => .{
@@ -222,7 +226,7 @@ fn update_prio(td: *ke.Thread) void {
 }
 
 /// Donate priority `pri` to `to` along the edge `boost`. The caller holds
-/// `to.lock` and the owning turnstile's chain lock.
+/// `to.lock` and the owning turnstile's lock.
 fn donate_to(boost: *Boost, to: *ke.Thread, pri: u8) void {
     // A lend only ever raises.
     if (boost.donated != null and pri <= boost.donated.?) return;
@@ -262,7 +266,7 @@ fn reboost(ts: *Turnstile) void {
     var it = targets(ts);
     while (it.next()) |t| {
         t.thread.lock.acquire_no_ipl();
-        _ = donate_to(t.boost, t.thread, pri);
+        donate_to(t.boost, t.thread, pri);
         t.thread.lock.release_no_ipl();
     }
 }
@@ -288,75 +292,65 @@ fn attached(ts: *Turnstile, own: Ownership) bool {
 }
 
 /// Lend `curtd`'s effective priority down the blocking chain, boosting each
-/// successive owner.
+/// successive owner. `curtd.lock` and `curtd.turnstile.lock` are both held on
+/// entry and released on return.
 ///
-/// Locking:
-///   - `root` is held by the caller on entry and is held again on return.
-///   - If another chain bucket cannot be trylocked, we drop the current thread
-///     lock and `root`, then reacquire `root` and restart from `curtd`.
-///   - Any other chain bucket is taken with trylock. At most one such bucket is
-///     held at a time.
-fn propagate(curtd: *ke.Thread, root: *Chain) void {
-    var donate = curtd.priority;
+/// Go through every turnstile in the chain and acquire and release it
+/// successively while still holding the original turnstile. Trylock since there
+/// is no defined ordering between individual turnstiles.
+fn propagate(curtd: *ke.Thread) void {
     var thread = curtd;
-    var held: ?*Chain = null;
+    var root: ?*Turnstile = curtd.turnstile;
 
     while (true) {
-        // We hold `thread.lock` (curtd's on the first
-        // pass, the previous owner's after a hop) and `root`, `held` is null.
+        // We hold `thread.lock` and `root.lock`.
         const obj = thread.waiting_on orelse break;
-        const bucket = chain_for(obj);
 
-        if (bucket != root) {
-            if (!bucket.lock.try_acquire_no_ipl()) {
-                std.debug.assert(held == null);
-
-                // Drop everything and try again. This avoids a deadlock
-                // between two PI walks holding different roots and acquiring each
-                // other.
-                //
-                // There is technically a possible livelock here, where two
-                // CPUs are concurrently trylocking each other and ending up in
-                // this block repeatedly. This could be fixed by defining a
-                // "winner" and a "loser" based on a defined lock ordering
-                // (using e.g each's lock address).
-                // However, this scenario seems extremely unlikely,
-                // and may be physically impossible, considering it would require
-                // both CPUs to be essentially in lockstep for an unbounded
-                // period of time.
-                thread.lock.release_no_ipl();
-                root.lock.release_no_ipl();
-
-                root.lock.acquire_no_ipl();
-                curtd.lock.acquire_no_ipl();
-
-                thread = curtd;
-                donate = curtd.priority;
-                continue;
-            }
-            held = bucket;
-        }
         std.debug.assert(thread.waiting_on == obj);
 
         const ts = thread.turnstile;
 
+        // Try to acquire the next turnstile's lock if we don't already hold it.
+        if (root == null or ts != root.?) {
+            // Need to trylock here because there's an inversion;
+            // the wakeup code wants turnstile -> thread ordering,
+            // but we currently have a thread -> turnstile ordering.
+            // We also need to do this to protect against concurrent PI walks
+            // on the same turnstile.
+            if (!ts.lock.try_acquire_no_ipl()) {
+                // The turnstile could not be acquired, drop everything and
+                // restart the walk from the start. Priority inheritance is idem-
+                // potent so there is no issue in applying it many times.
+                thread.lock.release_no_ipl();
+
+                if (root) |ro| ro.lock.release_no_ipl();
+
+                root = null;
+
+                curtd.lock.acquire_no_ipl();
+                thread = curtd;
+                continue;
+            }
+
+            if (root == null) root = ts;
+        }
+
+        const donate = thread.priority;
+
         if (sole_owner(ts)) |o| {
-            // For single-owner locks, do multi-hop priority inheritance.
-            // Multi-hop means we handle the case where a boosted thread itself
-            // is waiting on another resource.
+            // For single-owner locks, hop onto the next owner.
             const owner = o.thread;
+
             if (owner == curtd) @panic("turnstile: cycle in blocking chain");
 
             owner.lock.acquire_no_ipl();
-            _ = donate_to(o.boost, owner, donate);
-
-            // The next hop blocks owner, so lend the owner's priority
-            // down the chain.
-            donate = owner.priority;
+            donate_to(o.boost, owner, donate);
 
             thread.lock.release_no_ipl();
-            if (held) |h| h.lock.release_no_ipl();
-            held = null;
+
+            if (ts != root.?)
+                ts.lock.release_no_ipl();
+
             thread = owner;
         } else {
             // Only do single-hop priority boosting for multiple owners.
@@ -367,19 +361,17 @@ fn propagate(curtd: *ke.Thread, root: *Chain) void {
                 if (t.thread == curtd)
                     @panic("turnstile: cycle in blocking chain");
                 t.thread.lock.acquire_no_ipl();
-                _ = donate_to(t.boost, t.thread, donate);
+                donate_to(t.boost, t.thread, donate);
                 t.thread.lock.release_no_ipl();
             }
+            if (ts != root.?)
+                ts.lock.release_no_ipl();
             break;
         }
     }
 
-    // Leave the caller holding exactly curtd.lock and root.
-    if (held) |h| h.lock.release_no_ipl();
-    if (thread != curtd) {
-        thread.lock.release_no_ipl();
-        curtd.lock.acquire_no_ipl();
-    }
+    thread.lock.release_no_ipl();
+    if (root) |ro| ro.lock.release_no_ipl();
 }
 
 pub fn init_turnstiles() void {
@@ -400,7 +392,7 @@ pub fn owner_enter(ts: *Turnstile, o: *Owner) void {
 }
 
 /// Revoke one owner's donation. The caller removes `o` from the shared list
-/// and holds the chain lock.
+/// and holds the appropriate locks.
 pub fn owner_leave(o: *Owner) void {
     undonate(&o.boost, o.thread);
 }
@@ -417,6 +409,7 @@ pub fn lookup(obj: *const anyopaque) ?*Turnstile {
     while (it.next()) : (it.advance()) {
         const turnstile: *Turnstile = @fieldParentPtr("link", it.get());
         if (turnstile.obj == obj) {
+            turnstile.lock.acquire_no_ipl();
             return turnstile;
         }
     }
@@ -424,8 +417,12 @@ pub fn lookup(obj: *const anyopaque) ?*Turnstile {
     return null;
 }
 
-/// Drop the lock protecting the chain for obj.
-pub fn exit(obj: *const anyopaque) void {
+/// Drop the locks held by a corresponding `lookup`.
+pub fn exit(obj: *const anyopaque, turnstile: ?*Turnstile) void {
+    if (turnstile) |ts| {
+        ts.lock.release_no_ipl();
+    }
+
     chain_for(obj).lock.release_no_ipl();
 }
 
@@ -468,6 +465,8 @@ pub fn block(
         // This is the first thread to block on this object.
         // Lend its turnstile and add it to the hash chain.
         ts = curtd.turnstile;
+
+        ts.?.lock.acquire_no_ipl();
         ts.?.obj = obj;
         attach(ts.?, own);
         chain.list.insert_head(&ts.?.link);
@@ -489,11 +488,10 @@ pub fn block(
 
     // Record what we block on (the object) and lend our priority down the
     // blocking chain.
+    chain.lock.release_no_ipl();
     curtd.lock.acquire_no_ipl();
     curtd.waiting_on = obj;
-    propagate(curtd, chain);
-    chain.lock.release_no_ipl();
-    curtd.lock.release_no_ipl();
+    propagate(curtd);
 
     // Now block on the event.
     _ = ke.ipl.lower(.Passive);
@@ -502,18 +500,28 @@ pub fn block(
     _ = ke.ipl.raise(ipl);
 }
 
-/// Wake whomever was waiting on the turnstile.
+/// Signal the end of a turnstile-backed wait and return a list of waiters to wake.
 /// Do hand-off to new_owner if specified.
-/// The chain lock is still held on return.
-pub fn wakeup(ts: *Turnstile, queue: Queue, count: usize, new_owner: ?*ke.Thread) void {
+/// The locks acquired by `lookup` are still held on return.
+pub fn signal(
+    ts: *Turnstile,
+    queue: Queue,
+    count: usize,
+    new_owner: ?*ke.Thread,
+    waiters: *rtl.List,
+) void {
     const queue_idx = @intFromEnum(queue);
 
     // Revoke any priority we gave to the owner(s).
     revoke(ts);
 
+    waiters.init();
+
     if (new_owner) |no| {
         // Hand the object to a specific waiter, the rest now boost it.
-        dequeue(ts, no);
+        const w = dequeue(ts, no);
+        waiters.insert_head(&w.link);
+
         if (ts.waiters > 0) {
             attach(ts, .{ .single = no });
             reboost(ts);
@@ -525,15 +533,35 @@ pub fn wakeup(ts: *Turnstile, queue: Queue, count: usize, new_owner: ?*ke.Thread
                 "link",
                 ts.queues[queue_idx].first(),
             );
-            dequeue(ts, waiter.thread);
+            const w = dequeue(ts, waiter.thread);
+
+            waiters.insert_tail(&w.link);
         }
         if (ts.waiters > 0) ts.detach();
     }
 }
 
-/// Remove a single waiter from the turnstile and wake it. Caller holds the
-/// chain lock.
-fn dequeue(ts: *Turnstile, td: *ke.Thread) void {
+/// Wake all waiters returned by `prepare_wakeup`, must be done after `exit`
+/// is called.
+pub fn wakeup(waiters: *rtl.List) void {
+    // Now wake all the waiters, this ensures that the turnstile and chain lock
+    // hold times stay low.
+    // Also, if we did this *before* unlocking `ts`, there is no guarantee that it
+    // is still alive, as the last waiter could've woken up, exited, and freed it.
+    // Instead of special casing it, let's just do the wakeup in a nicer
+    // environment here.
+    var it = waiters.iterator();
+
+    while (it.next()) : (it.advance()) {
+        const waiter: *Waiter = @fieldParentPtr("link", it.current);
+        waiter.event.signal();
+    }
+}
+
+/// Remove a single waiter from the turnstile and return it.
+fn dequeue(ts: *Turnstile, td: *ke.Thread) *Waiter {
+    td.lock.acquire_no_ipl();
+
     std.debug.assert(td.turnstile == ts);
     std.debug.assert(td.turnstile_waiter != null);
     std.debug.assert(!ts.queues[0].is_empty() or !ts.queues[1].is_empty());
@@ -556,9 +584,8 @@ fn dequeue(ts: *Turnstile, td: *ke.Thread) void {
     td.turnstile_waiter = null;
     ts.waiters -= 1;
 
-    td.lock.acquire_no_ipl();
     td.waiting_on = null;
     td.lock.release_no_ipl();
 
-    waiter.event.signal();
+    return waiter;
 }
