@@ -792,6 +792,10 @@ pub const Zone = struct {
                         // We lost the race. If the magazine we got was fully filled,
                         // then put it in the depot. Otherwise, dispose of it.
                         if (cnt == magazine_size.load()) {
+                            // Ensure this magazine isn't counted as a freed one,
+                            // it is instantly reclaimable.
+                            nm.seq = ke.smr.seq_invalid;
+
                             Depot.free(nm, &cpu.depot.full_mags, self.reuse_policy);
                             continue;
                         }
