@@ -1,6 +1,7 @@
 const std = @import("std");
 const ke = @import("root").ke;
 const kep = ke.private;
+const rtl = @import("rtl");
 
 /// Number of spins before blocking.
 const optimistic_spins = 100;
@@ -62,7 +63,7 @@ pub const Mutex = struct {
 
             if (owner == null) {
                 // Lock was released between lookup and here.
-                kep.turnstile.exit(m);
+                kep.turnstile.exit(m, ts);
                 if (m.owner.cmpxchgStrong(
                     null,
                     curtd,
@@ -104,23 +105,29 @@ pub const Mutex = struct {
         m.owner.store(null, .release);
 
         if (ts == null) {
-            kep.turnstile.exit(m);
+            kep.turnstile.exit(m, ts);
             ke.ipl.lower(ipl);
             return;
         }
+
+        var waiters: rtl.List = undefined;
 
         // Note: wake up all waiters.
         // This so-called "lock barging" (name from WTF::ParkingLot) has been
         // to be better because this avoids lock convoys,
         // see this mysterious 70s paper:
         // https://dl.acm.org/doi/pdf/10.1145/850657.850659
-        kep.turnstile.wakeup(
+        kep.turnstile.signal(
             ts.?,
             .Exclusive,
             ts.?.waiters,
             null,
+            &waiters,
         );
-        kep.turnstile.exit(m);
+
+        kep.turnstile.exit(m, ts);
+
+        kep.turnstile.wakeup(&waiters);
 
         ke.ipl.lower(ipl);
     }

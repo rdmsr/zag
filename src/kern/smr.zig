@@ -158,7 +158,7 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence 
 
                 // Re-check under the chain lock.
                 if (seq == seq_invalid or goal <= seq) {
-                    kep.turnstile.exit(cpu);
+                    kep.turnstile.exit(cpu, ts);
                     ke.ipl.lower(ipl);
                     break;
                 }
@@ -267,7 +267,6 @@ pub fn advance(dom: *Domain) Sequence {
 /// is called.
 pub fn deferred_advance(dom: *Domain) Sequence {
     rtl.barrier.fence(.seq_cst);
-
     return dom.clock.write_seq.load(.monotonic) + seq_incr;
 }
 
@@ -381,7 +380,7 @@ pub fn mark_thread_stalled(td: *ke.Thread) void {
                 kep.turnstile.owner_enter(ts, &tracker.owner);
             }
 
-            kep.turnstile.exit(cpu);
+            kep.turnstile.exit(cpu, turnstile);
 
             cpu.stall_lock.release_no_ipl();
         }
@@ -449,12 +448,16 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
         wake = cpu.stall_goal <= first.seq;
     }
 
-    if (wake) {
-        if (turnstile) |ts|
-            kep.turnstile.wakeup(ts, .Exclusive, ts.waiters, null);
+    if (wake and turnstile != null) {
+        const ts = turnstile.?;
+        var waiters: rtl.List = undefined;
+        kep.turnstile.signal(ts, .Exclusive, ts.waiters, null, &waiters);
+        kep.turnstile.exit(cpu, turnstile);
+        kep.turnstile.wakeup(&waiters);
+    } else {
+        kep.turnstile.exit(cpu, turnstile);
     }
 
-    kep.turnstile.exit(cpu);
     cpu.stall_lock.release_no_ipl();
 
     ke.ipl.lower(ipl);
