@@ -1318,7 +1318,7 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
             break;
         }
 
-        while (next.?.switching.load(.monotonic) == true) {
+        while (cur != next and next.?.switching.load(.monotonic) == true) {
             std.atomic.spinLoopHint();
         }
 
