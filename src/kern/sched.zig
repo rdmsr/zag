@@ -618,8 +618,6 @@ fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, target: ?u32) ?*ke.Threa
             curr_queue.first(),
         );
 
-        td.state.store(.Selected, .monotonic);
-
         if (target) |tgt| {
             // Find the first thread that is not pinned and can run on this CPU.
             while (td.pinned or td.hard_affinity.get(tgt) == false) {
@@ -631,6 +629,8 @@ fn pick_realtime_thread(cpu: *PerCpu, minimum_prio: u8, target: ?u32) ?*ke.Threa
                 td = @fieldParentPtr("runq_link", entry);
             }
         }
+
+        td.state.store(.Selected, .monotonic);
 
         // Remove it from the queue.
         td.runq_link.remove();
@@ -677,8 +677,6 @@ fn pick_batch_thread(cpu: *PerCpu, target: ?u32) ?*ke.Thread {
             curr_queue.first(),
         );
 
-        td.state.store(.Selected, .monotonic);
-
         if (target) |tgt| {
             // Find the first thread that is not pinned and can run on this CPU.
             while (td.pinned or td.hard_affinity.get(tgt) == false) {
@@ -690,6 +688,8 @@ fn pick_batch_thread(cpu: *PerCpu, target: ?u32) ?*ke.Thread {
                 td = @fieldParentPtr("runq_link", entry);
             }
         }
+
+        td.state.store(.Selected, .monotonic);
 
         // Remove it from the queue.
         td.runq_link.remove();
@@ -1634,28 +1634,35 @@ fn steal_thread_from_cpu(cpu: *PerCpu, curcpu: ?*PerCpu, target: ?u32) ?*ke.Thre
     return td;
 }
 
-fn steal_work(cpu: u32) ?*ke.Thread {
+fn steal_work(cpu: u32) void {
     const most = find_most_loaded(null, true);
     const c = percpu.remote(cpu);
 
     if (most == cpu) {
         // We're the most loaded CPU, nothing to steal.
-        return null;
+        return;
     }
 
     if (most) |other| {
         const sched_other = percpu.remote(other);
         if (sched_other.migratable.load(.monotonic) < steal_threshold) {
-            return null;
+            return;
         }
 
         const ipl = ke.ipl.raise(.Dispatch);
-        const td = steal_thread_from_cpu(sched_other, c, cpu);
-        ke.ipl.lower(ipl);
-        return td;
-    }
+        const thread = steal_thread_from_cpu(sched_other, c, cpu);
 
-    return null;
+        if (thread) |td| {
+            td.lock.acquire_no_ipl();
+
+            enqueue_on_cpu(cpu, td);
+
+            td.lock.release_no_ipl();
+        }
+
+        // Switch to the thread.
+        ke.ipl.lower(ipl);
+    }
 }
 
 /// Called every second to balance work between CPUs on CPU0.
@@ -1713,7 +1720,6 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
 
         if (td) |thread| {
             thread.lock.acquire_no_ipl();
-
             enqueue_on_cpu(low.?, thread);
             thread.lock.release_no_ipl();
         }
@@ -1760,13 +1766,7 @@ pub fn idle(_: ?*anyopaque) noreturn {
             cpu.steal_work = false;
 
             // Steal a thread.
-            if (steal_work(cpu_id)) |td| {
-                // Enqueue it on this CPU.
-                const ipl = td.lock.acquire();
-
-                enqueue_on_cpu(cpu_id, td);
-                td.lock.release(ipl);
-            }
+            steal_work(cpu_id);
         }
 
         // Dispatch any pending DPCs.
