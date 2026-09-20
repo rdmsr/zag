@@ -274,6 +274,8 @@ pub fn deferred_advance(dom: *Domain) Sequence {
 /// Actually advance the global clock to a value previously returned by
 /// deferred_advance().
 pub fn deferred_advance_commit(dom: *Domain, seq: Sequence) void {
+    if (seq == seq_invalid) return;
+
     _ = dom.clock.write_seq.cmpxchgStrong(
         seq - seq_incr,
         seq,
