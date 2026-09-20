@@ -1318,7 +1318,12 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
             break;
         }
 
-        while (cur != next and next.?.switching.load(.monotonic) == true) {
+        if (next == cur) {
+            // We just selected the same thread again.
+            break;
+        }
+
+        while (next.?.switching.load(.monotonic) == true) {
             std.atomic.spinLoopHint();
         }
 
@@ -1369,7 +1374,8 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
         cur.switching.store(false, .monotonic);
         cur.lock.release_no_ipl();
 
-        if (cont) |c| kep.impl.call_continuation(&cur.context, c);
+        if (cont) |c|
+            kep.impl.call_continuation(&cur.context, c);
     }
 
     // cur lock dropped
