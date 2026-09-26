@@ -61,6 +61,8 @@ fn pcpu_init() linksection(r.init) void {
         .payload = undefined,
         .link = undefined,
     });
+
+    local.npages = .init(0);
 }
 
 comptime {
@@ -188,6 +190,10 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
 
     // Flush on our local TLB.
     flush_range(state.base, state.npages);
+
+    if (target_mask.is_all(false)) {
+        return;
+    }
 
     // Get a slot and fill it.
     const curcpu = ke.cpu.current();
