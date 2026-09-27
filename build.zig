@@ -223,6 +223,10 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
             kernel.root_module.addAssemblyFile(b.path("src/kern/amd64/locore.s"));
             kernel.root_module.addAssemblyFile(b.path("src/platform/pc/ap.s"));
         },
+        .riscv64 => {
+            kernel.root_module.addAssemblyFile(b.path("src/kern/riscv64/locore.s"));
+            kernel.root_module.addAssemblyFile(b.path("src/platform/riscv64/trap.s"));
+        },
         else => {},
     }
 
@@ -248,7 +252,11 @@ fn addLoader(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
     loader.root_module.addImport("arch", arch_module);
     loader.root_module.addImport("config", config_module);
     loader.root_module.addImport("rtl", rtl);
-    loader.root_module.addAssemblyFile(b.path("src/loader/jump.s"));
+    switch (plat.arch) {
+        .x86_64 => loader.root_module.addAssemblyFile(b.path("src/loader/x86_64/jump.s")),
+        .riscv64 => loader.root_module.addAssemblyFile(b.path("src/loader/riscv64/jump.s")),
+        else => {},
+    }
 
     loader.use_llvm = true;
     loader.use_lld = true;

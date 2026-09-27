@@ -9,6 +9,7 @@
             .options = .{
                 .{ .value = "amd64" },
                 .{ .value = "aarch64" },
+                .{ .value = "riscv64" },
             },
         },
         .{

@@ -57,7 +57,7 @@ fn is_kernel_text(addr: usize) bool {
 }
 
 fn walk_stack_frame(base: usize) void {
-    var frame: ?*StackFrame = @ptrFromInt(base);
+    var frame: ?*StackFrame = @ptrFromInt(if (config.arch == .riscv64) base - 16 else base);
     var depth: usize = 0;
     while (frame) |f| : (depth += 1) {
         if (depth > 64) break;
@@ -67,7 +67,10 @@ fn walk_stack_frame(base: usize) void {
         }
         const sym = get_symbol_name(ret_addr) orelse Symbol{ .name = "???", .offset = 0 };
         std.log.err("  #{d} {s}+0x{x} - 0x{x}", .{ depth, sym.name, sym.offset, ret_addr });
-        frame = f.prev;
+        frame = if (config.arch == .riscv64 and f.prev != null)
+            @ptrFromInt(@intFromPtr(f.prev.?) - 16)
+        else
+            f.prev;
     }
 }
 
