@@ -144,6 +144,7 @@ pub fn disable() void {
 }
 
 pub fn crash() void {
+    if (!enabled) return;
     cursor.x = 0;
     cursor.y = 0;
 
@@ -172,9 +173,13 @@ pub fn write_char(c: u8) void {
 }
 
 pub fn init(boot_info: *r.BootInfo) void {
-    framebuffer = @ptrFromInt(boot_info.framebuffer.?.address);
-    framebuffer_width = boot_info.framebuffer.?.width;
-    framebuffer_height = boot_info.framebuffer.?.height;
+    const fb = boot_info.framebuffer orelse {
+        enabled = false;
+        return;
+    };
+    framebuffer = @ptrFromInt(fb.address);
+    framebuffer_width = fb.width;
+    framebuffer_height = fb.height;
 
     load_font();
 

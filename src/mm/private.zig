@@ -30,6 +30,7 @@ pub const PMapLevel = struct {
 
 pub const impl = switch (config.arch) {
     .amd64 => @import("amd64/impl.zig"),
+    .riscv64 => @import("riscv64/impl.zig"),
     else => @compileError("unsupported architecture"),
 };
 

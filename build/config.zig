@@ -15,6 +15,7 @@ pub const Platform = struct {
 const ArchEnum = enum {
     amd64,
     aarch64,
+    riscv64,
 };
 
 const BootloaderEnum = enum {
@@ -36,11 +37,12 @@ pub fn getPlatform(config: Config) !Platform {
         .arch = switch (config.arch) {
             .amd64 => .x86_64,
             .aarch64 => .aarch64,
+            .riscv64 => .riscv64,
         },
         .os = .freestanding,
     };
 
-    if (ret.os == .freestanding and (ret.arch == .x86_64 or ret.arch == .aarch64)) {
+    if (ret.os == .freestanding and (ret.arch == .x86_64 or ret.arch == .aarch64 or ret.arch == .riscv64)) {
         ret.bootloader = switch (config.bootloader) {
             .limine => .Limine,
         };
