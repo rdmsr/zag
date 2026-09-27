@@ -235,7 +235,7 @@ pub const Arena = struct {
         size: usize,
         options: AllocOptions,
     ) mm.Error!usize {
-        if (size & self.qshift != 0) {
+        if (size & (self.quantum - 1) != 0) {
             return error.InvalidSize;
         }
 
