@@ -62,8 +62,8 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, loader: *std.Build
 
                 if (!debug and builtin.target.os.tag == .linux and builtin.cpu.arch == .x86_64) qemu.addArgs(&.{ "-enable-kvm", "-cpu", "host,+invtsc" });
             },
-            .aarch64 => qemu.addArgs(&.{ "-machine", "virt", "-cpu", "cortex-a57" }),
-            .riscv64 => qemu.addArgs(&.{ "-machine", "virt" }),
+            .aarch64 => qemu.addArgs(&.{ "-machine", "virt", "-cpu", "cortex-a57", "-device", "ramfb" }),
+            .riscv64 => qemu.addArgs(&.{ "-machine", "virt", "-m", "1G", "-device", "ramfb" }),
             else => {},
         }
 

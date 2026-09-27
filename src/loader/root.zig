@@ -82,6 +82,7 @@ pub const ImplSchema = struct {
 
 pub const arch = switch (config.arch) {
     .amd64 => @import("amd64/impl.zig"),
+    .riscv64 => @import("riscv64/impl.zig"),
     else => @compileError("unsupported architecture"),
 };
 
