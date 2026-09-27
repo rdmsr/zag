@@ -256,10 +256,6 @@ pub const Arena = struct {
         size: usize,
         options: AllocOptions,
     ) mm.Error!usize {
-        if (size & self.quantum != 0) {
-            return error.InvalidSize;
-        }
-
         const result = blk: while (true) {
             const ret = switch (options.policy) {
                 .InstantFit => self.instant_fit(size, options),
