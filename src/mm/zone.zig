@@ -263,7 +263,11 @@ const Slab = struct {
     fn take_bit(self: *Slab, word_idx: usize, bit: anytype) u16 {
         self.bitmap()[word_idx] &= ~(@as(u64, 1) << @intCast(bit));
         const allocated: u16 = @intCast(word_idx * 64 + bit);
-        self.alloc_rr = if (allocated + 1 >= self.capacity) 0 else allocated + 1;
+        self.alloc_rr = if (allocated + 1 >= self.capacity)
+            0
+        else
+            allocated + 1;
+
         return allocated;
     }
 
