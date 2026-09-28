@@ -253,7 +253,7 @@ fn addLoader(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
     loader.root_module.addImport("config", config_module);
     loader.root_module.addImport("rtl", rtl);
     switch (plat.arch) {
-        .x86_64 => loader.root_module.addAssemblyFile(b.path("src/loader/x86_64/jump.s")),
+        .x86_64 => loader.root_module.addAssemblyFile(b.path("src/loader/amd64/jump.s")),
         .riscv64 => loader.root_module.addAssemblyFile(b.path("src/loader/riscv64/jump.s")),
         else => {},
     }
