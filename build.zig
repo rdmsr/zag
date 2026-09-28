@@ -225,7 +225,6 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
         },
         .riscv64 => {
             kernel.root_module.addAssemblyFile(b.path("src/kern/riscv64/locore.s"));
-            kernel.root_module.addAssemblyFile(b.path("src/platform/riscv64/trap.s"));
         },
         else => {},
     }
