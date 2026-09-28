@@ -1,6 +1,13 @@
 const r = @import("root");
 const ke = r.ke;
-const rv64 = r.arch;
+const rv64 = @import("arch");
+const std = @import("std");
+
+const int = @import("int.zig");
+
+comptime {
+    std.testing.refAllDecls(int);
+}
 
 pub const tlb_max_pages = 32;
 

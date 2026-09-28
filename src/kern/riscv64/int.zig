@@ -1,6 +1,7 @@
 const r = @import("root");
 const ke = r.ke;
 const std = @import("std");
+const rv64 = @import("arch");
 
 export fn riscv_trap_handler(cause: usize, pc: usize) callconv(.c) void {
     if (cause == ((@as(usize, 1) << 63) | 5)) {
