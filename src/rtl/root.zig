@@ -18,30 +18,60 @@ pub const HandoffList = @import("handoff.zig").HandoffList;
 pub const LinkerSet = @import("linker_set.zig").LinkerSet;
 pub const CachePadded = @import("cache_padded.zig").CachePadded;
 
+pub fn comptime_error(comptime msg: []const u8, args: anytype) void {
+    @compileError(std.fmt.comptimePrint(msg, args));
+}
+
 /// Asserts that a given type `T` matches the schema declared by `I`.
 /// This includes public methods and fields.
 pub fn assert_interface(T: type, I: type) void {
     const tinfo = @typeInfo(I);
 
-    inline for (tinfo.@"struct".fields) |f| {
-        if (!@hasField(T, f.name)) {
-            @compileError(std.fmt.comptimePrint("Expected field '{s}' of type '{s}' in type '{s}' required by '{s}'", .{ f.name, @typeName(f.type), @typeName(T), @typeName(I) }));
+    const info = tinfo.@"struct";
+
+    inline for (info.field_names, info.field_types) |name, t| {
+        if (!@hasField(T, name)) {
+            comptime_error(
+                "Expected field '{s}' of type '{s}' in type '{s}' required by '{s}'",
+                .{
+                    name,
+                    @typeName(t),
+                    @typeName(T),
+                    @typeName(I),
+                },
+            );
         } else {
-            if (@FieldType(T, f.name) != f.type) {
-                @compileError(std.fmt.comptimePrint("Expected field '{s}' of type '{s}' in type '{s}' required by '{s}', got '{s}'", .{ f.name, @typeName(f.type), @typeName(T), @typeName(I), @typeName(@FieldType(T, f.name)) }));
+            if (@FieldType(T, name) != t) {
+                comptime_error(
+                    "Expected field '{s}' of type '{s}' in type '{s}' required by '{s}', got '{s}'",
+                    .{
+                        name,
+                        @typeName(t),
+                        @typeName(T),
+                        @typeName(I),
+                        @typeName(@FieldType(T, name)),
+                    },
+                );
             }
         }
     }
 
-    inline for (tinfo.@"struct".decls) |decl| {
-        const member = @field(I, decl.name);
+    inline for (tinfo.@"struct".decl_names) |decl| {
+        const member = @field(I, decl);
 
         if (@typeInfo(@TypeOf(member)) == .@"fn") {
-            if (!@hasDecl(T, decl.name)) {
-                @compileError(std.fmt.comptimePrint("Expected method '{s}' in type '{s}' required by '{s}'", .{ decl.name, @typeName(T), @typeName(I) }));
+            if (!@hasDecl(T, decl)) {
+                comptime_error(
+                    "Expected method '{s}' in type '{s}' required by '{s}'",
+                    .{
+                        decl,
+                        @typeName(T),
+                        @typeName(I),
+                    },
+                );
             }
 
-            const impl_member = @field(T, decl.name);
+            const impl_member = @field(T, decl);
             const IfaceFnType = @TypeOf(member);
             const ImplFnType = @TypeOf(impl_member);
 
@@ -49,36 +79,88 @@ pub fn assert_interface(T: type, I: type) void {
                 const iface_fn = @typeInfo(IfaceFnType).@"fn";
                 const impl_fn = @typeInfo(ImplFnType).@"fn";
 
-                if (iface_fn.params.len != impl_fn.params.len) {
-                    @compileError(std.fmt.comptimePrint("Parameter count mismatch in method '{s}' in type '{s}' required by '{s}'", .{ decl.name, @typeName(T), @typeName(I) }));
+                if (iface_fn.param_types.len != impl_fn.param_types.len) {
+                    comptime_error(
+                        "Parameter count mismatch in method '{s}' in type '{s}' required by '{s}'",
+                        .{
+                            decl,
+                            @typeName(T),
+                            @typeName(I),
+                        },
+                    );
                 }
                 if (iface_fn.return_type != impl_fn.return_type) {
-                    @compileError(std.fmt.comptimePrint("Return type mismatch in method '{s}' in type '{s}' required by '{s}'", .{ decl.name, @typeName(T), @typeName(I) }));
+                    comptime_error(
+                        "Return type mismatch in method '{s}' in type '{s}' required by '{s}'",
+                        .{
+                            decl,
+                            @typeName(T),
+                            @typeName(I),
+                        },
+                    );
                 }
 
-                for (0..iface_fn.params.len) |i| {
-                    if (iface_fn.params[i].type != impl_fn.params[i].type) {
-                        @compileError(std.fmt.comptimePrint("Parameter type mismatch in method '{s}' in type '{s}' required by '{s}'", .{ decl.name, @typeName(T), @typeName(I) }));
+                for (iface_fn.param_types, impl_fn.param_types) |a, b| {
+                    if (a != b) {
+                        comptime_error(
+                            "Parameter type mismatch in method '{s}' in type '{s}' required by '{s}'",
+                            .{
+                                decl,
+                                @typeName(T),
+                                @typeName(I),
+                            },
+                        );
                     }
                 }
             }
         } else if (@TypeOf(member) == type) {
-            if (!@hasDecl(T, decl.name)) {
-                @compileError(std.fmt.comptimePrint("Expected type declaration '{s}' in type '{s}' required by '{s}'", .{ decl.name, @typeName(T), @typeName(I) }));
+            if (!@hasDecl(T, decl)) {
+                comptime_error(
+                    "Expected type declaration '{s}' in type '{s}' required by '{s}'",
+                    .{
+                        decl,
+                        @typeName(T),
+                        @typeName(I),
+                    },
+                );
             }
 
-            const impl_member = @field(T, decl.name);
+            const impl_member = @field(T, decl);
             if (@TypeOf(impl_member) != type) {
-                @compileError(std.fmt.comptimePrint("Declaration '{s}' in type '{s}' is required to be a type by '{s}', but got '{s}'", .{ decl.name, @typeName(T), @typeName(I), @typeName(@TypeOf(impl_member)) }));
+                comptime_error(
+                    "Declaration '{s}' in type '{s}' is required to be a type by '{s}', but got '{s}'",
+                    .{
+                        decl,
+                        @typeName(T),
+                        @typeName(I),
+                        @typeName(@TypeOf(impl_member)),
+                    },
+                );
             }
         } else {
-            if (!@hasDecl(T, decl.name)) {
-                @compileError(std.fmt.comptimePrint("Expected variable declaration '{s}' in type '{s}' required by '{s}'", .{ decl.name, @typeName(T), @typeName(I) }));
+            if (!@hasDecl(T, decl)) {
+                comptime_error(
+                    "Expected variable declaration '{s}' in type '{s}' required by '{s}'",
+                    .{
+                        decl,
+                        @typeName(T),
+                        @typeName(I),
+                    },
+                );
             }
 
-            const impl_member = @field(T, decl.name);
+            const impl_member = @field(T, decl);
             if (@TypeOf(impl_member) != @TypeOf(member)) {
-                @compileError(std.fmt.comptimePrint("Declaration '{s}' in type '{s}' is required to be a variable of type '{s}' by '{s}', but got '{s}'", .{ decl.name, @typeName(T), @typeName(@TypeOf(member)), @typeName(I), @typeName(@TypeOf(impl_member)) }));
+                comptime_error(
+                    "Declaration '{s}' in type '{s}' is required to be a variable of type '{s}' by '{s}', but got '{s}'",
+                    .{
+                        decl,
+                        @typeName(T),
+                        @typeName(@TypeOf(member)),
+                        @typeName(I),
+                        @typeName(@TypeOf(impl_member)),
+                    },
+                );
             }
         }
     }
@@ -89,9 +171,13 @@ pub fn assert(condition: bool, comptime msg: []const u8, args: anytype) void {
         @branchHint(.unlikely);
 
         switch (@import("builtin").mode) {
-            .ReleaseFast, .ReleaseSmall => unreachable,
-            .Debug, .ReleaseSafe => {
-                std.debug.panicExtra(@returnAddress(), "Assertion failed: " ++ msg, args);
+            .fast, .small => unreachable,
+            .debug, .safe => {
+                std.debug.panicExtra(
+                    @returnAddress(),
+                    "Assertion failed: " ++ msg,
+                    args,
+                );
             },
         }
     }

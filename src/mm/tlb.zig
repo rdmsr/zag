@@ -23,7 +23,7 @@ fn reclaim_state(obj: *anyopaque, _: ?*anyopaque) void {
     const state: *ke.ShootdownState = @fieldParentPtr("link", link);
 
     const space: *mm.Space = @ptrFromInt(state.payload[0]);
-    const pfn_list: mmp.PfnList = @bitCast(state.payload[1]);
+    const pfn_list: *mmp.PfnList = @ptrCast(&state.payload[1]);
     const base = state.base;
     const npages = state.npages;
 
@@ -70,7 +70,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
         .state = .init(0),
         .payload = .{
             @intFromPtr(space),
-            @bitCast(list),
+            @as(*const usize, @ptrCast(@alignCast(&list))).*,
         },
     };
 

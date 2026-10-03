@@ -3,7 +3,7 @@ const std = @import("std");
 const Arch = std.Target.Cpu.Arch;
 
 fn addLimineTool(b: *std.Build, limine: *std.Build.Dependency) *std.Build.Step.Compile {
-    const tool = b.addExecutable(.{ .name = "limine", .root_module = b.addModule("limine", .{
+    const tool = b.addExecutable(.{ .name = "limine", .root_module = b.createModule(.{
         .target = b.graph.host,
         .link_libc = true,
     }) });
