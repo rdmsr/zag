@@ -1,5 +1,6 @@
 //! Whines about bad code style.
 //! Inspired by TigerBeetle's similar tool.
+//! (https://github.com/tigerbeetle/tigerbeetle/blob/main/src/tidy.zig)
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -14,7 +15,8 @@ const max_cols = 80;
 const max_function_length = 90;
 
 /// Error on files and functions not being documented.
-const error_not_documented = true;
+const error_func_not_documented = false;
+const error_file_not_documented = true;
 
 test "tidy" {
     const gpa = std.testing.allocator;
@@ -121,7 +123,7 @@ const Errors = struct {
         line_num: usize,
     ) void {
         errors.emit(
-            "{s}:{d}: error: use '.?' instead of 'orelse unreachable'\n",
+            "{s}:{d}: error: use 'orelse unreachable' instead of .?\n",
             .{ file.path, line_num },
         );
     }
@@ -159,6 +161,19 @@ const Errors = struct {
         errors.emit(
             "{s}:{d}: error: private function '{s}' appears unused\n",
             .{ file.path, line_num, name },
+        );
+    }
+
+    pub fn add_banned(
+        errors: *Errors,
+        file: SourceFile,
+        line_num: usize,
+        func: []const u8,
+        replacement: []const u8,
+    ) void {
+        errors.emit(
+            "{s}:{d}: error: {s} is banned, use {s}\n",
+            .{ file.path, line_num, func, replacement },
         );
     }
 
@@ -202,6 +217,11 @@ const SourceFile = struct {
         assert(extension[0] == '.');
         return std.mem.endsWith(u8, file.path, extension);
     }
+
+    fn line_number(file: SourceFile, offset: usize) usize {
+        assert(offset <= file.text.len);
+        return std.mem.count(u8, file.text[0..offset], "\n") + 1;
+    }
 };
 
 fn tidy_file(gpa: Allocator, file: SourceFile, errors: *Errors) !void {
@@ -215,13 +235,16 @@ fn tidy_file(gpa: Allocator, file: SourceFile, errors: *Errors) !void {
         tidy_line(file, line, line_index + 1, errors);
     }
 
+    // Tidy banned things.
+    tidy_banned(file, errors);
+
     // Tidy the AST.
-    var tree = try std.zig.Ast.parse(gpa, file.text, .zig);
+    var tree = try std.zig.Ast.parse(gpa, file.text, .{ .mode = .zig });
     defer tree.deinit(gpa);
 
     const has_file_doc = tree.tokenTag(0) == .container_doc_comment;
 
-    if (!has_file_doc and error_not_documented) {
+    if (!has_file_doc and error_file_not_documented) {
         errors.add_file_not_documented(file);
     }
 
@@ -277,7 +300,7 @@ fn tidy_function(
     const documented = first > 0 and
         tree.tokenTag(first - 1) == .doc_comment;
 
-    if (!documented and error_not_documented) {
+    if (!documented and error_func_not_documented) {
         errors.add_function_not_documented(name, file, lineno + 1);
     }
 
@@ -346,6 +369,24 @@ fn tidy_optional_unwrap(file: SourceFile, tree: std.zig.Ast, errors: *Errors) vo
         const line_num = tree.tokenLocation(0, tree.nodeMainToken(node)).line +
             1;
         errors.add_orelse_unreachable(file, line_num);
+    }
+}
+
+fn tidy_banned(file: SourceFile, errors: *Errors) void {
+    const ban_list: []const struct { []const u8, []const u8 } = &.{
+        .{ "debug.assert(", "unqualified assert" },
+        .{ "Self = @This()", "proper type name" },
+        .{ "catch unreachable", "proper error handling or documentation" },
+        .{ "catch {}", "proper error handling or documentation" },
+        .{ "= .init", "full type name" },
+    };
+
+    for (ban_list) |ban_item| {
+        const banned, const replacement = ban_item;
+        if (std.mem.indexOf(u8, file.text, banned)) |offset| {
+            const lineno = file.line_number(offset);
+            errors.add_banned(file, lineno, banned, replacement);
+        }
     }
 }
 
