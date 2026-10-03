@@ -71,10 +71,10 @@ fn apply_num(
     const sign = @typeInfo(ValueT).int.signedness;
 
     _ = switch (info.bits) {
-        8 => store_int(std.meta.Int(sign, 8), entry.address, value),
-        16 => store_int(std.meta.Int(sign, 16), entry.address, value),
-        32 => store_int(std.meta.Int(sign, 32), entry.address, value),
-        64 => store_int(std.meta.Int(sign, 64), entry.address, value),
+        8 => store_int(@Int(sign, 8), entry.address, value),
+        16 => store_int(@Int(sign, 16), entry.address, value),
+        32 => store_int(@Int(sign, 32), entry.address, value),
+        64 => store_int(@Int(sign, 64), entry.address, value),
         else => unreachable,
     };
 }

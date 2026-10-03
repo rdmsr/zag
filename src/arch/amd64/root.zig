@@ -711,8 +711,10 @@ pub const Idtr = extern struct {
 
 pub fn sidtr() Idtr {
     var idtr: Idtr = undefined;
-    asm volatile ("sidt %[idtr]"
-        : [idtr] "={memory}" (idtr),
+
+    asm volatile ("sidt %[p]"
+        :
+        : [p] "*p" (&idtr.limit),
     );
     return idtr;
 }
