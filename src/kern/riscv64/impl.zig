@@ -14,7 +14,7 @@ pub const tlb_max_pages = 32;
 pub const ThreadContext = extern struct {
     sp: usize,
     ra: usize = 0,
-    s: [12]usize = .{0} ** 12,
+    s: [12]usize = @splat(0),
 
     pub fn init_with_stack(stack: r.VAddr) @This() {
         return .{ .sp = stack };
@@ -23,7 +23,7 @@ pub const ThreadContext = extern struct {
     pub fn reset(self: *@This(), stack_top: r.VAddr, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) @This() {
         self.sp = stack_top & ~@as(usize, 15);
         self.ra = @intFromPtr(&thread_start);
-        self.s = .{0} ** 12;
+        self.s = @splat(0);
         self.s[1] = @intFromPtr(entry);
         self.s[2] = @intFromPtr(arg);
         return self.*;

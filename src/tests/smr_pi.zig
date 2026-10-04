@@ -28,7 +28,7 @@ const Object = struct {
 var dom: *ke.smr.Domain = undefined;
 var zone: mm.zone.Zone = undefined;
 
-var slots = [_]std.atomic.Value(?*Object){.init(null)} ** nslots;
+var slots: [nslots]std.atomic.Value(?*Object) = @splat(.init(null));
 
 var next_val = std.atomic.Value(u64).init(1);
 var reads = std.atomic.Value(u64).init(0);
