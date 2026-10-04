@@ -41,7 +41,7 @@ pub const Domain = struct {
         for (0..ke.ncpus) |i| {
             self.cpus[i] = .{
                 .current_seq = .init(seq_invalid),
-                .stall_lock = .init(),
+                .stall_lock = ke.SpinLock.init("stall_lock"),
                 .stall_seq = .init(seq_invalid),
                 .stalled = undefined,
                 .stall_goal = seq_invalid,

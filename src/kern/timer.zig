@@ -55,9 +55,17 @@ pub const Timer = struct {
 
 const percpu = ke.CpuLocal(PerCpu, .{
     .timers = .init(),
-    .lock = .init(),
+    .lock = undefined,
     .dpc = .init(handle_expiry),
 });
+
+fn pcpu_init() linksection(r.init) void {
+    percpu.local().lock = ke.SpinLock.init("timers");
+}
+
+comptime {
+    _ = r.percpu_init_set.insert(&pcpu_init);
+}
 
 const Options = struct {
     dpc: ?*ke.Dpc = null,

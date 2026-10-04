@@ -1,7 +1,9 @@
 const std = @import("std");
+const rtl = @import("rtl");
+const config = @import("config");
+
 const ke = @import("root").ke;
 const kep = ke.private;
-const rtl = @import("rtl");
 
 /// Number of spins before blocking.
 const optimistic_spins = 100;
@@ -9,8 +11,17 @@ const optimistic_spins = 100;
 pub const Mutex = struct {
     /// The thread currently holding the mutex, null if unlocked.
     owner: std.atomic.Value(?*ke.Thread),
+    wd: kep.warden.LockData,
 
-    pub fn init() Mutex {
+    pub fn init(class: []const u8) Mutex {
+        if (config.warden) {
+            const cl = kep.warden.find_or_create_lock_class(class);
+            return .{
+                .owner = std.atomic.Value(?*ke.Thread).init(null),
+                .wd = cl,
+            };
+        }
+
         return .{ .owner = .init(null) };
     }
 
@@ -21,6 +32,14 @@ pub const Mutex = struct {
     pub fn acquire(m: *Mutex) void {
         const ipl = ke.ipl.raise(.Dispatch);
         const curtd = kep.sched.percpu.local().current_thread.?;
+
+        if (config.warden) {
+            kep.warden.check(m.wd, .Lock);
+        }
+
+        defer if (config.warden) {
+            kep.warden.acquired(m, m.wd, .Lock);
+        };
 
         // Very fast path: the lock is uncontended and we can acquire it
         //immediately.
@@ -99,10 +118,13 @@ pub const Mutex = struct {
 
     pub fn release(m: *Mutex) void {
         const ipl = ke.ipl.raise(.Dispatch);
-
         const ts = kep.turnstile.lookup(m);
 
         m.owner.store(null, .release);
+
+        defer if (config.warden) {
+            kep.warden.released(m, .Lock);
+        };
 
         if (ts == null) {
             kep.turnstile.exit(m, ts);
@@ -126,9 +148,7 @@ pub const Mutex = struct {
         );
 
         kep.turnstile.exit(m, ts);
-
         kep.turnstile.wakeup(&waiters);
-
         ke.ipl.lower(ipl);
     }
 };

@@ -33,6 +33,7 @@ pub const DispatchHeader = struct {
     pub fn init(obj: *DispatchHeader, kind: Type) void {
         obj.type = kind;
         obj.lock = ke.SpinLock.init();
+        obj.lock = ke.SpinLock.init("DispatchObject");
         obj.signaled = 0;
         obj.waitblocks.init();
     }

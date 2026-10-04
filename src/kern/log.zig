@@ -7,7 +7,7 @@ const ke = r.ke;
 const kep = ke.private;
 const bv = r.bv;
 
-var out_lock: ke.SpinLock = .init();
+var out_lock: ke.SpinLock = undefined;
 
 const DebugWriter = struct {
     interface: std.Io.Writer,
@@ -48,23 +48,15 @@ pub var ringbuffer = kep.log_ring.RingBuffer(
     avg_msg_size_bits,
 ).init();
 
-// Initialize manually because we need this ASAP.
-pub var event: ke.Event = .{
-    .hdr = .{
-        .lock = .init(),
-        .signaled = 0,
-        .type = .Notification,
-        .waitblocks = .{
-            .head = .{
-                .next = &event.hdr.waitblocks.head,
-                .prev = &event.hdr.waitblocks.head,
-            },
-        },
-    },
-};
+pub var event: ke.Event = undefined;
 
 pub fn init() void {
+    out_lock = ke.SpinLock.init("");
     event.init(.Notification);
+}
+
+pub fn force_release_lock() void {
+    out_lock.release_no_ipl();
 }
 
 pub fn log(

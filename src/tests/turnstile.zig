@@ -111,8 +111,8 @@ fn spawn(prio: u8, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) *ps.Th
 }
 
 fn chain_test() void {
-    m1 = .init();
-    m2 = .init();
+    m1 = .init("");
+    m2 = .init("");
 
     low_td = spawn(prio_low, &chain_low, null);
     wait_flag(&low_locked);
@@ -209,7 +209,7 @@ fn quiesce_check() void {
 pub fn start(_: ?*anyopaque) void {
     chain_test();
 
-    for (&locks) |*l| l.* = .init();
+    for (&locks) |*l| l.* = .init("");
 
     nstress = @max(4, @min(ke.ncpus * 2, max_stress));
 

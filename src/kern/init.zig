@@ -6,11 +6,18 @@ const arch = r.arch;
 const kep = ke.private;
 const ex = r.ex;
 const bv = r.bv;
+const config = @import("config");
 
 var thread0: ke.Thread = undefined;
 
 export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     r.boot_info = boot_info;
+
+    if (config.warden) {
+        // Try to do this as early as possible so we register as many classes
+        // as we can.
+        kep.warden.init();
+    }
 
     // Immediately initialize the context of what will eventually become
     // our idle thread. At this point we're already running on the kernel stack.
@@ -32,10 +39,12 @@ fn init() linksection(r.init) void {
     ke.ncpus = 1;
     kep.impl.early_init();
     kep.tunable.init();
+
     bv.init(r.boot_info);
+    kep.log.init();
     std.log.info("Welcome to the machine", .{});
     pl.early_init();
-    kep.log.init();
+    kep.thread.init();
     kep.cpu.init_cpu(0);
     kep.turnstile.init_turnstiles();
 

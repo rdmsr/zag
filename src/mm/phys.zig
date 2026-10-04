@@ -22,7 +22,7 @@ pub var low_memory_event: ke.Event = undefined;
 
 var memory_map: *r.BootInfo.MemMap = undefined;
 var early_allocs: usize = 0;
-var list_lock: ke.SpinLock = .init();
+var list_lock: ke.SpinLock = undefined;
 var free_list: rtl.List = undefined;
 
 var free_page_event: ke.Event = undefined;
@@ -155,6 +155,7 @@ pub fn init() linksection(r.init) void {
     free_list.init();
     free_page_event.init(.Notification);
     low_memory_event.init(.Notification);
+    list_lock = ke.SpinLock.init("PageList");
 
     var total_usable_memory: usize = memory_map.loader_memory_used;
     log.info("physical memory map:", .{});

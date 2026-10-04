@@ -36,11 +36,12 @@ const PerCpu = struct {
 };
 
 const pcpu = ke.CpuLocal(PerCpu, .{
-    .lock = .init(),
+    .lock = undefined,
     .queue = undefined,
 });
 
 fn pcpu_init() linksection(r.init) void {
+    pcpu.local().lock = ke.SpinLock.init("dpc");
     pcpu.local().queue.init();
 }
 

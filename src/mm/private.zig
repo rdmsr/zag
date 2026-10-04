@@ -37,5 +37,5 @@ pub const impl = switch (config.arch) {
 pub var kernel_space: Space = .{
     .pmap = undefined,
     .arena = undefined,
-    .lock = .init(),
+    .lock = undefined,
 };

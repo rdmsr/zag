@@ -1,7 +1,10 @@
 const std = @import("std");
-const r = @import("root");
 const rtl = @import("rtl");
+const config = @import("config");
+
+const r = @import("root");
 const ke = r.ke;
+const kep = ke.private;
 
 fn LockTemplate(comptime T: type) type {
     comptime {
@@ -13,17 +16,25 @@ fn LockTemplate(comptime T: type) type {
 
     return struct {
         inner: T,
+        wd: kep.warden.LockData = undefined,
 
         const Self = @This();
 
-        pub fn init() Self {
+        pub fn init(comptime class: []const u8) Self {
+            if (config.warden) {
+                const cl = kep.warden.find_or_create_lock_class(class);
+                return .{
+                    .inner = T.init(),
+                    .wd = cl,
+                };
+            }
             return .{ .inner = T.init() };
         }
 
         /// Acquire the lock, raising IPL to `ipl`. Returns the previous IPL.
         pub fn acquire_at(self: *Self, ipl: ke.Ipl) ke.Ipl {
             const old_ipl = ke.ipl.raise(ipl);
-            self.inner.acquire_no_ipl();
+            self.acquire_no_ipl();
             return old_ipl;
         }
 
@@ -34,7 +45,7 @@ fn LockTemplate(comptime T: type) type {
 
         /// Release the lock and restore IPL to `ipl`.
         pub fn release(self: *Self, ipl: ke.Ipl) void {
-            self.inner.release_no_ipl();
+            self.release_no_ipl();
             ke.ipl.lower(ipl);
         }
 
@@ -43,6 +54,10 @@ fn LockTemplate(comptime T: type) type {
         pub fn try_acquire(self: *Self) ?ke.Ipl {
             const old_ipl = ke.ipl.raise(.Dispatch);
             if (self.inner.try_acquire_no_ipl()) {
+                if (config.warden) {
+                    kep.warden.acquired(self, self.wd, .Spin);
+                }
+
                 return old_ipl;
             } else {
                 ke.ipl.lower(old_ipl);
@@ -52,18 +67,36 @@ fn LockTemplate(comptime T: type) type {
 
         /// Acquire the lock without changing the IPL.
         pub fn acquire_no_ipl(self: *Self) void {
+            if (config.warden) {
+                kep.warden.check(self.wd, .Spin);
+            }
+
             self.inner.acquire_no_ipl();
+
+            if (config.warden) {
+                kep.warden.acquired(self, self.wd, .Spin);
+            }
         }
 
         /// Release the lock without changing the IPL.
         pub fn release_no_ipl(self: *Self) void {
+            if (config.warden) {
+                kep.warden.released(self, .Spin);
+            }
+
             self.inner.release_no_ipl();
         }
 
         /// Try to acquire the lock without changing the IPL.
         /// Returns true if the lock was acquired.
         pub fn try_acquire_no_ipl(self: *Self) bool {
-            return self.inner.try_acquire_no_ipl();
+            const ret = self.inner.try_acquire_no_ipl();
+
+            if (ret and config.warden) {
+                kep.warden.acquired(self, self.wd, .Spin);
+            }
+
+            return ret;
         }
 
         /// Returns true if the lock is currently held.

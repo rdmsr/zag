@@ -1,7 +1,9 @@
 const std = @import("std");
 const r = @import("root");
 const rtl = @import("rtl");
+const config = @import("config");
 
+const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
 
@@ -178,6 +180,7 @@ pub const Thread = struct {
         thread.* = .{
             .context = .init_with_stack(opts.stack),
             .lock = .init(),
+            .lock = ke.SpinLock.init("thread"),
             .nice = 0,
             .priority = @intFromEnum(opts.priority),
             .base_priority = @intFromEnum(opts.priority),
@@ -205,6 +208,7 @@ pub const Thread = struct {
             .acct = .{},
             .smr_sections = undefined,
             .hard_affinity = .init(true),
+            .warden_data = .{},
         };
 
         thread.turnstiles_owned.init();
@@ -269,8 +273,25 @@ pub fn exit() void {
     curtd.lock.acquire_no_ipl();
     curtd.state.store(.Zombie, .monotonic);
 
+    if (config.warden) {
+        // There is normally a dispatch object -> thread ordering, but here we
+        // have a thread -> dispatch object ordering because we insert into a
+        // kernel queue (ex.enqueue is called as an activation to the reaper
+        // list) while holding the current thread's lock. This would normally be
+        // a deadlock, and the warden rightfully flags it; but this is safe
+        // because the thread that's currently exiting won't ever block or get
+        // woken up by this queue. Get sneaky under the warden because it can't
+        // understand this.
+        kep.warden.released(&curtd.lock, .Spin);
+    }
+
     // Reuse the runq linkage to put on reaper list.
     reaper_list.insert(@ptrCast(&curtd.runq_link.next));
+
+    if (config.warden) {
+        // Now we're good.
+        kep.warden.acquired(&curtd.lock, curtd.lock.wd, .Spin);
+    }
 
     kep.sched.detach_load_avg(kep.sched.percpu.local(), curtd);
     kep.sched.yield_locked(Continuation.dummy);
@@ -316,7 +337,7 @@ const Cpu = struct {
 /// Keep this low for minimal memory overhead, but potentially increased latency.
 const excess_stacks = ke.Tunable(u32, 1, "ke.thread.excess_stacks");
 
-var global_depot_lock: ke.SpinLock = .init();
+var global_depot_lock: ke.SpinLock = undefined;
 var global_depot: Depot = .{};
 
 const percpu = ke.CpuLocal(Cpu, undefined);
@@ -341,6 +362,10 @@ fn init_cpu() linksection(r.init) void {
 
 comptime {
     _ = r.percpu_init_set.insert(&init_cpu);
+}
+
+pub fn init() void {
+    global_depot_lock = ke.SpinLock.init("stack_cache");
 }
 
 pub fn call_continuation(ptr: ?*anyopaque) noreturn {

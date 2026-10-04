@@ -193,7 +193,7 @@ var generic_zones: [generic_zones_num]Zone = undefined;
 
 var magazines_initialized = false;
 var all_zones: ?*Zone = null;
-var zone_list_lock: ke.Mutex = .init();
+var zone_list_lock: ke.Mutex = undefined;
 
 var magazine_zone: Zone = undefined;
 var cpu_zone: Zone = undefined;
@@ -610,8 +610,8 @@ pub const Zone = struct {
         self.chunk_size = chunk_size;
         self.ctor = options.ctor;
         self.dtor = options.dtor;
-        self.lock = .init();
-        self.depot_lock = .init();
+        self.lock = ke.Mutex.init("zone");
+        self.depot_lock = ke.QSpinLock.init("zone_depot");
         self.use_magazines = options.magazines;
 
         self.depot = std.mem.zeroes(Depot);
@@ -659,7 +659,7 @@ pub const Zone = struct {
         self.cpus = cpus_alloc();
 
         for (0..ke.ncpus) |i| {
-            self.cpus[i].value.lock = .init();
+            self.cpus[i].value.lock = ke.SpinLock.init("Depot");
             self.cpus[i].value.alloc = null;
             self.cpus[i].value.free = null;
             self.cpus[i].value.alloc_rounds = 0;
@@ -1755,6 +1755,8 @@ pub fn TypedZone(comptime T: type) type {
 }
 
 pub fn early_init() linksection(r.init) void {
+    zone_list_lock = ke.Mutex.init("zone_list");
+
     for (0..generic_zones.len, &generic_zones) |i, *zone| {
         zone.init(generic_zone_names[i], @as(usize, 1) << @intCast(i + 3), .{});
     }
@@ -1786,7 +1788,7 @@ pub fn late_init() linksection(r.init) void {
 
             for (0..ke.ncpus) |i| {
                 z.cpus[i] = .init(.{
-                    .lock = .init(),
+                    .lock = ke.SpinLock.init("Magazine"),
                     .alloc = null,
                     .free = null,
                     .alloc_rounds = 0,

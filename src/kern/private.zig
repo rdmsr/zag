@@ -101,3 +101,4 @@ pub const shootdown = @import("shootdown.zig");
 pub const tunable = @import("tunable.zig");
 pub const smr = @import("smr.zig");
 pub const ipi = @import("ipi.zig");
+pub const warden = @import("warden.zig");

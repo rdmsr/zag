@@ -377,7 +377,7 @@ fn propagate(curtd: *ke.Thread) void {
 pub fn init_turnstiles() void {
     for (&chains) |*chain| {
         chain.list.init();
-        chain.lock = .init();
+        chain.lock = ke.SpinLock.init("turnstile_chain");
     }
 }
 

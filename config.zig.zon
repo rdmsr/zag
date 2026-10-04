@@ -55,6 +55,14 @@
                     .help = "This option sets the size of the kernel log buffer as a power of two. The actual size is calculated as 2 raised to the power of this value (i.e., 2^LOG_BUFFER_SHIFT bytes).",
                 },
                 .{
+                    .kind = .bool,
+                    .key = "warden",
+                    .label = "Enable the kernel warden",
+                    .default = .{ .bool = false },
+                    .help = "This option enables the kernel warden, which checks for correctness of lock acquisitions. This has a substantial performance overhead.",
+                },
+
+                .{
                     .kind = .menu,
                     .label = "Memory Management Options",
                     .entries = .{

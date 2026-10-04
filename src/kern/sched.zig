@@ -260,7 +260,7 @@ fn init_cpu() linksection(r.init) void {
             .status = 0,
             .queues = undefined,
         },
-        .queues_lock = .init(),
+        .queues_lock = .init("runq"),
         .idle_queue = undefined,
         .steal_work = false,
         .load = .init(0),
@@ -1123,6 +1123,12 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
         cur.lock.release_no_ipl();
 
         kep.impl.call_continuation(&next.context, continuation);
+    }
+
+    if (config.warden) {
+        // The lock will get released through the context switch assembly code,
+        // start pretending we don't hold it right now.
+        kep.warden.released(&cur.lock, .Spin);
     }
 
     if (relinquish) {

@@ -168,7 +168,7 @@ pub const Arena = struct {
             }
         }
 
-        self.lock = .init();
+        self.lock = ke.Mutex.init("arena");
 
         self.allocated_segments = .init();
         self.rotor = null;

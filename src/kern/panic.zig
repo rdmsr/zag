@@ -74,7 +74,6 @@ fn walk_stack_frame(base: usize) void {
     }
 }
 
-pub var panic_lock: ke.SpinLock = .init();
 var crash_count: std.atomic.Value(u8) = .init(0);
 
 pub fn panic_with_frame(
@@ -97,8 +96,6 @@ pub fn panic_with_frame(
     // things like dumping the system info and freezing other CPUs. Start by
     // doing the freeze.
     kep.ipi.freeze_cpus();
-
-    _ = ke.ipl.raise(.High);
 
     std.log.err("KERNEL PANIC: {s} on CPU {}", .{
         msg,

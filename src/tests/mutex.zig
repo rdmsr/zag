@@ -157,7 +157,7 @@ fn quiesce_verify() u64 {
 
 pub fn start(_: ?*anyopaque) void {
     for (&locks) |*l| {
-        l.mutex = .init();
+        l.mutex = ke.Mutex.init("test");
         l.guard = 0;
         l.count = 0;
     }
