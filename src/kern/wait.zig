@@ -2,10 +2,12 @@
 //! This is mostly based on the work by Arun Kishan on Windows 7.
 //! See more here: https://youtu.be/OAAiOEQhsK0
 const rtl = @import("rtl");
-const std = @import("std");
 const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 /// Header for waitable objects.
 /// This must be added to any structured which is considered waitable.
@@ -32,7 +34,6 @@ pub const DispatchHeader = struct {
     /// Initialize a waitable object.
     pub fn init(obj: *DispatchHeader, kind: Type) void {
         obj.type = kind;
-        obj.lock = ke.SpinLock.init();
         obj.lock = ke.SpinLock.init("DispatchObject");
         obj.signaled = 0;
         obj.waitblocks.init();
@@ -101,14 +102,18 @@ pub const Status = enum(u8) {
 
 const Options = struct {
     timeout: ?r.Nanoseconds = null,
-    waitblocks: ?[*]WaitBlock = null,
+    waitblocks: ?[]WaitBlock = null,
     continuation: ?ke.Continuation = null,
 };
 
 /// Wait for the provided object to be signaled.
 /// This will only return an error if `timeout` is provided and
 /// the wait times out.
-pub fn wait_one(object: *DispatchHeader, reason: []const u8, opts: Options) !usize {
+pub fn wait_one(
+    object: *DispatchHeader,
+    reason: []const u8,
+    opts: Options,
+) !usize {
     var objects = [_]*DispatchHeader{object};
     return wait_any(&objects, reason, opts);
 }
@@ -120,36 +125,42 @@ pub fn wait_one(object: *DispatchHeader, reason: []const u8, opts: Options) !usi
 /// If `waitblocks` is specified, then the wait will use those waitblocks
 /// for the operation. Note that if `timeout` is provided, then one additional
 /// waitblock must be allocated.
-pub fn wait_any(objects: []const *DispatchHeader, reason: []const u8, opts: Options) !usize {
+pub fn wait_any(
+    objects: []const *DispatchHeader,
+    reason: []const u8,
+    opts: Options,
+) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
+
     const curtd = kep.sched.percpu.local().current_thread.?;
     const obj_count = objects.len;
     const has_timeout = opts.timeout != null;
+    const total_count = obj_count + @intFromBool(has_timeout);
+
     const blocks = opts.waitblocks orelse blk: {
-        std.debug.assert(
-            obj_count <= curtd.waitblocks.len - @intFromBool(has_timeout),
-        );
-        break :blk &curtd.waitblocks;
+        assert(total_count <= curtd.inner_waitblocks.len);
+        break :blk &curtd.inner_waitblocks;
     };
 
-    const total_count = obj_count + @intFromBool(has_timeout);
     const timer_i = obj_count;
     const timer = &curtd.timer;
-    const timer_block = &curtd.waitblocks[obj_count];
-    var queue: ?*ke.Queue = null;
 
+    var queue: ?*ke.Queue = null;
     var satisfier: ?usize = null;
-    curtd.wait_status.store(.InProgress, .release);
+
+    curtd.wait_status.store(.InProgress, .monotonic);
 
     if (has_timeout) {
         timer.init();
     }
 
+    var installed_count: usize = 0;
+
     for (0..total_count) |i| {
         const is_timer = has_timeout and i == timer_i;
-        var obj = if (is_timer) &timer.hdr else objects[i];
-        var wb = if (is_timer) timer_block else &blocks[i];
+        const obj = if (is_timer) &timer.hdr else objects[i];
+        const wb = &blocks[i];
 
         obj.lock.acquire_no_ipl();
         defer obj.lock.release_no_ipl();
@@ -165,6 +176,7 @@ pub fn wait_any(objects: []const *DispatchHeader, reason: []const u8, opts: Opti
                 obj.consume(curtd);
                 satisfier = i;
             }
+
             // We have already been satisfied in the meantime, abort.
             break;
         }
@@ -176,34 +188,43 @@ pub fn wait_any(objects: []const *DispatchHeader, reason: []const u8, opts: Opti
         wb.object = obj;
         wb.thread = curtd;
         wb.status = .Active;
+
         // We are not satisfied yet, so add a waitblock to the object.
         obj.waitblocks.insert_tail(&wb.link);
+        installed_count += 1;
     }
 
     // Wait was already satisfied, back out.
     if (satisfier != null or (has_timeout and opts.timeout.?.value == 0)) {
         if (satisfier != null) {
-            std.debug.assert(curtd.wait_status.load(.acquire) == .Satisfied);
+            assert(curtd.wait_status.load(.acquire) == .Satisfied);
         }
 
-        const cleanup_count = satisfier orelse total_count;
-
         // Remove any wait block we might've installed.
-        for (0..cleanup_count) |i| {
+        for (0..installed_count) |i| {
             const is_timer = has_timeout and i == timer_i;
-            var obj = if (is_timer) &timer.hdr else objects[i];
-            var wb = if (is_timer) timer_block else &blocks[i];
+            const obj = if (is_timer) &timer.hdr else objects[i];
+            const wb = &blocks[i];
 
             obj.lock.acquire_no_ipl();
             if (wb.status == .Active) {
                 wb.status = .Inactive;
                 wb.link.remove();
+            } else if (wb.status == .Signaled) {
+                assert(satisfier == null);
+                satisfier = i;
             }
+
             obj.lock.release_no_ipl();
         }
 
         return satisfier orelse error.Timeout;
     }
+
+    curtd.waitblocks = blocks;
+    curtd.wait_count = installed_count;
+    curtd.timeout_block = @intCast(obj_count);
+    curtd.has_timeout = has_timeout;
 
     if (opts.timeout) |timeout| {
         ke.timer.set(timer, timeout, .{});
@@ -228,6 +249,7 @@ pub fn wait_any(objects: []const *DispatchHeader, reason: []const u8, opts: Opti
         }
 
         curtd.wait_reason = reason;
+
         // We're good, now actually block.
         kep.sched.block_locked(curtd, opts.continuation);
     } else {
@@ -237,40 +259,7 @@ pub fn wait_any(objects: []const *DispatchHeader, reason: []const u8, opts: Opti
         curtd.lock.release_no_ipl();
     }
 
-    // We're back!
-    // Stop the timer if it was set.
-    if (has_timeout) {
-        ke.timer.cancel(timer);
-    }
-
-    curtd.wait_reason = null;
-
-    // Find the object that satisfied us.
-    for (0..total_count) |i| {
-        const is_timer = has_timeout and i == timer_i;
-        var obj = if (is_timer) &timer.hdr else objects[i];
-        var wb = if (is_timer) timer_block else &blocks[i];
-
-        obj.lock.acquire_no_ipl();
-        if (wb.status == .Active) {
-            // Waitblock is still active, remove it from the list.
-            wb.link.remove();
-        }
-        if (wb.status == .Signaled) {
-            // This waitblock was signaled, it must be the one that satisfied
-            // the wait.
-            std.debug.assert(satisfier == null);
-            satisfier = i;
-        }
-        // Ignore inactive waitblocks
-        obj.lock.release_no_ipl();
-    }
-
-    const final_sat = satisfier orelse return error.Timeout;
-    return if (has_timeout and final_sat == timer_i)
-        error.Timeout
-    else
-        final_sat;
+    return post_wait(curtd);
 }
 
 /// Satisfy a wait on an object.
@@ -295,7 +284,7 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
         // 1. The wait was still preparing (.InProgress) and we interrupted it.
         // 2. The wait was already committed (.Committed) and we satisfied it.
         // 3. The wait was already satisfied by another object (.Satisfied).
-        //
+
         // 1.
         if (td.wait_status.cmpxchgStrong(
             .InProgress,
@@ -343,4 +332,53 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
             break;
         }
     }
+}
+
+pub fn post_wait(thread: *ke.Thread) !usize {
+    const ipl = ke.ipl.raise(.Dispatch);
+    defer ke.ipl.lower(ipl);
+
+    var satisfier: ?usize = null;
+    const has_timeout = thread.has_timeout;
+
+    // We're back!
+    // Stop the timer if it was set.
+    if (has_timeout) {
+        ke.timer.cancel(&thread.timer);
+    }
+
+    const wait_count = thread.wait_count;
+    const timeout_block = thread.timeout_block;
+
+    thread.has_timeout = false;
+    thread.wait_reason = null;
+    thread.wait_count = 0;
+    thread.timeout_block = 0;
+
+    // Find the object that satisfied us.
+    for (0..wait_count) |i| {
+        const wb = &thread.waitblocks[i];
+        var obj = wb.object;
+
+        obj.lock.acquire_no_ipl();
+
+        if (wb.status == .Active) {
+            // Waitblock is still active, remove it from the list.
+            wb.link.remove();
+        }
+        if (wb.status == .Signaled) {
+            // This waitblock was signaled, it must be the one that satisfied
+            // the wait.
+            assert(satisfier == null);
+            satisfier = i;
+        }
+        // Ignore inactive waitblocks
+        obj.lock.release_no_ipl();
+    }
+
+    const final_sat = satisfier orelse return error.Timeout;
+    return if (has_timeout and final_sat == timeout_block)
+        error.Timeout
+    else
+        final_sat;
 }

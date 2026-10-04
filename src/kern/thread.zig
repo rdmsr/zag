@@ -1,5 +1,4 @@
 const std = @import("std");
-const r = @import("root");
 const rtl = @import("rtl");
 const config = @import("config");
 
@@ -135,11 +134,18 @@ pub const Thread = struct {
     runq_idx: u8,
     /// Current wait status.
     wait_status: std.atomic.Value(kep.wait.Status),
-    waitblocks: [4]kep.wait.WaitBlock,
+    inner_waitblocks: [4]kep.wait.WaitBlock,
+    waitblocks: []kep.wait.WaitBlock,
     /// Reason for the wait, if any.
     wait_reason: ?[]const u8,
+    /// The number of objects the thread is waiting on.
+    wait_count: usize,
     /// Timer used for timeouts.
     timer: ke.Timer,
+    /// Whether or not a timeout was set.
+    has_timeout: bool,
+    /// Timeout waitblock index.
+    timeout_block: u8,
     /// Turnstile.
     turnstile: *kep.turnstile.Turnstile,
     turnstile_waiter: ?*kep.turnstile.Waiter,
@@ -160,6 +166,7 @@ pub const Thread = struct {
     smr_sections: rtl.List,
     hard_affinity: ke.CpuMask,
     continuation: ?Continuation,
+    warden_data: kep.warden.HolderData,
 
     const InitOpts = struct {
         /// Entry point of the thread.
@@ -179,7 +186,6 @@ pub const Thread = struct {
     ) void {
         thread.* = .{
             .context = .init_with_stack(opts.stack),
-            .lock = .init(),
             .lock = ke.SpinLock.init("thread"),
             .nice = 0,
             .priority = @intFromEnum(opts.priority),
@@ -193,9 +199,13 @@ pub const Thread = struct {
             .runq = null,
             .runq_idx = 0,
             .wait_status = .init(.Satisfied),
-            .waitblocks = undefined,
+            .inner_waitblocks = undefined,
+            .waitblocks = &thread.inner_waitblocks,
             .wait_reason = null,
             .timer = undefined,
+            .has_timeout = false,
+            .timeout_block = 0,
+            .wait_count = 0,
             .turnstile = opts.turnstile,
             .turnstile_waiter = null,
             .turnstiles_owned = undefined,
