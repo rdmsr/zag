@@ -10,11 +10,11 @@ fn load_kernel(kernel: *anyopaque) usize {
     const elf: *std.elf.Elf64.Ehdr = @ptrCast(@alignCast(kernel));
     const ident = elf.ident;
 
-    if (!std.mem.eql(u8, ident[0..4], std.elf.MAGIC)) {
+    if (!std.mem.eql(u8, ident.magic[0..4], std.elf.MAGIC)) {
         @panic("loader: Invalid ELF magic");
     }
 
-    if (ident[std.elf.EI_CLASS] != std.elf.ELFCLASS64) {
+    if (ident.class != .@"64") {
         @panic("loader: invalid ELF class");
     }
 
