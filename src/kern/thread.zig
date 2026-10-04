@@ -382,6 +382,11 @@ pub fn call_continuation(ptr: ?*anyopaque) noreturn {
     const td: *ke.Thread = @ptrCast(@alignCast(ptr));
     std.debug.assert(td.continuation != null);
 
+    // Clean things that were set up by the wait (e.g timeout).
+    _ = kep.wait.post_wait(td) catch {
+        // Don't care about the status.
+    };
+
     const cont = td.continuation.?;
     td.continuation = null;
 

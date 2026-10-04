@@ -1113,16 +1113,13 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
     next.state.store(.Running, .monotonic);
 
     if (handoff) {
-        const continuation = next.continuation.?;
-
         next.context.stack_top = cur.context.stack_top;
         cur.context.stack_top = 0;
-        next.continuation = null;
 
         cur.switching.store(false, .release);
         cur.lock.release_no_ipl();
 
-        kep.impl.call_continuation(&next.context, continuation);
+        ke.thread.call_continuation(next);
     }
 
     if (config.warden) {
@@ -1373,15 +1370,13 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
         do_switch(sched_cpu, cur, n);
     } else {
         // Same thread.
-        const cont = cur.continuation;
-        cur.continuation = null;
-
         cur.state.store(.Running, .monotonic);
         cur.switching.store(false, .monotonic);
         cur.lock.release_no_ipl();
 
-        if (cont) |c|
-            kep.impl.call_continuation(&cur.context, c);
+        if (cur.continuation != null) {
+            kep.thread.call_continuation(cur);
+        }
     }
 
     // cur lock dropped
