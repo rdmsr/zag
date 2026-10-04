@@ -1,12 +1,14 @@
 //! Timer object implementation.
 //! Timer objects are useful when one wants to wait a given amount of time for
 //! an event to occur.
-const std = @import("std");
 const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
 const pl = r.pl;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 const PerCpu = struct {
     /// Heap of pending timers on this CPU.
@@ -22,7 +24,7 @@ pub const Timer = struct {
         Running,
         /// The timer is currently enqueued.
         Pending,
-        /// The timer was stopped.
+        /// The timer is no longer enqueued or being signaled.
         Stopped,
     };
 
@@ -79,15 +81,10 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
 
     const cpu = percpu.local();
 
-    if (timer.state.cmpxchgStrong(
-        .Stopped,
-        .Pending,
-        .acquire,
-        .monotonic,
-    ) != null) {
-        // Could not set the timer.
+    if (timer.state.load(.monotonic) != .Stopped) {
         return;
     }
+    timer.state.store(.Pending, .monotonic);
 
     cpu.lock.acquire_no_ipl();
     defer cpu.lock.release_no_ipl();
@@ -111,41 +108,51 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
 
 /// Cancel a timer.
 pub fn cancel(timer: *Timer) void {
-    const old_state = timer.state.load(.monotonic);
+    const ipl = ke.ipl.raise(.Dispatch);
+    defer ke.ipl.lower(ipl);
 
-    if (old_state == .Stopped or old_state == .Running) {
-        // Already stopped or currently executing.
-        return;
+    while (true) {
+        timer.hdr.lock.acquire_no_ipl();
+
+        switch (timer.state.load(.acquire)) {
+            .Stopped => {
+                timer.hdr.lock.release_no_ipl();
+                return;
+            },
+            .Running => {
+                // Wait until the timer finishes running.
+                timer.hdr.lock.release_no_ipl();
+                while (timer.state.load(.acquire) == .Running) {
+                    std.atomic.spinLoopHint();
+                }
+            },
+            .Pending => {
+                const cpu = timer.cpu.?;
+                cpu.lock.acquire_no_ipl();
+
+                // Re-check under the lock.
+                if (timer.state.load(.acquire) == .Pending) {
+                    cpu.timers.remove(&timer.node);
+                    timer.cpu = null;
+                    timer.state.store(.Stopped, .release);
+
+                    cpu.lock.release_no_ipl();
+                    timer.hdr.lock.release_no_ipl();
+                    return;
+                }
+
+                cpu.lock.release_no_ipl();
+                timer.hdr.lock.release_no_ipl();
+            },
+        }
     }
-
-    const ipl = timer.hdr.lock.acquire();
-    defer timer.hdr.lock.release(ipl);
-
-    if (timer.state.cmpxchgStrong(
-        .Pending,
-        .Stopped,
-        .acquire,
-        .monotonic,
-    ) != null) {
-        // Something changed, it probably expired.
-        return;
-    }
-
-    if (timer.cpu) |cpu| {
-        // Dequeue the timer.
-        cpu.lock.acquire_no_ipl();
-
-        cpu.timers.remove(&timer.node);
-        timer.cpu = null;
-
-        cpu.lock.release_no_ipl();
-    }
-
-    // Lock dropped
 }
 
 /// Compare two timers.
-pub fn cmp_timer(a: *rtl.pairing_heap.Node, b_: *rtl.pairing_heap.Node) std.math.Order {
+pub fn cmp_timer(
+    a: *rtl.pairing_heap.Node,
+    b_: *rtl.pairing_heap.Node,
+) std.math.Order {
     const timer_a: *Timer = @fieldParentPtr("node", a);
     const timer_b: *Timer = @fieldParentPtr("node", b_);
 
@@ -179,37 +186,24 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
 
         const timer: *Timer = @fieldParentPtr("node", timer_node);
 
-        // If the timer expires more than 1ms in the future, consider it not yet due.
-        // Sub-millisecond differences are close enough to expire immediately.
+        // If the timer expires more than 1ms in the future, consider it not
+        // yet due. Sub-millisecond differences are close enough to expire
+        // immediately.
         if (timer.deadline.value > curtime.value and
             timer.deadline.value - curtime.value > std.time.ns_per_ms)
         {
-            const next = timer;
-            cpu.lock.release_no_ipl();
-
-            // Re-check in case the timer expired while we were here.
             const now = ke.time.read_time();
-            if (next.deadline.value <= now.value or
-                next.deadline.value - now.value <= std.time.ns_per_ms)
+            if (timer.deadline.value > now.value and
+                timer.deadline.value - now.value > std.time.ns_per_ms)
             {
-                continue; // expired in the meantime, loop again
+                pl.arm_timer(.init(timer.deadline.value - now.value));
+                cpu.lock.release_no_ipl();
+                return;
             }
-
-            std.debug.assert(next.deadline.value > now.value);
-            pl.arm_timer(.init(next.deadline.value - now.value));
-            return;
         }
 
-        if (timer.state.cmpxchgStrong(
-            .Pending,
-            .Running,
-            .acquire,
-            .monotonic,
-        ) != null) {
-            // Timer must've been canceled.
-            cpu.lock.release_no_ipl();
-            continue;
-        }
+        assert(timer.state.load(.monotonic) == .Pending);
+        timer.state.store(.Running, .monotonic);
 
         _ = cpu.timers.pop();
         cpu.lock.release_no_ipl();
@@ -222,12 +216,11 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
         timer.hdr.signaled = 1;
         timer.cpu = null;
 
-        timer.state.store(.Stopped, .release);
-
         // Wake whomever was waiting on the timer.
         kep.wait.satisfy_wait(&timer.hdr);
-        timer.hdr.lock.release_no_ipl();
-
         if (maybe_dpc) |dpc| ke.dpc.enqueue(dpc, null);
+
+        timer.state.store(.Stopped, .release);
+        timer.hdr.lock.release_no_ipl();
     }
 }
