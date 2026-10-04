@@ -62,6 +62,8 @@ pub fn get_image_layout() r.ImageLayout {
     };
 }
 
+var cmdline: [256]u8 = undefined;
+
 export fn loader_entry() callconv(.c) void {
     var kernel: ?*anyopaque = null;
     var module_start: usize = 0;
@@ -148,7 +150,17 @@ export fn loader_entry() callconv(.c) void {
     }
 
     if (cmdline_request.response) |resp| {
-        r.loader_info.cmdline = std.mem.span(resp.cmdline);
+        if (resp.cmdline) |c| {
+            const span = std.mem.span(c);
+            if (span.len > cmdline.len) {
+                r.loader_info.cmdline = "TOOLONG";
+            } else {
+                std.mem.copyForwards(u8, &cmdline, span);
+                r.loader_info.cmdline = cmdline[0..span.len];
+            }
+        } else {
+            r.loader_info.cmdline = &.{};
+        }
     }
 
     r.main(kernel.?);

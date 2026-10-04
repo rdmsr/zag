@@ -109,6 +109,7 @@ extern var __percpu_start: u8;
 
 pub fn early_init() linksection(r.init) void {
     amd64.cpu_features = r.boot_info.arch_info.cpu_features;
+    amd64.hypervisor.info = r.boot_info.arch_info.hypervisor_info;
     early_cpu_init();
 
     impl.cpu_offsets = &initial_offsets;

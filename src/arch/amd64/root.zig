@@ -748,4 +748,5 @@ pub const IdtEntry = extern struct {
 
 pub const BootInfo = struct {
     cpu_features: CpuFeatures,
+    hypervisor_info: ?hypervisor.Info,
 };
