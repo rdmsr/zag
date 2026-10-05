@@ -81,6 +81,8 @@ fn cmp_entries(ctx: void, a: Entry, b: Entry) bool {
     return a.base < b.base;
 }
 
+var bootstrap_stack: [4096]u8 = undefined;
+
 pub fn loader_main(kernel: *anyopaque) void {
     r.arch.init();
     r.mem.init();
@@ -103,6 +105,6 @@ pub fn loader_main(kernel: *anyopaque) void {
     jump_to_kernel(
         @intFromPtr(&r.loader_info),
         entry,
-        stack + stack_size,
+        @intFromPtr(&bootstrap_stack) + bootstrap_stack.len,
     );
 }
