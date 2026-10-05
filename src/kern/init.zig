@@ -1,3 +1,6 @@
+//! Kernel initialization.
+
+const config = @import("config");
 const std = @import("std");
 const r = @import("root");
 const pl = r.pl;
@@ -6,7 +9,6 @@ const arch = r.arch;
 const kep = ke.private;
 const ex = r.ex;
 const bv = r.bv;
-const config = @import("config");
 
 var thread0: ke.Thread = undefined;
 
@@ -22,7 +24,7 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     // Immediately initialize the context of what will eventually become
     // our idle thread. At this point we're already running on the kernel stack.
     thread0.init(.{
-        .stack = boot_info.kernel_stack + boot_info.kernel_stack_size,
+        .stack = 0,
         .priority = .IdleThread,
         .entry = undefined,
         // Shouldn't block
@@ -31,6 +33,10 @@ export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
 
     thread0.continuation = null;
     thread0.pinned = true;
+
+    thread0.context = .init_with_stack(
+        boot_info.kernel_stack + boot_info.kernel_stack_size,
+    );
 
     init();
 }
