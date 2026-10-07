@@ -12,15 +12,17 @@ var fb_height: usize = 0;
 var fb_pitch: usize = 0;
 var fb_bpp: usize = 0;
 var inited = std.atomic.Value(bool).init(false);
-var particle_count: std.atomic.Value(usize) = .init(0);
+var particle_count = std.atomic.Value(usize).init(0);
 
 const background_color = 0x09090F;
 
 fn fill_screen(color: u32) void {
+    const buf = @as([*]u32, @ptrCast(@alignCast(&pixel_buffer)));
+
     for (0..fb_height) |y| {
         for (0..fb_width) |x| {
             const pixel_offset = y * fb_pitch + x * fb_bpp;
-            @as(*u32, @ptrCast(@alignCast(&pixel_buffer[pixel_offset]))).* = color;
+            buf[pixel_offset] = color;
         }
     }
 }
@@ -28,7 +30,10 @@ fn fill_screen(color: u32) void {
 fn plot_pixel(x: i64, y: i64, color: u32) void {
     if (x >= fb_width or y >= fb_height or x < 0 or y < 0) return;
 
-    const pixel_offset = @as(u64, @intCast(y)) * fb_pitch + @as(u64, @intCast(x)) * fb_bpp;
+    const y_u: u64 = @intCast(y);
+    const x_u: u64 = @intCast(x);
+
+    const pixel_offset = y_u * fb_pitch + x_u * fb_bpp;
     @as(*u32, @ptrCast(@alignCast(&pixel_buffer[pixel_offset]))).* = color;
 }
 
@@ -95,6 +100,7 @@ const FireworkData = struct {
     explosion_range: i32,
     expire_in: i64,
     i: u32,
+    sleep_start: u64,
 };
 
 fn get_random_color() u32 {
@@ -113,9 +119,21 @@ fn sleep(ms: usize, continuation: ?ke.Continuation) void {
 
 const particle_delay = 16;
 
+var worst_delay = std.atomic.Value(u64).init(0);
+
 fn particle_continuation(param: ?*anyopaque) void {
     const data: *FireworkData = @ptrCast(@alignCast(param));
+    const sleep_start = data.sleep_start;
+    data.sleep_start = ke.time.read_time().value;
+
+    const delay = ((data.sleep_start - sleep_start) / std.time.ns_per_us);
+    const p_delay_us = std.time.us_per_ms * particle_delay;
+
     plot_pixel(@intCast(data.x), @intCast(data.y), background_color);
+
+    if (delay > p_delay_us and delay > worst_delay.load(.monotonic)) {
+        worst_delay.store(delay - p_delay_us, .monotonic);
+    }
 
     data.i += particle_delay;
 
@@ -143,7 +161,11 @@ fn particle_continuation(param: ?*anyopaque) void {
 fn particle(param: ?*anyopaque) void {
     const parent_data: *FireworkData = @ptrCast(@alignCast(param));
 
-    const data = mm.zone.gpa.create(FireworkData) catch unreachable;
+    const data = mm.zone.gpa.create(FireworkData) catch
+        {
+            // This will wait for free memory.
+            unreachable;
+        };
 
     data.* = std.mem.zeroes(FireworkData);
 
@@ -170,6 +192,8 @@ fn particle(param: ?*anyopaque) void {
     data.color = get_random_color();
 
     plot_pixel(@intCast(data.x), @intCast(data.y), data.color);
+
+    data.sleep_start = ke.time.read_time().value;
 
     sleep(particle_delay, .{
         .func = particle_continuation,
@@ -243,7 +267,11 @@ fn explodeable(_: ?*anyopaque) void {
     const part_count: usize = @intCast(@rem(rand(), 100) + 100);
 
     for (0..part_count) |_| {
-        const param: *FireworkData = mm.zone.gpa.create(FireworkData) catch @panic("oom");
+        const param: *FireworkData = mm.zone.gpa.create(FireworkData) catch
+            {
+                // This will wait for free memory.
+                unreachable;
+            };
         param.* = data;
         spawn_particle(param);
     }
@@ -258,12 +286,13 @@ fn spawning_loop(_: ?*anyopaque) void {
         spawn_explodeable();
     }
 
-    std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for {} particles", .{
+    std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for {} particles {}us worst delay", .{
         mm.private.tlb.async_shootdowns.load(.monotonic),
         mm.private.tlb.sync_shootdowns.load(.monotonic),
         mm.private.phys.usable_memory.load(.monotonic) / 1024,
         ke.private.thread.stacks_count(),
         particle_count.load(.monotonic),
+        worst_delay.load(.monotonic),
     });
 
     sleep(2000, .{ .func = spawning_loop, .arg = null });
@@ -281,7 +310,9 @@ pub fn start(param: ?*anyopaque) void {
         fb_pitch = fb.pitch;
         fb_width = fb.width;
         fb_height = fb.height;
-        pixel_buffer = @ptrCast(@alignCast(@as(*anyopaque, @ptrFromInt(fb.address))));
+        pixel_buffer = @ptrCast(
+            @alignCast(@as(*anyopaque, @ptrFromInt(fb.address))),
+        );
     }
 
     fill_screen(0x09090F);
