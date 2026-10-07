@@ -17,12 +17,13 @@ var particle_count = std.atomic.Value(usize).init(0);
 const background_color = 0x09090F;
 
 fn fill_screen(color: u32) void {
-    const buf = @as([*]u32, @ptrCast(@alignCast(&pixel_buffer)));
-
     for (0..fb_height) |y| {
         for (0..fb_width) |x| {
             const pixel_offset = y * fb_pitch + x * fb_bpp;
-            buf[pixel_offset] = color;
+            @as(
+                *u32,
+                @ptrCast(@alignCast(&pixel_buffer[pixel_offset])),
+            ).* = color;
         }
     }
 }
