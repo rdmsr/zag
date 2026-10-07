@@ -22,9 +22,10 @@
 //! a lock, which might get preempted by another medium-priority thread.
 //!
 //! Priority inheritance is achieved through turnstiles by walking a
-//! given turnstile's owner chain and willing the priority of the highest priority
-//! waiter, i.e it will go through turnstile.owner.turnstile.owner...
-//! until the end of the chain, inheriting the waiter's priority along the way.
+//! given turnstile's owner chain and willing the priority of the
+//! highest priority waiter, i.e it will go through
+//! turnstile.owner.turnstile.owner...  until the end of the chain,
+//! inheriting the waiter's priority along the way.
 //!
 //! ## Locking
 //! ----------
@@ -41,15 +42,17 @@
 //!
 //! ## Resources
 //! ------------
-//! See the original Illumos implementation, the Solaris book or FreeBSD book for
-//! a more in-depth description.
+//! See the original Illumos implementation, the Solaris book or FreeBSD book
+//! for a more in-depth description.
 //! I have also written more about turnstiles here:
-//! https://rdmsr.github.io/writing/turnstiles/.
+//! https://gregoire.dev/writing/turnstiles/.
 
 const ke = @import("root").ke;
 const kep = ke.private;
 const rtl = @import("rtl");
+
 const std = @import("std");
+const assert = std.debug.assert;
 
 const num_chains = 128;
 const hash_mask = num_chains - 1;
@@ -229,7 +232,8 @@ fn update_prio(td: *ke.Thread) void {
 /// `to.lock` and the owning turnstile's lock.
 fn donate_to(boost: *Boost, to: *ke.Thread, pri: u8) void {
     // A lend only ever raises.
-    if (boost.donated != null and pri <= boost.donated.?) return;
+    if (boost.donated != null and pri <= boost.donated orelse unreachable)
+        return;
 
     if (boost.donated == null) to.turnstiles_owned.insert_head(&boost.link);
     boost.donated = pri;
@@ -306,7 +310,7 @@ fn propagate(curtd: *ke.Thread) void {
         // We hold `thread.lock` and `root.lock`.
         const obj = thread.waiting_on orelse break;
 
-        std.debug.assert(thread.waiting_on == obj);
+        assert(thread.waiting_on == obj);
 
         const ts = thread.turnstile;
 
@@ -319,8 +323,8 @@ fn propagate(curtd: *ke.Thread) void {
             // on the same turnstile.
             if (!ts.lock.try_acquire_no_ipl()) {
                 // The turnstile could not be acquired, drop everything and
-                // restart the walk from the start. Priority inheritance is idem-
-                // potent so there is no issue in applying it many times.
+                // restart the walk from the start. Priority inheritance is
+                // idempotent so there is no issue in applying it many times.
                 thread.lock.release_no_ipl();
 
                 if (root) |ro| ro.lock.release_no_ipl();
@@ -443,9 +447,9 @@ pub fn block(
     const ipl = ke.ipl.current();
 
     var ts = turnstile;
-    const queue_idx = @intFromEnum(queue);
+    const queue_idx = @backingInt(queue);
 
-    std.debug.assert(chain.lock.is_locked());
+    assert(chain.lock.is_locked());
 
     if (ts) |turn| {
         // Another thread already donated its turnstile,
@@ -500,7 +504,8 @@ pub fn block(
     _ = ke.ipl.raise(ipl);
 }
 
-/// Signal the end of a turnstile-backed wait and return a list of waiters to wake.
+/// Signal the end of a turnstile-backed wait and return a list of waiters
+/// to wake.
 /// Do hand-off to new_owner if specified.
 /// The locks acquired by `lookup` are still held on return.
 pub fn signal(
@@ -510,7 +515,7 @@ pub fn signal(
     new_owner: ?*ke.Thread,
     waiters: *rtl.List,
 ) void {
-    const queue_idx = @intFromEnum(queue);
+    const queue_idx = @backingInt(queue);
 
     // Revoke any priority we gave to the owner(s).
     revoke(ts);
@@ -546,8 +551,9 @@ pub fn signal(
 pub fn wakeup(waiters: *rtl.List) void {
     // Now wake all the waiters, this ensures that the turnstile and chain lock
     // hold times stay low.
-    // Also, if we did this *before* unlocking `ts`, there is no guarantee that it
-    // is still alive, as the last waiter could've woken up, exited, and freed it.
+    // Also, if we did this *before* unlocking `ts`, there is no guarantee that
+    // it is still alive, as the last waiter could've woken up, exited,
+    // and freed it.
     // Instead of special casing it, let's just do the wakeup in a nicer
     // environment here.
     var it = waiters.iterator();
@@ -562,9 +568,9 @@ pub fn wakeup(waiters: *rtl.List) void {
 fn dequeue(ts: *Turnstile, td: *ke.Thread) *Waiter {
     td.lock.acquire_no_ipl();
 
-    std.debug.assert(td.turnstile == ts);
-    std.debug.assert(td.turnstile_waiter != null);
-    std.debug.assert(!ts.queues[0].is_empty() or !ts.queues[1].is_empty());
+    assert(td.turnstile == ts);
+    assert(td.turnstile_waiter != null);
+    assert(!ts.queues[0].is_empty() or !ts.queues[1].is_empty());
 
     const waiter = td.turnstile_waiter.?;
     waiter.link.remove();

@@ -1,3 +1,5 @@
+//! Kernel riscv64-specific code.
+
 const r = @import("root");
 const ke = r.ke;
 const rv64 = @import("arch");
@@ -20,7 +22,12 @@ pub const ThreadContext = extern struct {
         return .{ .sp = stack };
     }
 
-    pub fn reset(self: *@This(), stack_top: r.VAddr, entry: *const fn (?*anyopaque) void, arg: ?*anyopaque) @This() {
+    pub fn reset(
+        self: *@This(),
+        stack_top: r.VAddr,
+        entry: *const fn (?*anyopaque) void,
+        arg: ?*anyopaque,
+    ) @This() {
         self.sp = stack_top & ~@as(usize, 15);
         self.ra = @intFromPtr(&thread_start);
         self.s = @splat(0);
@@ -35,11 +42,27 @@ pub const ThreadContext = extern struct {
 };
 
 extern fn riscv_context_load(ctx: *ThreadContext) callconv(.c) noreturn;
-extern fn riscv_context_switch(old: *ThreadContext, new: *ThreadContext, lock: *u8, switching: *bool) callconv(.c) void;
-extern fn riscv_context_switch_cont(old: *ke.Thread.Context, new: *ThreadContext, lock: *u8, switching: *bool) callconv(.c) void;
+
+extern fn riscv_context_switch(
+    old: *ThreadContext,
+    new: *ThreadContext,
+    lock: *u8,
+    switching: *bool,
+) callconv(.c) void;
+
+extern fn riscv_context_switch_cont(
+    old: *ke.Thread.Context,
+    new: *ThreadContext,
+    lock: *u8,
+    switching: *bool,
+) callconv(.c) void;
+
 extern fn thread_start() callconv(.c) noreturn;
 
-export fn riscv_thread_entry(entry_addr: usize, arg_addr: usize) callconv(.c) noreturn {
+export fn riscv_thread_entry(
+    entry_addr: usize,
+    arg_addr: usize,
+) callconv(.c) noreturn {
     const entry: *const fn (?*anyopaque) void = @ptrFromInt(entry_addr);
     entry(@ptrFromInt(arg_addr));
     @panic("Thread entry returned");
@@ -49,24 +72,46 @@ export fn riscv_free_old_stack(stack: usize) callconv(.c) void {
     ke.private.thread.stack_cache_free(stack);
 }
 
-export fn riscv_run_continuation(func_addr: usize, arg: ?*anyopaque) callconv(.c) noreturn {
+export fn riscv_run_continuation(
+    func_addr: usize,
+    arg: ?*anyopaque,
+) callconv(.c) noreturn {
     ke.ipl.lower(.Passive);
     const func: *const fn (?*anyopaque) void = @ptrFromInt(func_addr);
     func(arg);
     @panic("Continuation returned");
 }
 
-pub fn switch_normal_to_normal(old: *ke.Thread.Context, new: *ke.Thread.Context) void {
+pub fn switch_normal_to_normal(
+    old: *ke.Thread.Context,
+    new: *ke.Thread.Context,
+) void {
     const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", old));
-    riscv_context_switch(&old.impl, &new.impl, &thread.lock.inner.locked.raw, &thread.switching.raw);
+    riscv_context_switch(
+        &old.impl,
+        &new.impl,
+        &thread.lock.inner.locked.raw,
+        &thread.switching.raw,
+    );
 }
 
-pub fn switch_cont_to_normal(old: *ke.Thread.Context, new: *ke.Thread.Context) void {
+pub fn switch_cont_to_normal(
+    old: *ke.Thread.Context,
+    new: *ke.Thread.Context,
+) void {
     const thread: *ke.Thread = @alignCast(@fieldParentPtr("context", old));
-    riscv_context_switch_cont(old, &new.impl, &thread.lock.inner.locked.raw, &thread.switching.raw);
+    riscv_context_switch_cont(
+        old,
+        &new.impl,
+        &thread.lock.inner.locked.raw,
+        &thread.switching.raw,
+    );
 }
 
-pub fn call_continuation(ctx: *ke.Thread.Context, continuation: ke.Continuation) noreturn {
+pub fn call_continuation(
+    ctx: *ke.Thread.Context,
+    continuation: ke.Continuation,
+) noreturn {
     const sp = ctx.stack_top & ~@as(usize, 15);
     asm volatile (
         \\mv sp, %[stack]

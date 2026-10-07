@@ -100,7 +100,11 @@ pub fn alloc(size: usize) usize {
     return va;
 }
 
-pub fn add_entry(base: usize, size: usize, @"type": r.BootInfo.MemMap.Entry.Type) void {
+pub fn add_entry(
+    base: usize,
+    size: usize,
+    @"type": r.BootInfo.MemMap.Entry.Type,
+) void {
     if (memory_map.entry_count == memory_map.entries.len) {
         @panic("loader: memory map is full");
     }
@@ -190,13 +194,17 @@ fn map_self() void {
         },
     );
 
-    // Now go through every usable entry and map to the HHDM every part that isnt covered by [0, hhdm_minimum_max_address).
-    // We can't blindly map until the maximum usable physical address because on some CPUs this might cause MCEs.
-    // See https://github.com/torvalds/linux/commit/66520ebc2df3fe52eb4792f8101fac573b766baf
+    // Now go through every usable entry and map to the HHDM every part that
+    // isnt covered by [0, hhdm_minimum_max_address).
+    // We can't blindly map until the maximum usable physical address because
+    // on some CPUs this might cause MCEs.
+    // See Linux commit 66520ebc2df3fe52eb4792f8101fac573b766baf
     for (0..memory_map.entry_count) |i| {
         const entry = memory_map.entries[i];
 
-        if ((entry.type != .Free and entry.type != .LoaderReclaimable) or entry.size < r.page_size) {
+        if ((entry.type != .Free and entry.type != .LoaderReclaimable) or
+            entry.size < r.page_size)
+        {
             continue;
         }
 
@@ -233,20 +241,33 @@ fn map_pfndb() void {
     for (0..memory_map.entry_count) |i| {
         const entry = memory_map.entries[i];
 
-        if ((entry.type != .Free and entry.type != .LoaderReclaimable) or entry.size < r.page_size) {
+        if ((entry.type != .Free and entry.type != .LoaderReclaimable) or
+            entry.size < r.page_size)
+        {
             continue;
         }
 
-        const npages = std.math.divCeil(usize, entry.size, r.page_size) catch unreachable;
+        const npages = std.math.divCeil(usize, entry.size, r.page_size) catch
+            unreachable;
 
-        // 1. Calculate the exact virtual address range needed for this region's page structs.
+        // 1. Calculate the exact virtual address range needed for this
+        // region's page structs.
         const start_pfn: usize = entry.base / r.page_size;
         const exact_start = memory_layout.pfndb + (start_pfn * size);
         const exact_end = exact_start + (npages * size);
 
         // 2. Ensure the addresses are aligned on page boundaries.
-        const map_start = std.mem.alignBackward(usize, exact_start, r.page_size);
-        const map_end = std.mem.alignForward(usize, exact_end, r.page_size);
+        const map_start = std.mem.alignBackward(
+            usize,
+            exact_start,
+            r.page_size,
+        );
+
+        const map_end = std.mem.alignForward(
+            usize,
+            exact_end,
+            r.page_size,
+        );
 
         // 3. Map the virtual pages.
         pagemap.map_range_allocating(

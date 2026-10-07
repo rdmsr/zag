@@ -1,13 +1,15 @@
 //! Safe memory reclamation implementation.
 //! based on FreeBSD's "Global Unbounded Sequences".
 
-const r = @import("root");
 const rtl = @import("rtl");
-const std = @import("std");
 const config = @import("config");
 
+const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 pub const Sequence = u64;
 
@@ -34,15 +36,15 @@ pub const Domain = struct {
     }
 
     pub fn init(self: *Domain, preempt: bool) void {
-        self.clock.read_seq = .init(seq_init);
-        self.clock.write_seq = .init(seq_init);
+        self.clock.read_seq = std.atomic.Value(Sequence).init(seq_init);
+        self.clock.write_seq = std.atomic.Value(Sequence).init(seq_init);
         self.preempt = preempt;
 
         for (0..ke.ncpus) |i| {
             self.cpus[i] = .{
-                .current_seq = .init(seq_invalid),
+                .current_seq = std.atomic.Value(Sequence).init(seq_invalid),
                 .stall_lock = ke.SpinLock.init("stall_lock"),
-                .stall_seq = .init(seq_invalid),
+                .stall_seq = std.atomic.Value(Sequence).init(seq_invalid),
                 .stalled = undefined,
                 .stall_goal = seq_invalid,
             };
@@ -74,12 +76,17 @@ pub const Tracker = struct {
 };
 
 /// Used by tests.
-pub var full_scans: std.atomic.Value(usize) = .init(0);
+pub var full_scans = std.atomic.Value(usize).init(0);
 
 /// Scan all CPUs and return the minimum observed value.
 /// If `should_wait` is true, this will spinloop (or block)
 /// until all CPUs have reached the given goal.
-fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence {
+fn scan(
+    dom: *Domain,
+    goal: Sequence,
+    clock: Clock,
+    should_wait: bool,
+) Sequence {
     rtl.barrier.fence(.seq_cst);
 
     const clk_write = clock.write_seq.raw;
@@ -92,7 +99,6 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence 
 
     for (0..ke.ncpus) |i| {
         const cpu = &dom.cpus[i];
-
         var seq = cpu.current_seq.load(.monotonic);
 
         while (seq != seq_invalid) {
@@ -169,8 +175,8 @@ fn scan(dom: *Domain, goal: Sequence, clock: Clock, should_wait: bool) Sequence 
                     .{ .shared = &cpu.stalled },
                     .Exclusive,
                 );
-                ke.ipl.lower(ipl);
 
+                ke.ipl.lower(ipl);
                 seq = cpu.stall_seq.load(.monotonic);
             }
 
@@ -260,7 +266,9 @@ pub fn advance(dom: *Domain) Sequence {
     return dom.clock.write_seq.fetchAdd(seq_incr, .release) + seq_incr;
 }
 
-/// Pretend-advance the write sequence and return the value for use as a wait goal.
+/// Pretend-advance the write sequence and return the value for use as a wait
+/// goal.
+///
 /// It is guaranteed that all previous memory writes made by
 /// the calling thread are visible.
 /// The global clock isn't advanced unlike `advance`, it is only when commit()
@@ -303,7 +311,7 @@ fn enter_internal(dom: *Domain) Sequence {
     // on a full memory barrier, as it is guaranteed that the CPU was treated as
     // inactive and cannot possibly hold a reference to anything the poll
     // declared reclaimable. See scan().
-    std.debug.assert(cpu.current_seq.load(.monotonic) == seq_invalid);
+    assert(cpu.current_seq.load(.monotonic) == seq_invalid);
 
     const wr_seq = dom.clock.write_seq.load(.monotonic);
 
@@ -420,7 +428,7 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
         return;
     }
 
-    const cpu = tracker.cpu.?;
+    const cpu = tracker.cpu orelse unreachable;
 
     // We got preempted.
     cpu.stall_lock.acquire_no_ipl();
@@ -449,7 +457,7 @@ pub fn exit_preempt(dom: *Domain, tracker: *Tracker) void {
     }
 
     if (wake and turnstile != null) {
-        const ts = turnstile.?;
+        const ts = turnstile orelse unreachable;
         var waiters: rtl.List = undefined;
         kep.turnstile.signal(ts, .Exclusive, ts.waiters, null, &waiters);
         kep.turnstile.exit(cpu, turnstile);

@@ -1,3 +1,5 @@
+//! Kernel logging.
+
 const std = @import("std");
 const config = @import("config");
 const r = @import("root");

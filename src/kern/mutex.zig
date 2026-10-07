@@ -1,3 +1,5 @@
+//! Adaptive lock implementation.
+
 const std = @import("std");
 const rtl = @import("rtl");
 const config = @import("config");
@@ -22,7 +24,7 @@ pub const Mutex = struct {
             };
         }
 
-        return .{ .owner = .init(null) };
+        return .{ .owner = std.atomic.Value(?*ke.Thread).init(null) };
     }
 
     pub fn is_locked(self: *Mutex) bool {
@@ -31,7 +33,8 @@ pub const Mutex = struct {
 
     pub fn acquire(m: *Mutex) void {
         const ipl = ke.ipl.raise(.Dispatch);
-        const curtd = kep.sched.percpu.local().current_thread.?;
+        const curtd = kep.sched.percpu.local().current_thread orelse
+            unreachable;
 
         if (config.warden) {
             kep.warden.check(m.wd, .Lock);
@@ -98,7 +101,7 @@ pub const Mutex = struct {
             kep.turnstile.block(
                 ts,
                 m,
-                .{ .single = owner.? },
+                .{ .single = owner orelse unreachable },
                 .Exclusive,
             );
 
@@ -133,6 +136,7 @@ pub const Mutex = struct {
         }
 
         var waiters: rtl.List = undefined;
+        const turn = ts orelse unreachable;
 
         // Note: wake up all waiters.
         // This so-called "lock barging" (name from WTF::ParkingLot) has been
@@ -140,9 +144,9 @@ pub const Mutex = struct {
         // see this mysterious 70s paper:
         // https://dl.acm.org/doi/pdf/10.1145/850657.850659
         kep.turnstile.signal(
-            ts.?,
+            turn,
             .Exclusive,
-            ts.?.waiters,
+            turn.waiters,
             null,
             &waiters,
         );

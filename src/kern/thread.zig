@@ -1,4 +1,5 @@
-const std = @import("std");
+//! Kernel thread management.
+
 const rtl = @import("rtl");
 const config = @import("config");
 
@@ -6,9 +7,10 @@ const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
 
-pub const Priority = enum(u8) {
-    const Self = @This();
+const std = @import("std");
+const assert = std.debug.assert;
 
+pub const Priority = enum(u8) {
     /// Reserved for the idle thread.
     IdleThread = 0,
     /// Background kernel work.
@@ -42,18 +44,18 @@ pub const Priority = enum(u8) {
 
     // The low and top 20 priorities from the batch range are reserved
     // for nice.
-    pub const cpu_range = @intFromEnum(Self.HighBatch) - (nice_max * 2) - 1;
+    pub const cpu_range = @backingInt(Priority.HighBatch) - (nice_max * 2) - 1;
 
     pub fn class_from_prio(prio: u8) Class {
-        if (prio >= @intFromEnum(Self.LowRealtime) and
-            prio <= @intFromEnum(Self.HighRealtime))
+        if (prio >= @backingInt(Priority.LowRealtime) and
+            prio <= @backingInt(Priority.HighRealtime))
             return .Realtime;
 
-        if (prio >= @intFromEnum(Self.LowBatch) and
-            prio < @intFromEnum(Self.LowRealtime))
+        if (prio >= @backingInt(Priority.LowBatch) and
+            prio < @backingInt(Priority.LowRealtime))
             return .Timeshare;
 
-        if (prio <= @intFromEnum(Self.Idle))
+        if (prio <= @backingInt(Priority.Idle))
             return .Idle;
 
         unreachable;
@@ -110,7 +112,7 @@ pub const Thread = struct {
     lock: ke.SpinLock,
     /// Niceness value.
     nice: i8,
-    /// Effective priority value of the thread: `max(base_priority, inherited_prio)`.
+    /// Effective priority value of the thread: `max(base, inherited)`.
     priority: u8,
     /// Base priority value of the thread.
     base_priority: u8,
@@ -188,17 +190,17 @@ pub const Thread = struct {
             .context = .init_with_stack(opts.stack),
             .lock = ke.SpinLock.init("thread"),
             .nice = 0,
-            .priority = @intFromEnum(opts.priority),
-            .base_priority = @intFromEnum(opts.priority),
+            .priority = @backingInt(opts.priority),
+            .base_priority = @backingInt(opts.priority),
             .inherited_prio = 0,
             .pinned = false,
-            .state = .init(.Ready),
+            .state = std.atomic.Value(State).init(.Ready),
             .runq_link = .{},
             .last_cpu = null,
             .cpu = null,
             .runq = null,
             .runq_idx = 0,
-            .wait_status = .init(.Satisfied),
+            .wait_status = std.atomic.Value(kep.wait.Status).init(.Satisfied),
             .inner_waitblocks = undefined,
             .waitblocks = &thread.inner_waitblocks,
             .wait_reason = null,
@@ -213,11 +215,11 @@ pub const Thread = struct {
             .queue = null,
             .queue_item = null,
             .continuation = opts.entry,
-            .switching = .init(false),
+            .switching = std.atomic.Value(bool).init(false),
             .avg = .{},
             .acct = .{},
             .smr_sections = undefined,
-            .hard_affinity = .init(true),
+            .hard_affinity = ke.CpuMask.init(true),
             .warden_data = .{},
         };
 
@@ -249,8 +251,8 @@ pub const Thread = struct {
     }
 
     pub fn is_interactive(self: *Thread) bool {
-        return self.priority >= @intFromEnum(Priority.LowInteractive) and
-            self.priority <= @intFromEnum(Priority.HighInteractive);
+        return self.priority >= @backingInt(Priority.LowInteractive) and
+            self.priority <= @backingInt(Priority.HighInteractive);
     }
 
     pub fn can_relinquish_stack(self: *Thread) bool {
@@ -309,7 +311,7 @@ pub fn exit() void {
 
 /// Return the currently running thread.
 pub fn current() *ke.Thread {
-    return kep.sched.percpu.local().current_thread.?;
+    return kep.sched.percpu.local().current_thread orelse unreachable;
 }
 
 // -- Stack allocation and continuations ---------------------------------------
@@ -344,7 +346,8 @@ const Cpu = struct {
 
 /// Number of excess stacks allowed in the global stack depot before trimming.
 /// Note that this is in addition to the global minimum of `ncpus` stacks.
-/// Keep this low for minimal memory overhead, but potentially increased latency.
+/// Keep this low for minimal memory overhead, but potentially
+/// increased latency.
 const excess_stacks = ke.Tunable(u32, 1, "ke.thread.excess_stacks");
 
 var global_depot_lock: ke.SpinLock = undefined;
@@ -355,7 +358,7 @@ const percpu_count_max = 2;
 
 const wma_unit = 256;
 
-pub var thread_stack_queue: rtl.HandoffList = .init(stack_activation);
+pub var thread_stack_queue = rtl.HandoffList.init(stack_activation);
 
 inline fn wma_mix(old: u32, new: u32) u32 {
     // Keep 75% of old sample and 25% of new.
@@ -380,14 +383,14 @@ pub fn init() void {
 
 pub fn call_continuation(ptr: ?*anyopaque) noreturn {
     const td: *ke.Thread = @ptrCast(@alignCast(ptr));
-    std.debug.assert(td.continuation != null);
+    assert(td.continuation != null);
 
     // Clean things that were set up by the wait (e.g timeout).
     _ = kep.wait.post_wait(td) catch {
         // Don't care about the status.
     };
 
-    const cont = td.continuation.?;
+    const cont = td.continuation orelse unreachable;
     td.continuation = null;
 
     kep.impl.call_continuation(&td.context, cont);
@@ -466,7 +469,7 @@ pub fn stack_cache_update() ?*Stack {
     // If we have more than `excess_stacks` sitting unused, then trim.
     // Ensure there are still `ncpus` stacks sitting in the depot.
     if (excess > excess_stacks.load()) {
-        std.debug.assert(global_depot.count >= excess);
+        assert(global_depot.count >= excess);
 
         // We want every CPU to have at least one stack sitting in the depot.
         const floor: u32 = @truncate(ke.ncpus);

@@ -133,7 +133,7 @@ pub fn wait_any(
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
 
-    const curtd = kep.sched.percpu.local().current_thread.?;
+    const curtd = ke.thread.current();
     const obj_count = objects.len;
     const has_timeout = opts.timeout != null;
     const total_count = obj_count + @intFromBool(has_timeout);
@@ -264,7 +264,7 @@ pub fn wait_any(
 
 /// Satisfy a wait on an object.
 pub fn satisfy_wait(obj: *DispatchHeader) void {
-    std.debug.assert(obj.lock.is_locked());
+    assert(obj.lock.is_locked());
 
     const all = obj.type == .Notification;
 
@@ -274,8 +274,8 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
         var wb: *WaitBlock = @fieldParentPtr("link", obj.waitblocks.first());
         var td = wb.thread;
 
-        std.debug.assert(wb.status == .Active);
-        std.debug.assert(wb.object == obj);
+        assert(wb.status == .Active);
+        assert(wb.object == obj);
 
         // Remove it.
         wb.link.remove();

@@ -1,3 +1,5 @@
+//! riscv64 interrupt handling.
+
 const r = @import("root");
 const ke = r.ke;
 const std = @import("std");
@@ -13,5 +15,9 @@ export fn riscv_trap_handler(cause: usize, pc: usize) callconv(.c) void {
         }
         return;
     }
-    std.debug.panic("trap: cause = 0x{x}, pc = 0x{x}, tval = 0x{x}", .{ cause, pc, rv64.read_csr("stval") });
+    std.debug.panic("trap: cause = 0x{x}, pc = 0x{x}, tval = 0x{x}", .{
+        cause,
+        pc,
+        rv64.read_csr("stval"),
+    });
 }

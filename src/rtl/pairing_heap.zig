@@ -1,5 +1,6 @@
 //! Intrusive Pairing Heap implementation.
 const std = @import("std");
+const assert = std.debug.assert;
 
 pub const Node = struct {
     child: ?*Node = null,
@@ -7,9 +8,12 @@ pub const Node = struct {
     prev: ?*Node = null,
 };
 
-pub fn PairingHeap(comptime order: enum { min, max }, comptime cmp: fn (*Node, *Node) std.math.Order) type {
+pub fn PairingHeap(
+    comptime order: enum { Min, Max },
+    comptime cmp: fn (*Node, *Node) std.math.Order,
+) type {
     return struct {
-        const Self = @This();
+        const Heap = @This();
 
         /// Number of elements in the heap
         size: usize = 0,
@@ -19,8 +23,8 @@ pub fn PairingHeap(comptime order: enum { min, max }, comptime cmp: fn (*Node, *
 
         fn meld(a: *Node, b: *Node) *Node {
             const a_wins = switch (order) {
-                .min => cmp(a, b) != .gt, // a <= b
-                .max => cmp(a, b) == .gt, // a > b
+                .Min => cmp(a, b) != .gt, // a <= b
+                .Max => cmp(a, b) == .gt, // a > b
             };
 
             if (a_wins) {
@@ -70,7 +74,7 @@ pub fn PairingHeap(comptime order: enum { min, max }, comptime cmp: fn (*Node, *
             }
 
             // Second pass: fold pairs right to left
-            var result = pairs.?;
+            var result = pairs orelse unreachable;
             var rest = result.next;
             result.next = null;
             while (rest) |p| {
@@ -81,7 +85,7 @@ pub fn PairingHeap(comptime order: enum { min, max }, comptime cmp: fn (*Node, *
             return result;
         }
 
-        pub fn init() Self {
+        pub fn init() Heap {
             return .{
                 .size = 0,
                 .root = null,
@@ -89,7 +93,7 @@ pub fn PairingHeap(comptime order: enum { min, max }, comptime cmp: fn (*Node, *
         }
 
         /// Insert `node` into the heap.
-        pub fn insert(self: *Self, node: *Node) void {
+        pub fn insert(self: *Heap, node: *Node) void {
             node.* = .{
                 .child = null,
                 .next = null,
@@ -107,7 +111,7 @@ pub fn PairingHeap(comptime order: enum { min, max }, comptime cmp: fn (*Node, *
         }
 
         /// Return and remove the topmost element.
-        pub fn pop(self: *Self) ?*Node {
+        pub fn pop(self: *Heap) ?*Node {
             const root = self.root orelse return null;
             const child = root.child;
 
@@ -125,13 +129,13 @@ pub fn PairingHeap(comptime order: enum { min, max }, comptime cmp: fn (*Node, *
         }
 
         /// Remove `node` from the heap.
-        pub fn remove(self: *Self, node: *Node) void {
+        pub fn remove(self: *Heap, node: *Node) void {
             if (self.root == node) {
                 _ = self.pop();
                 return;
             }
 
-            std.debug.assert(self.root != null);
+            assert(self.root != null);
 
             self.size -= 1;
 
@@ -174,8 +178,8 @@ fn my_cmp(a: *Node, b: *Node) std.math.Order {
     return std.math.order(ta.value, tb.value);
 }
 
-const MinHeap = PairingHeap(.min, my_cmp);
-const MaxHeap = PairingHeap(.max, my_cmp);
+const MinHeap = PairingHeap(.Min, my_cmp);
+const MaxHeap = PairingHeap(.Max, my_cmp);
 
 test "empty heap" {
     var heap = MinHeap.init();

@@ -4,7 +4,11 @@ const std = @import("std");
 const Entry = r.BootInfo.MemMap.Entry;
 const stack_size = 1024 * 16; // should be enough
 
-extern fn jump_to_kernel(loader_info: usize, entry: usize, stack_top: usize) void;
+extern fn jump_to_kernel(
+    loader_info: usize,
+    entry: usize,
+    stack_top: usize,
+) void;
 
 fn load_kernel(kernel: *anyopaque) usize {
     const elf: *std.elf.Elf64.Ehdr = @ptrCast(@alignCast(kernel));
@@ -22,12 +26,18 @@ fn load_kernel(kernel: *anyopaque) usize {
         @panic("loader: invalid ELF type (expected ET_EXEC)");
     }
 
-    var phdr: *std.elf.Elf64.Phdr = @ptrFromInt(@intFromPtr(kernel) + elf.phoff);
+    var phdr: *std.elf.Elf64.Phdr = @ptrFromInt(
+        @intFromPtr(kernel) + elf.phoff,
+    );
 
     for (0..elf.phnum) |_| {
         switch (phdr.type) {
             .LOAD => {
-                const as_pages = std.mem.alignForward(usize, phdr.memsz, r.page_size);
+                const as_pages = std.mem.alignForward(
+                    usize,
+                    phdr.memsz,
+                    r.page_size,
+                );
                 const npages = as_pages / r.page_size;
                 var filesz_rem = phdr.filesz;
 
@@ -43,7 +53,9 @@ fn load_kernel(kernel: *anyopaque) usize {
 
                     const file_remaining = @min(filesz_rem, r.page_size);
 
-                    const off: [*]u8 = @ptrFromInt(@intFromPtr(kernel) + phdr.offset + i * r.page_size);
+                    const off: [*]u8 = @ptrFromInt(
+                        @intFromPtr(kernel) + phdr.offset + i * r.page_size,
+                    );
                     const source = off[0..file_remaining];
                     const va: [*]u8 = @ptrFromInt(addr);
                     const dest = va[0..file_remaining];

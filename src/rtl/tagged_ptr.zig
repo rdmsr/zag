@@ -4,32 +4,35 @@ pub fn TaggedPtr(comptime T: type) type {
     return struct {
         value: usize,
 
-        const Self = @This();
+        const Ptr = @This();
 
         const mask: usize = 0x3;
 
-        pub fn init(ptr: *T, tag: u2) Self {
-            return Self{ .value = (@intFromPtr(ptr) & ~mask) | (@as(usize, tag) & mask) };
+        pub fn init(ptr_val: *T, tag_val: u2) Ptr {
+            return Ptr{
+                .value = (@intFromPtr(ptr_val) & ~mask) |
+                    (@as(usize, tag_val) & mask),
+            };
         }
 
         /// Return the pointer with the tag bits masked out.
-        pub fn get_ptr(self: *const Self) *T {
+        pub fn ptr(self: *const Ptr) *T {
             return @ptrFromInt(self.value & ~mask);
         }
 
         /// Set the tag bits to `tag`, while preserving the pointer.
-        pub fn set_tag(self: *Self, tag: u2) void {
-            self.value = (self.value & ~mask) | (@as(usize, tag) & mask);
+        pub fn set_tag(self: *Ptr, val: u2) void {
+            self.value = (self.value & ~mask) | (@as(usize, val) & mask);
         }
 
         /// Return the tag bits.
-        pub fn get_tag(self: *const Self) u2 {
+        pub fn tag(self: *const Ptr) u2 {
             return @as(u2, @truncate(self.value & mask));
         }
 
         /// Set the pointer to `ptr`, while preserving the tag bits.
-        pub fn set_ptr(self: *Self, ptr: *T) void {
-            self.value = (@intFromPtr(ptr) & ~mask) | (self.value & mask);
+        pub fn set_ptr(self: *Ptr, val: *T) void {
+            self.value = (@intFromPtr(val) & ~mask) | (self.value & mask);
         }
     };
 }
@@ -40,13 +43,13 @@ test TaggedPtr {
     var x: u32 = 0;
     var tagged = TaggedPtr(u32).init(&x, 2);
 
-    try std.testing.expectEqual(&x, tagged.get_ptr());
-    try std.testing.expectEqual(2, tagged.get_tag());
+    try std.testing.expectEqual(&x, tagged.ptr());
+    try std.testing.expectEqual(2, tagged.tag());
 
     tagged.set_tag(1);
-    try std.testing.expectEqual(1, tagged.get_tag());
+    try std.testing.expectEqual(1, tagged.tag());
 
     var y: u32 = 0;
     tagged.set_ptr(&y);
-    try std.testing.expectEqual(&y, tagged.get_ptr());
+    try std.testing.expectEqual(&y, tagged.ptr());
 }

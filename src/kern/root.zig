@@ -1,3 +1,5 @@
+//! Public kernel interfaces.
+
 // === Exported Modules ===
 pub const private = @import("private.zig");
 

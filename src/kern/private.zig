@@ -1,3 +1,5 @@
+//! Private kernel definitions.
+
 const config = @import("config");
 const init_mod = @import("init.zig");
 const r = @import("root");

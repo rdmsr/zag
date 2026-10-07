@@ -1,3 +1,5 @@
+//! Kernel spinlocks.
+
 const std = @import("std");
 const rtl = @import("rtl");
 const config = @import("config");
@@ -8,19 +10,23 @@ const kep = ke.private;
 
 fn LockTemplate(comptime T: type) type {
     comptime {
-        if (!@hasDecl(T, "acquire_no_ipl")) @compileError("lock backend must implement acquire_no_ipl");
-        if (!@hasDecl(T, "release_no_ipl")) @compileError("lock backend must implement release_no_ipl");
-        if (!@hasDecl(T, "try_acquire_no_ipl")) @compileError("lock backend must implement try_acquire_no_ipl");
-        if (!@hasDecl(T, "is_locked")) @compileError("lock backend must implement is_locked");
+        if (!@hasDecl(T, "acquire_no_ipl"))
+            @compileError("lock backend must implement acquire_no_ipl");
+        if (!@hasDecl(T, "release_no_ipl"))
+            @compileError("lock backend must implement release_no_ipl");
+        if (!@hasDecl(T, "try_acquire_no_ipl"))
+            @compileError("lock backend must implement try_acquire_no_ipl");
+        if (!@hasDecl(T, "is_locked"))
+            @compileError("lock backend must implement is_locked");
     }
 
     return struct {
         inner: T,
         wd: kep.warden.LockData = undefined,
 
-        const Self = @This();
+        const Lock = @This();
 
-        pub fn init(comptime class: []const u8) Self {
+        pub fn init(comptime class: []const u8) Lock {
             if (config.warden) {
                 const cl = kep.warden.find_or_create_lock_class(class);
                 return .{
@@ -32,26 +38,28 @@ fn LockTemplate(comptime T: type) type {
         }
 
         /// Acquire the lock, raising IPL to `ipl`. Returns the previous IPL.
-        pub fn acquire_at(self: *Self, ipl: ke.Ipl) ke.Ipl {
+        pub fn acquire_at(self: *Lock, ipl: ke.Ipl) ke.Ipl {
             const old_ipl = ke.ipl.raise(ipl);
             self.acquire_no_ipl();
             return old_ipl;
         }
 
-        /// Acquire the lock, raising IPL to `.Dispatch`. Returns the previous IPL.
-        pub fn acquire(self: *Self) ke.Ipl {
+        /// Acquire the lock, raising IPL to `.Dispatch`.
+        /// Returns the previous IPL.
+        pub fn acquire(self: *Lock) ke.Ipl {
             return self.acquire_at(.Dispatch);
         }
 
         /// Release the lock and restore IPL to `ipl`.
-        pub fn release(self: *Self, ipl: ke.Ipl) void {
+        pub fn release(self: *Lock, ipl: ke.Ipl) void {
             self.release_no_ipl();
             ke.ipl.lower(ipl);
         }
 
         /// Try to acquire the lock at IPL `.Dispatch`.
-        /// Returns the previous IPL on success, null if the lock is already held.
-        pub fn try_acquire(self: *Self) ?ke.Ipl {
+        /// Returns the previous IPL on success,
+        /// null if the lock is already held.
+        pub fn try_acquire(self: *Lock) ?ke.Ipl {
             const old_ipl = ke.ipl.raise(.Dispatch);
             if (self.inner.try_acquire_no_ipl()) {
                 if (config.warden) {
@@ -66,7 +74,7 @@ fn LockTemplate(comptime T: type) type {
         }
 
         /// Acquire the lock without changing the IPL.
-        pub fn acquire_no_ipl(self: *Self) void {
+        pub fn acquire_no_ipl(self: *Lock) void {
             if (config.warden) {
                 kep.warden.check(self.wd, .Spin);
             }
@@ -79,7 +87,7 @@ fn LockTemplate(comptime T: type) type {
         }
 
         /// Release the lock without changing the IPL.
-        pub fn release_no_ipl(self: *Self) void {
+        pub fn release_no_ipl(self: *Lock) void {
             if (config.warden) {
                 kep.warden.released(self, .Spin);
             }
@@ -89,7 +97,7 @@ fn LockTemplate(comptime T: type) type {
 
         /// Try to acquire the lock without changing the IPL.
         /// Returns true if the lock was acquired.
-        pub fn try_acquire_no_ipl(self: *Self) bool {
+        pub fn try_acquire_no_ipl(self: *Lock) bool {
             const ret = self.inner.try_acquire_no_ipl();
 
             if (ret and config.warden) {
@@ -100,7 +108,7 @@ fn LockTemplate(comptime T: type) type {
         }
 
         /// Returns true if the lock is currently held.
-        pub fn is_locked(self: *Self) bool {
+        pub fn is_locked(self: *Lock) bool {
             return self.inner.is_locked();
         }
     };
@@ -110,16 +118,16 @@ fn LockTemplate(comptime T: type) type {
 pub const SpinLock = LockTemplate(struct {
     locked: std.atomic.Value(u8),
 
-    const Self = @This();
+    const Lock = @This();
 
-    pub fn init() Self {
+    pub fn init() Lock {
         return .{
-            .locked = .init(0),
+            .locked = std.atomic.Value(u8).init(0),
         };
     }
 
     /// Acquire the lock without changing the IPL.
-    pub fn acquire_no_ipl(self: *Self) void {
+    pub fn acquire_no_ipl(self: *Lock) void {
         while (true) {
             if (self.locked.cmpxchgWeak(0, 1, .acquire, .monotonic) == null)
                 return;
@@ -131,16 +139,16 @@ pub const SpinLock = LockTemplate(struct {
     }
 
     /// Release the lock without changing the IPL.
-    pub fn release_no_ipl(self: *Self) void {
+    pub fn release_no_ipl(self: *Lock) void {
         self.locked.store(0, .release);
     }
 
     /// Try to acquire the lock. Return true if lock was acquired.
-    pub fn try_acquire_no_ipl(self: *Self) bool {
+    pub fn try_acquire_no_ipl(self: *Lock) bool {
         return self.locked.cmpxchgStrong(0, 1, .acquire, .monotonic) == null;
     }
 
-    pub fn is_locked(self: *Self) bool {
+    pub fn is_locked(self: *Lock) bool {
         return self.locked.load(.monotonic) == 1;
     }
 });
@@ -199,15 +207,15 @@ pub const QSpinLock = LockTemplate(struct {
     const pending_val: u32 = 0x00000100;
     const pending_loops = 512;
 
-    const Self = @This();
+    const Lock = @This();
 
     data: Data,
 
-    pub fn init() Self {
+    pub fn init() Lock {
         return .{ .data = .{ .val = std.atomic.Value(u32).init(0) } };
     }
 
-    pub fn acquire_no_ipl(self: *Self) void {
+    pub fn acquire_no_ipl(self: *Lock) void {
         // Fast path: try to acquire the lock.
         var v = self.data.val.cmpxchgStrong(
             0,
@@ -262,11 +270,11 @@ pub const QSpinLock = LockTemplate(struct {
         self.data.split.locked_pending.store(1, .release);
     }
 
-    pub fn release_no_ipl(self: *Self) void {
+    pub fn release_no_ipl(self: *Lock) void {
         self.data.low_word.locked.store(0, .release);
     }
 
-    pub fn try_acquire_no_ipl(self: *Self) bool {
+    pub fn try_acquire_no_ipl(self: *Lock) bool {
         return self.data.val.cmpxchgStrong(
             0,
             locked_val,
@@ -275,11 +283,11 @@ pub const QSpinLock = LockTemplate(struct {
         ) == null;
     }
 
-    pub fn is_locked(self: *Self) bool {
+    pub fn is_locked(self: *Lock) bool {
         return self.data.low_word.locked.load(.monotonic) != 0;
     }
 
-    fn queue(self: *Self) void {
+    fn queue(self: *Lock) void {
         // Claim an index from our CPU.
         const idx = pcpu.local().curr_idx;
         pcpu.local().curr_idx += 1;
@@ -369,6 +377,8 @@ pub const QSpinLock = LockTemplate(struct {
             std.atomic.spinLoopHint();
         }
 
-        next.?.locked.store(1, .release);
+        const n = next orelse unreachable;
+
+        n.locked.store(1, .release);
     }
 });

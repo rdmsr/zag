@@ -1,3 +1,5 @@
+//! Initialization of the executive.
+
 const std = @import("std");
 const r = @import("root");
 const pl = r.pl;
@@ -24,7 +26,11 @@ pub fn init() void {
         if (rtl.cmdline.get_string(cline, "test")) |tst| {
             // Run a test if specified.
             if (r.tests.tests.get(tst)) |func| {
-                const t = ps.thread.create_kernel(.Default, .{ .func = func, .arg = r.boot_info }, true) catch
+                const t = ps.thread.create_kernel(
+                    .Default,
+                    .{ .func = func, .arg = r.boot_info },
+                    true,
+                ) catch
                     @panic("oom");
                 ke.sched.enqueue(&t.kern);
             } else {

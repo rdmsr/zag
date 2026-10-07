@@ -51,7 +51,7 @@ test "get_number() should return the integer value of a key" {
     try std.testing.expectEqual(100, get_number(cmdline, "baz").?);
 }
 
-test "get_number() should return null if the key is not found or value is not an integer" {
+test "get_number() returns null if the key not found or value not an integer" {
     const cmdline = "foo=42 baz=qux";
     try std.testing.expect(get_number(cmdline, "quux") == null);
     try std.testing.expect(get_number(cmdline, "baz") == null);

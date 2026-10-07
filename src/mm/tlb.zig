@@ -1,7 +1,6 @@
 //! MM-level TLB shootdown support
 
 const r = @import("root");
-const std = @import("std");
 const rtl = @import("rtl");
 
 const ke = r.ke;
@@ -10,9 +9,12 @@ const mmp = mm.private;
 const ps = r.ps;
 const ex = r.ex;
 
-pub var sync_shootdowns: std.atomic.Value(usize) = .init(0);
-pub var async_shootdowns: std.atomic.Value(usize) = .init(0);
-pub var sent_shootdowns: std.atomic.Value(usize) = .init(0);
+const std = @import("std");
+const assert = std.debug.assert;
+
+pub var sync_shootdowns = std.atomic.Value(usize).init(0);
+pub var async_shootdowns = std.atomic.Value(usize).init(0);
+pub var sent_shootdowns = std.atomic.Value(usize).init(0);
 
 var work_item: ex.WorkItem = undefined;
 
@@ -54,7 +56,7 @@ fn reap_pages(_: ?*anyopaque) void {
 /// Unmap and flush a virtual range on the given space.
 /// Space lock is held on entry and IPL is raised to Dispatch.
 pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
-    std.debug.assert(std.mem.isAligned(va, mm.page_size));
+    assert(std.mem.isAligned(va, mm.page_size));
 
     // Unmap the virtual addresses and get the backing physical pages.
     const list = space.pmap.unmap(va, size) orelse {
@@ -67,7 +69,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
         .base = va,
         .npages = @truncate(size / mm.page_size),
         .link = undefined,
-        .state = .init(0),
+        .state = std.atomic.Value(u16).init(0),
         .payload = .{
             @intFromPtr(space),
             @as(*const usize, @ptrCast(@alignCast(&list))).*,
@@ -77,7 +79,7 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
     space.lock.release();
 
     const ipl = ke.ipl.raise(.Dispatch);
-    var mask: ke.CpuMask = .init(false);
+    var mask = ke.CpuMask.init(false);
 
     for (0..ke.ncpus) |i| {
         if (i != ke.cpu.current()) {
@@ -110,6 +112,6 @@ fn activation(_: *rtl.HandoffList) void {
 }
 
 pub fn init() void {
-    ke.shootdown.shootdowns.* = .init(activation);
+    ke.shootdown.shootdowns.* = rtl.HandoffList.init(activation);
     work_item.init(.High, reap_pages, null);
 }

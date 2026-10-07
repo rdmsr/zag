@@ -1,3 +1,5 @@
+//! CPU-local data.
+
 const config = @import("config");
 const rtl = @import("rtl");
 const r = @import("root");

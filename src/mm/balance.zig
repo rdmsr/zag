@@ -35,10 +35,10 @@ fn reap_stacks() void {
         // Reap all the excess stacks.
         var entry: ?*ke.Stack = lst;
 
-        while (entry != null) {
-            const next = entry.?.next;
+        while (entry) |e| {
+            const next = e.next;
             mm.heap.free(
-                (@intFromPtr(entry) + @sizeOf(ke.Stack)) -
+                (@intFromPtr(e) + @sizeOf(ke.Stack)) -
                     ps.thread.kernel_thread_stack_size,
                 ps.thread.kernel_thread_stack_size,
             );
@@ -86,7 +86,6 @@ fn balance_manager(_: ?*anyopaque) void {
 
             if (stack_reap_time == 0) {
                 stack_reap_time = stack_reap_interval;
-
                 reap_stacks();
             }
         }

@@ -1,17 +1,19 @@
 const r = @import("root");
-const std = @import("std");
 const rtl = @import("rtl");
 const pl = r.pl;
 const mm = r.mm;
 const mmp = mm.private;
 const ke = r.ke;
 
+const std = @import("std");
+const assert = std.debug.assert;
 const log = std.log.scoped(.@"mm/phys");
 
 // How aggressive is memory reclamation.
 const threshold_scale_factor = 10;
 
-/// Threshold at which most memory allocations block, only high priority allocations are allowed.
+/// Threshold at which most memory allocations block, only high priority
+/// allocations are allowed.
 pub var min_memory_threshold: usize = 0;
 /// Threshold at which reclamation starts.
 pub var low_memory_threshold: usize = 0;
@@ -29,14 +31,14 @@ var free_page_event: ke.Event = undefined;
 
 var free_pages: usize = 0;
 
-pub var usable_memory: std.atomic.Value(usize) = .init(0);
+pub var usable_memory = std.atomic.Value(usize).init(0);
 
 // Wait for pages to be available.
 // List lock is held.
 fn wait_for_pages(old_ipl: ke.Ipl) void {
     var ipl = old_ipl;
 
-    std.debug.assert(@intFromEnum(ipl) < @intFromEnum(ke.Ipl.Dispatch));
+    assert(@backingInt(ipl) < @backingInt(ke.Ipl.Dispatch));
 
     if (free_pages >= min_memory_threshold) {
         return;
@@ -65,7 +67,7 @@ pub fn alloc() r.PAddr {
 
     wait_for_pages(ipl);
 
-    std.debug.assert(!free_list.is_empty());
+    assert(!free_list.is_empty());
 
     const head = free_list.first();
     head.remove();
@@ -94,8 +96,8 @@ pub fn alloc_opts(opts: struct { policy: mm.WaitPolicy }) ?r.PAddr {
         wait_for_pages(ipl);
     }
 
-    std.debug.assert(free_pages > 0);
-    std.debug.assert(!free_list.is_empty());
+    assert(free_pages > 0);
+    assert(!free_list.is_empty());
 
     const head = free_list.first();
     head.remove();

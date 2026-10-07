@@ -1,3 +1,5 @@
+//! Kernel panic handling code.
+
 const std = @import("std");
 const config = @import("config");
 const r = @import("root");
@@ -43,7 +45,10 @@ fn get_symbol_name(addr: usize) ?Symbol {
         const sym = symbols[left - 1];
 
         if (sym.addr <= addr) {
-            return .{ .name = sym.name_ptr[0..sym.name_len], .offset = addr - sym.addr };
+            return .{
+                .name = sym.name_ptr[0..sym.name_len],
+                .offset = addr - sym.addr,
+            };
         }
     }
 
@@ -57,7 +62,11 @@ fn is_kernel_text(addr: usize) bool {
 }
 
 fn walk_stack_frame(base: usize) void {
-    var frame: ?*StackFrame = @ptrFromInt(if (config.arch == .riscv64) base - 16 else base);
+    var frame: ?*StackFrame = @ptrFromInt(if (config.arch == .riscv64)
+        base - 16
+    else
+        base);
+
     var depth: usize = 0;
     while (frame) |f| : (depth += 1) {
         if (depth > 64) break;
@@ -65,16 +74,27 @@ fn walk_stack_frame(base: usize) void {
         if (!is_kernel_text(ret_addr)) {
             break;
         }
-        const sym = get_symbol_name(ret_addr) orelse Symbol{ .name = "???", .offset = 0 };
-        std.log.err("  #{d} {s}+0x{x} - 0x{x}", .{ depth, sym.name, sym.offset, ret_addr });
-        frame = if (config.arch == .riscv64 and f.prev != null)
-            @ptrFromInt(@intFromPtr(f.prev.?) - 16)
-        else
-            f.prev;
+        const sym = get_symbol_name(ret_addr) orelse
+            Symbol{ .name = "???", .offset = 0 };
+
+        std.log.err("  #{d} {s}+0x{x} - 0x{x}", .{
+            depth,
+            sym.name,
+            sym.offset,
+            ret_addr,
+        });
+
+        if (config.arch == .riscv64) {
+            if (f.prev) |fr| {
+                frame = @ptrFromInt(@intFromPtr(fr) - 16);
+            }
+        } else {
+            frame = f.prev;
+        }
     }
 }
 
-var crash_count: std.atomic.Value(u8) = .init(0);
+var crash_count = std.atomic.Value(u8).init(0);
 
 pub fn panic_with_frame(
     msg: []const u8,

@@ -1,3 +1,5 @@
+//! Memory manager initialization.
+
 const r = @import("root");
 const pl = r.pl;
 const mm = r.mm;

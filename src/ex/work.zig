@@ -6,8 +6,8 @@
 //! - High
 //! - Normal
 //! - Low
-//! High and Normal worker pools are per-cpu, and there is one global worker pool
-//! for low-priority work.
+//! High and Normal worker pools are per-cpu,
+//! and there is one global worker pool for low-priority work.
 //!
 //! Each CPU worker pool comprises of at least 2 threads, and the low pool
 //! has 4 threads by default. An additional thread will get spawned by the
@@ -69,7 +69,7 @@ pub const WorkItem = struct {
             .func = func,
             .arg = arg,
             .link = undefined,
-            .enqueued = .init(false),
+            .enqueued = std.atomic.Value(bool).init(false),
             .priority = priority,
         };
     }
@@ -89,7 +89,7 @@ pub const DelayedWorkItem = struct {
     ) void {
         self.* = .{
             .item = undefined,
-            .dpc = .init(work_dpc),
+            .dpc = ke.Dpc.init(work_dpc),
             .timer = undefined,
         };
 
@@ -117,14 +117,17 @@ const Pool = struct {
 
         const how_many = min_threads_for_prio(prio);
 
-        self.total_threads = .init(how_many);
+        self.total_threads = std.atomic.Value(usize).init(how_many);
 
         for (0..how_many) |_| {
-            const ctx: Context = .init(self, 0);
+            const ctx = Context.init(self, 0);
 
             var td = try ps.thread.create_kernel(
                 WorkItem.Priority.to_sched_prio(self.prio),
-                .{ .func = work_loop, .arg = @ptrFromInt(ctx.value) },
+                .{
+                    .func = work_loop,
+                    .arg = @ptrFromInt(ctx.value),
+                },
                 true,
             );
 
@@ -139,7 +142,7 @@ const Pool = struct {
         }
     }
 
-    /// Return whether or not a new worker thread should be spawned on this pool.
+    /// Return whether or not a new worker thread should be added to this pool.
     fn should_grow(self: *Pool) bool {
         // NOTE: lockless racy check whether or not the queue is empty
         // and its active count.
@@ -166,20 +169,23 @@ const Pool = struct {
     }
 
     /// Spawn a dynamic worker thread on this pool.
-    fn grow(self: *Pool, cpu: ?u32) !void {
+    fn grow(self: *Pool, cpu: ?u32) void {
         if (self.total_threads.load(.monotonic) >=
             max_threads_for_prio(self.prio))
             return;
 
         _ = self.total_threads.fetchAdd(1, .monotonic);
 
-        const ctx: Context = .init(self, 1);
+        const ctx = Context.init(self, 1);
 
-        var td = try ps.thread.create_kernel(
+        var td = ps.thread.create_kernel(
             WorkItem.Priority.to_sched_prio(self.prio),
             .{ .func = work_loop, .arg = @ptrFromInt(ctx.value) },
             true,
-        );
+        ) catch {
+            // This will wait for free memory.
+            unreachable;
+        };
 
         if (cpu != null) {
             td.kern.last_cpu = cpu;
@@ -205,15 +211,15 @@ var low: Pool = undefined;
 
 fn work_loop(p: ?*anyopaque) void {
     const ctx: Context = .{ .value = @intFromPtr(p) };
-    const dynamic = ctx.get_tag() == 1;
+    const dynamic = ctx.tag() == 1;
 
     while (true) {
         const timeout: ?r.Nanoseconds = if (dynamic)
             .from(r.Seconds.init(5))
         else
             null;
-        const item = ctx.get_ptr().queue.remove(timeout) catch {
-            _ = ctx.get_ptr().total_threads.fetchSub(1, .monotonic);
+        const item = ctx.ptr().queue.remove(timeout) catch {
+            _ = ctx.ptr().total_threads.fetchSub(1, .monotonic);
 
             // We haven't had work in a while, exit.
             ps.thread.exit();
@@ -244,7 +250,12 @@ pub fn enqueue(item: *WorkItem) void {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
 
-    if (item.enqueued.cmpxchgStrong(false, true, .acquire, .monotonic) != null) {
+    if (item.enqueued.cmpxchgStrong(
+        false,
+        true,
+        .acquire,
+        .monotonic,
+    ) != null) {
         return;
     }
 
@@ -286,16 +297,16 @@ fn pool_manager(_: ?*anyopaque) void {
             const c = percpu.remote(cpu);
 
             if (c.high.should_grow()) {
-                _ = c.high.grow(cpu) catch {};
+                _ = c.high.grow(cpu);
             }
 
             if (c.normal.should_grow()) {
-                _ = c.normal.grow(cpu) catch {};
+                _ = c.normal.grow(cpu);
             }
         }
 
         if (low.should_grow()) {
-            _ = low.grow(null) catch {};
+            _ = low.grow(null);
         }
     }
 }

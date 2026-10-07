@@ -28,8 +28,24 @@ pub const Config = struct {
 };
 
 pub fn parseConfig(b: *std.Build) !Config {
+    const gpa = b.allocator;
+    var arena_allocator: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_allocator.deinit();
+    const arena = arena_allocator.allocator();
+
+    var diag: std.zon.parse.Diagnostics = undefined;
+
     const file = try std.Io.Dir.cwd().readFileAllocOptions(b.graph.io, ".config.zig.zon", b.allocator, std.Io.Limit.unlimited, .@"1", 0);
-    return std.zon.parse.fromSlice(Config, b.allocator, file, null, .{ .ignore_unknown_fields = true });
+    return std.zon.parse.fromSlice(
+        Config,
+        .{
+            .gpa = gpa,
+            .source = file,
+            .arena = arena,
+            .diagnostics = &diag,
+            .ignore_unknown_fields = true,
+        },
+    );
 }
 
 pub fn getPlatform(config: Config) !Platform {

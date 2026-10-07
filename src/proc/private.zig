@@ -15,7 +15,7 @@ fn turnstile_ctor(ts: *kep.turnstile.Turnstile) void {
         .queues = undefined,
         .waiters = 0,
         .owners = .none,
-        .lock = .init("turnstile"),
+        .lock = ke.SpinLock.init("turnstile"),
     };
     ts.reset();
 }

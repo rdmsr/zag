@@ -34,8 +34,9 @@ const ContiguousSource = struct {
     }
 };
 
-/// A mapping source that allocates physical pages on demand. Each call to `next`
-/// returns a single page, so this is intended to be consumed by `map_from` in a loop until the entire range is mapped.
+/// A mapping source that allocates physical pages on demand. Each call to
+/// `next` returns a single page, so this is intended to be consumed by
+/// `map_from` in a loop until the entire range is mapped.
 const AllocatingSource = struct {
     flags: mem.MapFlags,
 
@@ -62,8 +63,6 @@ fn index_for_level(va: usize, level: usize) usize {
 }
 
 pub const PMap = struct {
-    const Self = @This();
-
     const num_levels = r.arch.levels.len;
     const entries_per_table = 512;
     const index_mask = entries_per_table - 1;
@@ -78,7 +77,7 @@ pub const PMap = struct {
         return is_leaf_level(level) and r.arch.is_leaf_level_enabled(level);
     }
 
-    fn cursor(self: *Self, va: usize) Cursor {
+    fn cursor(self: *PMap, va: usize) Cursor {
         var c = Cursor{
             .pmap = self,
             .va = va,
@@ -90,11 +89,11 @@ pub const PMap = struct {
         return c;
     }
 
-    pub fn activate(self: *Self) void {
+    pub fn activate(self: *PMap) void {
         r.arch.activate(self.root_pa);
     }
 
-    pub fn map_from(self: *Self, va: usize, size: usize, source: anytype) void {
+    pub fn map_from(self: *PMap, va: usize, size: usize, source: anytype) void {
         var c = self.cursor(va);
         var remain = size;
 
@@ -105,8 +104,15 @@ pub const PMap = struct {
         }
     }
 
-    /// Map a contiguous virtual address range to a contiguous physical address range.
-    pub fn map_contiguous_range(self: *Self, va: usize, pa: usize, size: usize, flags: r.mem.MapFlags) void {
+    /// Map a contiguous virtual address range to a contiguous physical address
+    /// range.
+    pub fn map_contiguous_range(
+        self: *PMap,
+        va: usize,
+        pa: usize,
+        size: usize,
+        flags: r.mem.MapFlags,
+    ) void {
         const src = ContiguousSource{
             .flags = flags,
             .size = size,
@@ -118,12 +124,22 @@ pub const PMap = struct {
     }
 
     /// Map a single virtual page to a physical page.
-    pub fn map_page(self: *Self, va: usize, pa: usize, flags: r.mem.MapFlags) void {
+    pub fn map_page(
+        self: *PMap,
+        va: usize,
+        pa: usize,
+        flags: r.mem.MapFlags,
+    ) void {
         self.map_contiguous_range(va, pa, r.page_size, flags);
     }
 
     /// Map a virtual address range to physical addresses
-    pub fn map_range_allocating(self: *Self, va: usize, size: usize, flags: mem.MapFlags) void {
+    pub fn map_range_allocating(
+        self: *PMap,
+        va: usize,
+        size: usize,
+        flags: mem.MapFlags,
+    ) void {
         const src = AllocatingSource{
             .flags = flags,
         };
@@ -132,7 +148,7 @@ pub const PMap = struct {
     }
 
     pub const Cursor = struct {
-        pmap: *Self,
+        pmap: *PMap,
         va: usize,
         /// Cached pointers to each level's page table, filled as the cursor
         /// descends. Only indices in `[0, top_level]` are valid.
@@ -142,7 +158,11 @@ pub const PMap = struct {
         /// Reset upward in `advance` when the VA crosses a level boundary.
         top_level: usize,
 
-        fn walk_down(self: *Cursor, target_level: usize, allocate: bool) error{PageNotMapped}!void {
+        fn walk_down(
+            self: *Cursor,
+            target_level: usize,
+            allocate: bool,
+        ) error{PageNotMapped}!void {
             var current_level = self.top_level;
 
             while (current_level > target_level) {
@@ -156,7 +176,9 @@ pub const PMap = struct {
 
                     const new_table_pa = mem.alloc_page();
 
-                    const table_ptr: [*]r.arch.Pte = @ptrFromInt(r.mem.p2v(new_table_pa));
+                    const table_ptr: [*]r.arch.Pte = @ptrFromInt(
+                        r.mem.p2v(new_table_pa),
+                    );
                     @memset(table_ptr[0..entries_per_table], r.arch.Pte.zero());
 
                     pte = r.arch.make_table_pte(new_table_pa);
@@ -193,14 +215,23 @@ pub const PMap = struct {
             @panic("no leaf level can map current alignment/size");
         }
 
-        pub fn map_range(self: *Cursor, pa: usize, size: usize, flags: mem.MapFlags) void {
+        pub fn map_range(
+            self: *Cursor,
+            pa: usize,
+            size: usize,
+            flags: mem.MapFlags,
+        ) void {
             var remain = size;
             var current_pa = pa;
 
             while (remain > 0) {
-                const target_level = self.choose_target_level(current_pa, remain);
+                const target_level = self.choose_target_level(
+                    current_pa,
+                    remain,
+                );
 
-                self.walk_down(target_level, true) catch @panic("walk_down failed during map_range");
+                self.walk_down(target_level, true) catch
+                    @panic("walk_down failed during map_range");
 
                 const table = self.tables[target_level];
                 table[index_for_level(self.va, target_level)] =

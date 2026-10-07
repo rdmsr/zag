@@ -31,7 +31,7 @@ const PerCpu = struct {
 
 const percpu = ke.CpuLocal(PerCpu, undefined);
 
-var frozen_cpus: std.atomic.Value(u32) = .init(0);
+var frozen_cpus = std.atomic.Value(u32).init(0);
 
 /// Call a function on another CPU.
 /// The function will be executed synchronously, i.e this will block until
@@ -69,13 +69,16 @@ pub fn unicast(
 /// The function will be executed synchronously, i.e this will block until
 /// the function finishes running. The callback is called with the sender cpu
 /// and provided argument as arguments.
-pub fn broadcast(func: *const fn (u32, ?*anyopaque) void, arg: ?*anyopaque) void {
+pub fn broadcast(
+    func: *const fn (u32, ?*anyopaque) void,
+    arg: ?*anyopaque,
+) void {
     const ipl = ke.ipl.raise(.Dispatch);
     const curcpu = percpu.local();
 
     curcpu.func = func;
     curcpu.arg = arg;
-    curcpu.counter = .init(@truncate(ke.ncpus - 1));
+    curcpu.counter = std.atomic.Value(u16).init(@truncate(ke.ncpus - 1));
 
     for (0..ke.ncpus) |i| {
         if (i == ke.cpu.current()) continue;

@@ -23,7 +23,7 @@ const start_stack = ke.ExportedCpuLocal(usize, 0, "ap_start_stack");
 
 pub const start_thread = ke.CpuLocal(*ke.Thread, undefined);
 
-var aps_booted: std.atomic.Value(usize) = .init(0);
+var aps_booted = std.atomic.Value(usize).init(0);
 
 const ApData = extern struct {
     entry: usize align(1),
@@ -77,15 +77,18 @@ pub fn init() linksection(r.init) void {
         .Unknown => false,
     };
 
-    const init_delay: r.Nanoseconds = .init(
+    const init_delay = r.Nanoseconds.init(
         if (skip_delay) 0 else std.time.ns_per_ms * 10,
     );
-    const sipi_delay: r.Nanoseconds = .init(
+    const sipi_delay = r.Nanoseconds.init(
         if (skip_delay) std.time.ns_per_us * 10 else std.time.ns_per_us * 300,
     );
 
     const page: [*]u8 = @ptrFromInt(mm.p2v(0x8000));
-    @memcpy(page[0..trampoline_size], @as([*]u8, @ptrFromInt(trampoline_start)));
+    @memcpy(
+        page[0..trampoline_size],
+        @as([*]u8, @ptrFromInt(trampoline_start)),
+    );
 
     const data_offset = @intFromPtr(&AP_TRAMPOLINE_DATA) - trampoline_start;
     const data_phys: *ApData = @ptrFromInt(mm.p2v(0x8000 + data_offset));
@@ -97,7 +100,8 @@ pub fn init() linksection(r.init) void {
 
     // Allocate per-cpu offsets for CPU-local data.
     kep.impl.cpu_offsets = @ptrCast(offsets);
-    const percpu_size = @intFromPtr(&__percpu_end) - @intFromPtr(&__percpu_start);
+    const percpu_size = @intFromPtr(&__percpu_end) -
+        @intFromPtr(&__percpu_start);
 
     log.info("per-CPU data size: {} bytes", .{percpu_size});
 

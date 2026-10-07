@@ -1,3 +1,5 @@
+//! Public executive definitions.
+
 pub const private = @import("private.zig");
 
 const p = private;

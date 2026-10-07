@@ -1,15 +1,15 @@
-//! Lock-free singly linked list with an activation callback when items are first inserted.
-//! This is meant for use where there is a set of objects being worked upon in an
-//! asynchronous context.
+//! Lock-free singly linked list with an activation callback invoked when items
+//! are first inserted.
+//! This is meant for use where there is a set of objects being worked upon in
+//! an asynchronous context.
 //! Data structure generalized from the NT kernel reaper lists, and inspired by
-//! MINTIA's custody list (https://github.com/xrarch/mintia2/blob/main/OS/Executive/Ke/KeCustodyList.jkl)
+//! MINTIA's custody list (https://github.com/xrarch/mintia2).
 
 const std = @import("std");
 
 pub const HandoffList = struct {
-    const ActivationFn = *const fn (*Self) void;
-
-    const Self = @This();
+    const ActivationFn = *const fn (*HandoffList) void;
+    const Callback = *const fn (obj: *anyopaque, ctx: ?*anyopaque) void;
 
     /// Non-null value indicating processing is in progress.
     const processing_tag: *anyopaque = @ptrFromInt(1);
@@ -17,21 +17,26 @@ pub const HandoffList = struct {
     activation: ActivationFn,
     head: std.atomic.Value(?*anyopaque),
 
-    pub fn init(activation: ActivationFn) Self {
+    pub fn init(activation: ActivationFn) HandoffList {
         return .{
             .activation = activation,
-            .head = .init(null),
+            .head = std.atomic.Value(?*anyopaque).init(null),
         };
     }
 
     /// Insert an element at the head of the list.
     /// If the list was previously empty, the activation routine will be called.
-    pub fn insert(self: *Self, link: *?*anyopaque) void {
+    pub fn insert(self: *HandoffList, link: *?*anyopaque) void {
         var head = self.head.load(.monotonic);
 
         while (true) {
             link.* = head;
-            head = self.head.cmpxchgWeak(head, @ptrCast(link), .release, .monotonic) orelse break;
+            head = self.head.cmpxchgWeak(
+                head,
+                @ptrCast(link),
+                .release,
+                .monotonic,
+            ) orelse break;
         }
 
         if (head == null) {
@@ -43,17 +48,27 @@ pub const HandoffList = struct {
     /// Pop the entire list and process it.
     /// The callback takes the object pointer as its first parameter
     /// and ctx as its second.
-    pub fn process(self: *Self, callback: *const fn (*anyopaque, ?*anyopaque) void, ctx: ?*anyopaque) void {
+    pub fn process(
+        self: *HandoffList,
+        callback: Callback,
+        ctx: ?*anyopaque,
+    ) void {
         while (true) {
             const head = self.head.swap(processing_tag, .acquire);
 
-            // Someone else is already processing it (or we set it previously and got nothing).
+            // Someone else is already processing it, or we set it previously
+            // and got nothing.
             if (head == processing_tag) return;
 
-            // List is empty; this shouldn't happen, but it'll just return on the next
-            // iteration if it is truly empty.
+            // List is empty; this shouldn't happen, but it'll just return
+            // on the next iteration if it is truly empty.
             if (head == null) {
-                _ = self.head.cmpxchgStrong(processing_tag, null, .release, .monotonic) orelse return;
+                _ = self.head.cmpxchgStrong(
+                    processing_tag,
+                    null,
+                    .release,
+                    .monotonic,
+                ) orelse return;
                 continue;
             }
 
@@ -68,7 +83,12 @@ pub const HandoffList = struct {
             }
 
             // If the cmpxchg fails, a new item was added; also process it.
-            _ = self.head.cmpxchgStrong(processing_tag, null, .release, .monotonic) orelse return;
+            _ = self.head.cmpxchgStrong(
+                processing_tag,
+                null,
+                .release,
+                .monotonic,
+            ) orelse return;
         }
     }
 };
@@ -99,7 +119,7 @@ fn test_activation(list: *HandoffList) void {
 
 fn record_node(node_ptr: *anyopaque, ctx_ptr: ?*anyopaque) void {
     const node: *TestNode = @ptrCast(@alignCast(node_ptr));
-    const ctx: *TestContext = @ptrCast(@alignCast(ctx_ptr.?));
+    const ctx: *TestContext = @ptrCast(@alignCast(ctx_ptr orelse unreachable));
 
     ctx.processed[ctx.processed_len] = node.value;
     ctx.processed_len += 1;
@@ -107,7 +127,7 @@ fn record_node(node_ptr: *anyopaque, ctx_ptr: ?*anyopaque) void {
 
 fn record_node_and_insert(node_ptr: *anyopaque, ctx_ptr: ?*anyopaque) void {
     const node: *TestNode = @ptrCast(@alignCast(node_ptr));
-    const ctx: *TestContext = @ptrCast(@alignCast(ctx_ptr.?));
+    const ctx: *TestContext = @ptrCast(@alignCast(ctx_ptr orelse unreachable));
 
     ctx.processed[ctx.processed_len] = node.value;
     ctx.processed_len += 1;

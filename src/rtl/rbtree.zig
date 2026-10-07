@@ -1,5 +1,6 @@
 //! Red-Black Tree implementation mostly based on pseudocode from CLRS.
-//! Refer to the book for details on the algorithms and properties of red-black trees.
+//! Refer to the book for details on the algorithms and properties of red-black
+//! trees.
 const bst = @import("bst.zig");
 const std = @import("std");
 
@@ -7,22 +8,24 @@ const black: u2 = 0;
 const red: u2 = 1;
 
 fn get_color(node: *bst.Node) u2 {
-    return node.parent.get_tag();
+    return node.parent.tag();
 }
 
 fn set_color(node: *bst.Node, color: u2) void {
     node.parent.set_tag(color);
 }
 
-pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order) type {
+pub fn RBTree(
+    comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order,
+) type {
     return struct {
         tree: bst.BST(cmp),
 
-        const Self = @This();
+        const Tree = @This();
 
-        fn rotate_right(self: *Self, node: *bst.Node) void {
+        fn rotate_right(self: *Tree, node: *bst.Node) void {
             var y = node.left;
-            const parent = node.parent.get_ptr();
+            const parent = node.parent.ptr();
 
             node.left = y.right;
 
@@ -44,9 +47,9 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
             node.parent.set_ptr(y);
         }
 
-        fn rotate_left(self: *Self, node: *bst.Node) void {
+        fn rotate_left(self: *Tree, node: *bst.Node) void {
             var y = node.right;
-            const parent = node.parent.get_ptr();
+            const parent = node.parent.ptr();
 
             node.right = y.left;
 
@@ -68,16 +71,19 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
             node.parent.set_ptr(y);
         }
 
-        pub fn init() Self {
-            return Self{
+        pub fn init() Tree {
+            return Tree{
                 .tree = bst.BST(cmp).init(),
             };
         }
 
         /// Insert the node `elem` into the tree.
-        pub fn insert(self: *Self, elem: *bst.Node) !void {
+        pub fn insert(self: *Tree, elem: *bst.Node) !void {
             if (self.tree.is_empty()) {
-                self.tree.insert(elem) catch unreachable;
+                self.tree.insert(elem) catch {
+                    // This can't happen as the tree is empty.
+                    unreachable;
+                };
                 set_color(elem, black);
                 return;
             }
@@ -90,11 +96,11 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
             set_color(elem, red);
 
             var node = elem;
-            var parent = node.parent.get_ptr();
+            var parent = node.parent.ptr();
 
             // The tree might be unbalanced, rebalance it.
             while (get_color(parent) == red) {
-                var grandparent = parent.parent.get_ptr();
+                var grandparent = parent.parent.ptr();
 
                 // The parent of the node is a left child
                 if (parent == grandparent.left) {
@@ -108,19 +114,19 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                         set_color(uncle, black);
                         set_color(grandparent, red);
                         node = grandparent;
-                        parent = node.parent.get_ptr();
+                        parent = node.parent.ptr();
                     } else {
                         // Otherwise, if the node is a right child, rotate left
                         // to make it a left child.
                         if (node == parent.right) {
                             node = parent;
                             self.rotate_left(node);
-                            parent = node.parent.get_ptr();
-                            grandparent = parent.parent.get_ptr();
+                            parent = node.parent.ptr();
+                            grandparent = parent.parent.ptr();
                         }
 
-                        // Then, recolor the parent and grandparent and rotate right
-                        // to maintain the properties of the red-black tree.
+                        // Then, recolor the parent and grandparent and rotate
+                        // right to maintain the invariants.
                         set_color(parent, black);
                         set_color(grandparent, red);
                         self.rotate_right(grandparent);
@@ -134,13 +140,13 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                         set_color(uncle, black);
                         set_color(grandparent, red);
                         node = grandparent;
-                        parent = node.parent.get_ptr();
+                        parent = node.parent.ptr();
                     } else {
                         if (node == parent.left) {
                             node = parent;
                             self.rotate_right(node);
-                            parent = node.parent.get_ptr();
-                            grandparent = parent.parent.get_ptr();
+                            parent = node.parent.ptr();
+                            grandparent = parent.parent.ptr();
                         }
 
                         set_color(parent, black);
@@ -148,7 +154,7 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                         self.rotate_left(grandparent);
                     }
 
-                    parent = node.parent.get_ptr();
+                    parent = node.parent.ptr();
                 }
             }
 
@@ -156,7 +162,7 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
         }
 
         /// Delete the node `elem` from the tree.
-        pub fn delete(self: *Self, elem: *bst.Node) void {
+        pub fn delete(self: *Tree, elem: *bst.Node) void {
             var node = elem;
             var child = &bst.nil;
             var orig_color = get_color(node);
@@ -175,7 +181,7 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                 orig_color = get_color(node);
                 child = node.right;
 
-                if (node.parent.get_ptr() == elem) {
+                if (node.parent.ptr() == elem) {
                     child.parent.set_ptr(node);
                 } else {
                     self.tree.transplant(node, node.right);
@@ -198,7 +204,7 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
 
             // Fix the tree
             while (node != self.tree.root and get_color(node) == black) {
-                var parent = node.parent.get_ptr();
+                var parent = node.parent.ptr();
 
                 if (node == parent.left) {
                     var sibling = parent.right;
@@ -208,11 +214,13 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                         set_color(parent, red);
                         self.rotate_left(parent);
 
-                        parent = node.parent.get_ptr();
+                        parent = node.parent.ptr();
                         sibling = parent.right;
                     }
 
-                    if (get_color(sibling.left) == black and get_color(sibling.right) == black) {
+                    if (get_color(sibling.left) == black and
+                        get_color(sibling.right) == black)
+                    {
                         set_color(sibling, red);
                         node = parent;
                     } else {
@@ -220,7 +228,7 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                             set_color(sibling.left, black);
                             set_color(sibling, red);
                             self.rotate_right(sibling);
-                            parent = node.parent.get_ptr();
+                            parent = node.parent.ptr();
                             sibling = parent.right;
                         }
 
@@ -238,11 +246,13 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                         set_color(parent, red);
                         self.rotate_right(parent);
 
-                        parent = node.parent.get_ptr();
+                        parent = node.parent.ptr();
                         sibling = parent.left;
                     }
 
-                    if (get_color(sibling.left) == black and get_color(sibling.right) == black) {
+                    if (get_color(sibling.left) == black and
+                        get_color(sibling.right) == black)
+                    {
                         set_color(sibling, red);
                         node = parent;
                     } else {
@@ -250,7 +260,7 @@ pub fn RBTree(comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order
                             set_color(sibling.right, black);
                             set_color(sibling, red);
                             self.rotate_left(sibling);
-                            parent = node.parent.get_ptr();
+                            parent = node.parent.ptr();
                             sibling = parent.left;
                         }
 

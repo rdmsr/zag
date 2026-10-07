@@ -43,9 +43,6 @@ var state = rtl.SeqLock(State).init(.{
 });
 
 // Convert a TimeCounter's count to nanoseconds.
-// For 64-bit counters (`mask == maxInt(u64)`), uses a fast multiply-shift path
-// via precomputed `p` and `n` to avoid 128-bit division at runtime.
-// Falls back to a division-based conversion for narrower counters.
 fn ticks_to_ns(tc: *TimeCounter, count: u64) u64 {
     if (tc.p != 0) {
         const val: u128 = @as(u128, @intCast(count)) * tc.n;
@@ -132,8 +129,8 @@ pub fn update_overflow() void {
     const cur_count = tc.read_count() & tc.mask;
 
     if (s.initial_count > cur_count) {
-        // Counter has wrapped, use wrapping arithmetic to figure out by how much,
-        // then fold it into the offset and reset `initial_count`.
+        // Counter has wrapped, use wrapping arithmetic to figure out by how
+        // much, then fold it into the offset and reset `initial_count`.
         const overflowed_by = (cur_count -% s.initial_count) & tc.mask;
         state.store(.{
             .initial_count = cur_count,

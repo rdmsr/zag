@@ -10,9 +10,11 @@ const pl = r.pl;
 const std = @import("std");
 const assert = std.debug.assert;
 
+const TimerHeap = rtl.PairingHeap(.Min, kep.timer.cmp_timer);
+
 const PerCpu = struct {
     /// Heap of pending timers on this CPU.
-    timers: rtl.PairingHeap(.min, kep.timer.cmp_timer),
+    timers: TimerHeap,
     /// Lock over the timer heap.
     lock: ke.SpinLock,
     dpc: ke.Dpc,
@@ -44,8 +46,8 @@ pub const Timer = struct {
     pub fn init(self: *Timer) void {
         self.* = .{
             .hdr = undefined,
-            .state = .init(.Stopped),
-            .deadline = .init(0),
+            .state = std.atomic.Value(State).init(.Stopped),
+            .deadline = r.Nanoseconds.init(0),
             .dpc = null,
             .node = .{},
             .cpu = null,
@@ -56,7 +58,7 @@ pub const Timer = struct {
 };
 
 const percpu = ke.CpuLocal(PerCpu, .{
-    .timers = .init(),
+    .timers = TimerHeap.init(),
     .lock = undefined,
     .dpc = .init(handle_expiry),
 });
@@ -127,7 +129,7 @@ pub fn cancel(timer: *Timer) void {
                 }
             },
             .Pending => {
-                const cpu = timer.cpu.?;
+                const cpu = timer.cpu orelse unreachable;
                 cpu.lock.acquire_no_ipl();
 
                 // Re-check under the lock.
@@ -170,7 +172,7 @@ pub fn clock() void {
 
 // Called in a DPC when a timer has expired.
 fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
-    std.debug.assert(kep.ipl.current() == .Dispatch);
+    assert(kep.ipl.current() == .Dispatch);
     const cpu = percpu.local();
 
     while (true) {

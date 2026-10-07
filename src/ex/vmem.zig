@@ -1,12 +1,16 @@
 //! Generic resource allocator, based on the vmem allocator described in:
 //! Jeff Bonwick and Jonathan Adams'
-//! "Magazines and Vmem: Extending the Slab Allocator to Many CPUs and Arbitrary Resources"
-const std = @import("std");
+//! "Magazines and Vmem:  Extending the Slab Allocator to Many CPUs and
+//! Arbitrary Resources"
+
 const rtl = @import("rtl");
 const r = @import("root");
 const mm = r.mm;
 const mmp = mm.private;
 const ke = r.ke;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 pub const Policy = enum {
     /// Use the smallest free segment that can satisfy the request.
@@ -37,9 +41,9 @@ const Segment = struct {
     };
 
     const Linkage = union {
-        /// Linkage into a freelist, valid when type == .Free
+        /// Linkage into a freelist, valid when .Free
         free_link: rtl.List.Entry,
-        /// Linkage into the allocated segments tree, valid when type == .Allocated
+        /// Linkage into the allocated segments tree, valid when .Allocated
         tree_link: rtl.bst.Node,
     };
     /// The type of the segment.
@@ -80,6 +84,8 @@ const max_qcaches = 16;
 
 var seg_zone: mmp.zone.TypedZone(Segment) = undefined;
 
+const SegmentTree = rtl.RBTree(Segment.cmp);
+
 pub const Arena = struct {
     /// Name of the arena, for debugging purposes.
     name: []const u8,
@@ -90,7 +96,7 @@ pub const Arena = struct {
     /// Power of two freelists for free segments, indexed by log2(size).
     freelists: [freelist_count]rtl.List,
     /// Tree for allocated segments, indexed by base address.
-    allocated_segments: rtl.RBTree(Segment.cmp),
+    allocated_segments: SegmentTree,
     /// Last segment allocated from, for NextFit policy.
     rotor: ?*Segment,
     /// Maximum size (**in bytes**) to do quantum caching on.
@@ -105,14 +111,12 @@ pub const Arena = struct {
 
     lock: ke.Mutex,
 
-    const Self = @This();
-
     const Span = struct { addr: usize, size: usize };
 
     const Source = struct {
-        arena: *Self,
-        import: *const fn (*Self, usize, opts: AllocOptions) mm.Error!usize,
-        release: *const fn (*Self, addr: usize, size: usize) void,
+        arena: *Arena,
+        import: *const fn (*Arena, usize, opts: AllocOptions) mm.Error!usize,
+        release: *const fn (*Arena, addr: usize, size: usize) void,
     };
 
     const InitOptions = struct {
@@ -124,7 +128,7 @@ pub const Arena = struct {
 
     /// Initialize the area for use.
     pub fn init(
-        self: *Self,
+        self: *Arena,
         name: []const u8,
         opts: InitOptions,
     ) !void {
@@ -142,7 +146,11 @@ pub const Arena = struct {
         self.qshift = std.math.log2_int(usize, self.quantum);
 
         if (opts.span == null) {
-            rtl.assert(opts.source != null, "Arena init: null span without source", .{});
+            rtl.assert(
+                opts.source != null,
+                "Arena init: null span without source",
+                .{},
+            );
         }
 
         self.list.init();
@@ -170,7 +178,7 @@ pub const Arena = struct {
 
         self.lock = ke.Mutex.init("arena");
 
-        self.allocated_segments = .init();
+        self.allocated_segments = SegmentTree.init();
         self.rotor = null;
 
         // Add initial span.
@@ -179,7 +187,7 @@ pub const Arena = struct {
         }
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *Arena) void {
         // Free all segments in the segment list
         var entry = self.list.first();
         while (entry != &self.list.head) {
@@ -191,12 +199,12 @@ pub const Arena = struct {
     }
 
     /// Add a span of memory to the arena.
-    pub fn add(self: *Self, span: Span) !void {
+    pub fn add(self: *Arena, span: Span) !void {
         return self.add_opts(span, .Span);
     }
 
     /// Add a span of memory to the arena.
-    fn add_opts(self: *Self, span: Span, kind: Segment.Type) mm.Error!void {
+    fn add_opts(self: *Arena, span: Span, kind: Segment.Type) mm.Error!void {
         const new_free_seg = try self.alloc_segment();
 
         new_free_seg.* = Segment{
@@ -226,12 +234,15 @@ pub const Arena = struct {
     /// Allocate a segment of memory from the arena.
     /// Options:
     /// - policy: allocation policy to use. Default is .InstantFit.
-    /// - alignment: if specified, the returned segment will be aligned to this boundary.
-    /// - min: if specified, the returned segment will be at least on this address.
-    /// - max: if specified, the returned segment will be at most on this address.
+    /// - alignment: if specified, the returned segment will be aligned to
+    /// this boundary.
+    /// - min: if specified, the returned segment will be at least on this
+    /// address.
+    /// - max: if specified, the returned segment will be at most on this
+    /// address.
     /// Returns the base address of the allocated segment.
     pub fn alloc(
-        self: *Self,
+        self: *Arena,
         size: usize,
         options: AllocOptions,
     ) mm.Error!usize {
@@ -252,7 +263,7 @@ pub const Arena = struct {
     }
 
     fn alloc_impl(
-        self: *Self,
+        self: *Arena,
         size: usize,
         options: AllocOptions,
     ) mm.Error!usize {
@@ -263,20 +274,20 @@ pub const Arena = struct {
                 .NextFit => self.next_fit(size, options),
             };
 
-            if (ret != null) break :blk ret.?;
+            if (ret != null) break :blk ret orelse unreachable;
 
             if (ret == null) {
                 try self.import(size, options);
             }
 
-            // This is guaranteed to terminate eventually, either when the import
-            // brings in new free memory, or when it runs out.
+            // This is guaranteed to terminate eventually, either when
+            // the import brings in new free memory, or when it runs out.
         };
 
         const start, var seg = result;
 
-        std.debug.assert(seg.type == .Free);
-        std.debug.assert(seg.size >= size);
+        assert(seg.type == .Free);
+        assert(seg.size >= size);
 
         // Remove the segment from the freelist.
         self.remove_segment_from_freelist(seg);
@@ -303,11 +314,13 @@ pub const Arena = struct {
             self.add_segment_to_freelist(left_seg);
         }
 
-        // right split: seg is larger than needed, so split into allocated + free remainder.
+        // right split: seg is larger than needed, so split into alloc + free
+        // remainder.
         // e.g. seg=[0x100, 0x10000], size=0x1000:
         //   before: [0x100, 0x10000] being processed
         //   after:  [0x100, 0x1100] allocated, [0x1100, 0x10000] free
-        // the quantum check avoids creating a remainder too small to ever be useful.
+        // the quantum check avoids creating a remainder too small to ever be
+        // useful.
         if (seg.size != size and (seg.size - size) > self.quantum - 1) {
             const new_seg = try self.alloc_segment();
             new_seg.* = .{
@@ -345,7 +358,7 @@ pub const Arena = struct {
     }
 
     /// Try to import memory from the parent arena.
-    fn import(self: *Self, size: usize, options: AllocOptions) mm.Error!void {
+    fn import(self: *Arena, size: usize, options: AllocOptions) mm.Error!void {
         const src = self.source orelse return error.OutOfMemory;
 
         // Ensure no funny stuff happens wrt the lock.
@@ -362,7 +375,7 @@ pub const Arena = struct {
         );
     }
 
-    pub fn free(self: *Self, addr: usize, size: usize) void {
+    pub fn free(self: *Arena, addr: usize, size: usize) void {
         if (size <= self.qcache_max) {
             const i = size >> self.qshift;
             self.qcaches[i - 1].free(@ptrFromInt(addr));
@@ -375,7 +388,7 @@ pub const Arena = struct {
         return self.free_impl(addr, size);
     }
 
-    fn free_impl(self: *Self, addr: usize, size: usize) void {
+    fn free_impl(self: *Arena, addr: usize, size: usize) void {
 
         // Find the allocated segment containing addr.
         var search_node = Segment{
@@ -449,7 +462,7 @@ pub const Arena = struct {
     }
 
     /// Try to release a segment back to its source.
-    fn release(self: *Self, seg: *Segment) bool {
+    fn release(self: *Arena, seg: *Segment) bool {
         const prev_entry = seg.link.prev;
 
         if (prev_entry == &self.list.head) {
@@ -479,7 +492,7 @@ pub const Arena = struct {
 
     // Implementation for the instant fit policy.
     fn instant_fit(
-        self: *Self,
+        self: *Arena,
         size: usize,
         options: AllocOptions,
     ) ?struct { usize, *Segment } {
@@ -506,7 +519,7 @@ pub const Arena = struct {
         // something in the lower freelist, so check there.
         // This is O(n) but should happen very rarely.
         if (!is_pow2) {
-            std.debug.assert(orig_idx != 0);
+            assert(orig_idx != 0);
 
             var it = self.freelists[orig_idx].iterator();
             while (it.next()) : (it.advance()) {
@@ -522,7 +535,7 @@ pub const Arena = struct {
     // Implementation for the best fit policy.
     // Find the smallest segment that can satisfy the request.
     fn best_fit(
-        self: *Self,
+        self: *Arena,
         size: usize,
         options: AllocOptions,
     ) ?struct { usize, *Segment } {
@@ -552,7 +565,7 @@ pub const Arena = struct {
     // Continue searching from the last allocated segment, wrapping around at
     // the end of the arena.
     fn next_fit(
-        self: *Self,
+        self: *Arena,
         size: usize,
         options: AllocOptions,
     ) ?struct { usize, *Segment } {
@@ -588,7 +601,7 @@ pub const Arena = struct {
     // Try to fit the given segment to the request with the given options.
     // Returns the fitted address if successful.
     fn try_to_fit(
-        self: *Self,
+        self: *Arena,
         segment: *const Segment,
         size: usize,
         options: AllocOptions,
@@ -610,22 +623,22 @@ pub const Arena = struct {
         return null;
     }
 
-    fn alloc_segment(self: *Self) !*Segment {
+    fn alloc_segment(self: *Arena) !*Segment {
         _ = self;
         return seg_zone.create();
     }
 
-    fn free_segment(self: *Self, segment: *Segment) void {
+    fn free_segment(self: *Arena, segment: *Segment) void {
         seg_zone.destroy(segment);
         _ = self;
     }
 
-    fn add_segment_to_freelist(self: *Self, segment: *Segment) void {
+    fn add_segment_to_freelist(self: *Arena, segment: *Segment) void {
         const freelist = self.freelist_for_size(segment.size);
         freelist.insert_tail(&segment.linkage.free_link);
     }
 
-    fn remove_segment_from_freelist(self: *Self, segment: *Segment) void {
+    fn remove_segment_from_freelist(self: *Arena, segment: *Segment) void {
         _ = self;
         segment.linkage.free_link.remove();
     }
@@ -634,7 +647,7 @@ pub const Arena = struct {
         return std.math.log2_int(usize, size);
     }
 
-    inline fn freelist_for_size(self: *Self, size: usize) *rtl.List {
+    inline fn freelist_for_size(self: *Arena, size: usize) *rtl.List {
         return &self.freelists[freelist_index(size)];
     }
 };

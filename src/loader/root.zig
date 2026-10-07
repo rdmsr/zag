@@ -21,7 +21,11 @@ const DebugWriter = struct {
         };
     }
 
-    fn drain(_: *std.Io.Writer, data: []const []const u8, _: usize) std.Io.Writer.Error!usize {
+    fn drain(
+        _: *std.Io.Writer,
+        data: []const []const u8,
+        _: usize,
+    ) std.Io.Writer.Error!usize {
         var total_written: usize = 0;
         for (data) |slice| {
             for (slice) |byte| {
@@ -47,7 +51,8 @@ pub fn log(
     // Calculate the length required.
     var buf: [256]u8 = undefined;
 
-    const written = std.fmt.bufPrint(&buf, scope_str ++ fmt ++ "\n", args) catch return;
+    const written = std.fmt.bufPrint(&buf, scope_str ++ fmt ++ "\n", args) catch
+        return;
 
     var writer = DebugWriter.init();
 

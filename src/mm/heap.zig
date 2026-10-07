@@ -1,3 +1,5 @@
+//! Kernel heap.
+
 const r = @import("root");
 const ke = r.ke;
 const mm = r.mm;
@@ -43,7 +45,11 @@ pub fn alloc(size: usize, policy: mm.WaitPolicy) mm.Error!*anyopaque {
 
         mmp.kernel_space.lock.acquire();
 
-        pte.* = mmp.impl.make_leaf_pte(page, .{ .read = true, .write = true }, 0);
+        pte.* = mmp.impl.make_leaf_pte(
+            page,
+            .{ .read = true, .write = true },
+            0,
+        );
     }
 
     mmp.kernel_space.lock.release();

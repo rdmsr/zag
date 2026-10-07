@@ -1,3 +1,5 @@
+//! Wrappers over riscv64 CPU definitions.
+
 pub const name: []const u8 = "riscv64";
 pub const BootInfo = struct {};
 

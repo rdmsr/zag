@@ -51,7 +51,7 @@ pub fn stack_activation() void {
 
 pub fn init() void {
     thread_zone.init("thread", .{});
-    ke.thread.reaper_list.* = .init(reaper_activation);
+    ke.thread.reaper_list.* = rtl.HandoffList.init(reaper_activation);
     reaper_item.init(.High, reaper_fn, null);
     stack_item.init(.High, stack_fn, null);
 }
@@ -68,7 +68,9 @@ pub fn create_kernel(
     var td = try thread_zone.create();
 
     const stack = if (start_with_stack)
-        @intFromPtr(try mm.heap.alloc(kernel_thread_stack_size, .WaitForMemory)) +
+        @intFromPtr(
+            try mm.heap.alloc(kernel_thread_stack_size, .WaitForMemory),
+        ) +
             kernel_thread_stack_size
     else
         0;

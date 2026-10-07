@@ -124,20 +124,24 @@ pub fn find_or_create_lock_class(name: []const u8) ?*Class {
     const ipl = graph_lock.acquire_at(.High);
     defer graph_lock.release(ipl);
 
-    var class, const bucket = find_lock_class(name);
+    const found, const bucket = find_lock_class(name);
 
-    if (class != null) {
-        return class;
+    if (found != null) {
+        return found;
     }
 
     assert(num_active_classes < num_classes);
 
     // Get a new spot for our class.
-    class = &classes[num_active_classes];
-    class.?.name = name;
+    const class = &classes[num_active_classes];
+    class.name = name;
 
     // Insert it so that we can find it by name.
-    bucket.?.insert(&class.?.entry) catch unreachable;
+    bucket.?.insert(&class.entry) catch {
+        // This would only fail if the lock class already existed.
+        // Since this was accounted for earlier, the error can never happen.
+        unreachable;
+    };
 
     num_active_classes += 1;
 

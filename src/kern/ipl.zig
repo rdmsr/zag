@@ -1,7 +1,11 @@
-const std = @import("std");
+//! Interrupt priority levels.
+
 const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 /// Interrupt priority level (IPL)
 pub const Ipl = enum(u8) {
@@ -19,7 +23,7 @@ pub const Ipl = enum(u8) {
     }
 
     pub fn value(self: Ipl) u8 {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 };
 
@@ -36,7 +40,7 @@ pub const cpu_ipl = ke.ExportedCpuLocal(
 );
 
 pub const percpu = ke.CpuLocal(PerCpu, .{
-    .pending_softints = .init(0),
+    .pending_softints = std.atomic.Value(u8).init(0),
 });
 
 pub fn current() Ipl {
@@ -109,7 +113,7 @@ pub fn set_hardware(new: Ipl) Ipl {
 
 /// Mark a software interrupt of IPL `ipl` on `cpu` as pending.
 pub fn set_softint_pending(cpu: u32, ipl: Ipl) void {
-    std.debug.assert(ipl.value() <= Ipl.Dispatch.value());
+    assert(ipl.value() <= Ipl.Dispatch.value());
     _ = percpu.remote(cpu).pending_softints.bitSet(
         @intCast(ipl.value()),
         .monotonic,
@@ -118,7 +122,7 @@ pub fn set_softint_pending(cpu: u32, ipl: Ipl) void {
 
 /// Mark a software interrupt of IPL `ipl` on `cpu` as handled.
 pub fn clear_softint_pending(cpu: u32, ipl: Ipl) void {
-    std.debug.assert(ipl.value() <= Ipl.Dispatch.value());
+    assert(ipl.value() <= Ipl.Dispatch.value());
     _ = percpu.remote(cpu).pending_softints.bitReset(
         @intCast(ipl.value()),
         .monotonic,
@@ -128,7 +132,7 @@ pub fn clear_softint_pending(cpu: u32, ipl: Ipl) void {
 /// Check whether a software interrupt of IPL `ipl`
 /// is pending on the current CPU.
 pub fn is_softint_pending(ipl: Ipl) bool {
-    std.debug.assert(ipl.value() <= Ipl.Dispatch.value());
+    assert(ipl.value() <= Ipl.Dispatch.value());
     const shift: u3 = @intCast(ipl.value());
     const bit: u8 = @as(u8, 1) << shift;
     return percpu.local().pending_softints.load(.monotonic) & bit != 0;

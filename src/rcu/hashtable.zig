@@ -3,13 +3,16 @@
 //! the buckets for write operations.
 //! The general design is inspired by XNU's smr_shash.
 
-const std = @import("std");
 const rtl = @import("rtl");
+
 const r = @import("root");
 const mm = r.mm;
 const ex = r.ex;
 const ke = r.ke;
 const rcu = r.rcu;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 /// Atomic state for the table
 const State = packed struct(u32) {
@@ -30,8 +33,6 @@ const State = packed struct(u32) {
 const Bucket = struct {
     word: std.atomic.Value(usize),
 
-    const Self = @This();
-
     const lock_tag = 0b01;
     const stop_tag = 0b10;
     const mask = lock_tag | stop_tag;
@@ -46,12 +47,12 @@ const Bucket = struct {
         return @intFromPtr(head) | stop_tag;
     }
 
-    fn load(self: *const Self) usize {
+    fn load(self: *const Bucket) usize {
         return self.word.load(.acquire) & ~@as(usize, lock_tag);
     }
 
     /// Lock the bucket and return the address.
-    fn lock(self: *Self) usize {
+    fn lock(self: *Bucket) usize {
         while (true) {
             const v = self.word.fetchOr(lock_tag, .acquire);
             if (v & lock_tag == 0) return v;
@@ -62,17 +63,17 @@ const Bucket = struct {
     }
 
     /// Unlock the bucket and store `val`.
-    fn unlock(self: *Self, val: usize) void {
-        std.debug.assert(val & lock_tag == 0);
+    fn unlock(self: *Bucket, val: usize) void {
+        assert(val & lock_tag == 0);
         self.word.store(val, .release);
     }
 
-    fn store_locked(self: *Self, val: usize) void {
-        std.debug.assert(val & lock_tag == 0);
+    fn store_locked(self: *Bucket, val: usize) void {
+        assert(val & lock_tag == 0);
         self.word.store(val | lock_tag, .release);
     }
 
-    fn unlock_no_changes(self: *Self) void {
+    fn unlock_no_changes(self: *Bucket) void {
         _ = self.word.fetchAnd(~@as(usize, lock_tag), .release);
     }
 };
@@ -145,10 +146,8 @@ const Core = struct {
     smr: *ke.smr.Domain,
     hash_link: *const fn (link: *rcu.SList.Entry, seed: u32) u32,
 
-    const Self = @This();
-
     fn init(
-        self: *Self,
+        self: *Core,
         smr: *ke.smr.Domain,
         policy: ResizePolicy,
         min_size: u32,
@@ -168,29 +167,29 @@ const Core = struct {
         const arr = try mm.zone.gpa.alloc(Bucket, size);
 
         for (arr) |*elem| {
-            elem.word = .init(Bucket.stop_for(elem));
+            elem.word = std.atomic.Value(usize).init(Bucket.stop_for(elem));
         }
 
         self.min_shift = @intCast(std.math.log2_int_ceil(usize, min));
 
-        self.state = .init(.{
+        self.state = std.atomic.Value(State).init(.{
             .current_shift = shift,
             .new_shift = shift,
             .current_index = 0,
             .new_index = 0,
         });
 
-        self.rehashing_state = .init(rehashing_none);
-        self.elems = .init(0);
+        self.rehashing_state = std.atomic.Value(u8).init(rehashing_none);
+        self.elems = std.atomic.Value(u32).init(0);
         self.smr = smr;
 
-        self.buckets[0] = .init(@ptrCast(arr));
-        self.seeds[0] = .init(0);
+        self.buckets[0] = std.atomic.Value([*]Bucket).init(@ptrCast(arr));
+        self.seeds[0] = std.atomic.Value(u32).init(0);
         self.rehash_work.init(.Normal, rehash, self);
     }
 
     fn migrate_bucket(
-        self: *Self,
+        self: *Core,
         old: *Bucket,
         new_array: [*]Bucket,
         new_seed: u32,
@@ -244,7 +243,7 @@ const Core = struct {
         old.unlock(Bucket.moved);
     }
 
-    fn enqueue_rehash(self: *Self, reason: u8) void {
+    fn enqueue_rehash(self: *Core, reason: u8) void {
         const prev = self.rehashing_state.fetchOr(reason, .monotonic);
 
         if (prev == rehashing_none) {
@@ -254,10 +253,14 @@ const Core = struct {
 
     /// Called in worker thread context when the table needs rehashing.
     fn rehash(ptr: ?*anyopaque) void {
-        const self: *Self = @ptrCast(@alignCast(ptr.?));
+        const ctx = ptr orelse unreachable;
+        const self: *Core = @ptrCast(@alignCast(ctx));
 
         while (true) {
-            const reason = self.rehashing_state.swap(rehashing_running, .monotonic);
+            const reason = self.rehashing_state.swap(
+                rehashing_running,
+                .monotonic,
+            );
 
             const elems = self.elems.load(.monotonic);
             const state = self.state.load(.monotonic);
@@ -288,7 +291,7 @@ const Core = struct {
     }
 
     /// Resize (and re-seed) the hash table to a given target shift.
-    fn resize(self: *Self, new_shift: u5) void {
+    fn resize(self: *Core, new_shift: u5) void {
         var state = self.state.load(.monotonic);
         state.new_shift = new_shift;
 
@@ -307,7 +310,7 @@ const Core = struct {
 
         // 1. Prepare the new array and publish it.
         for (new_array) |*elem| {
-            elem.word = .init(Bucket.stop_for(elem));
+            elem.word = std.atomic.Value(usize).init(Bucket.stop_for(elem));
         }
 
         self.buckets[state.new_index].store(new_array.ptr, .monotonic);
@@ -338,7 +341,7 @@ const Core = struct {
     }
 
     /// Remove a given element from the table, SMR must be entered.
-    fn remove(self: *Self, link: *rcu.SList.Entry) void {
+    fn remove(self: *Core, link: *rcu.SList.Entry) void {
         var state = self.state.load(.acquire);
         var h = self.hash_link(
             link,
@@ -394,7 +397,7 @@ const Core = struct {
         }
     }
 
-    fn bucket(self: *Self, state: State, which: Which, h: u32) *Bucket {
+    fn bucket(self: *Core, state: State, which: Which, h: u32) *Bucket {
         const idx: usize, const shift: u5 = switch (which) {
             .Cur => .{ state.current_index, @intCast(state.current_shift) },
             .New => .{ state.new_index, @intCast(state.new_shift) },
@@ -408,12 +411,12 @@ const Core = struct {
         return @as(u32, 1) << shift;
     }
 
-    fn should_grow(self: *Self, elems: u32, size: u32) bool {
+    fn should_grow(self: *Core, elems: u32, size: u32) bool {
         const target_depth = ResizePolicy.depth_for(self.policy);
         return elems > target_depth * size;
     }
 
-    fn should_shrink(self: *Self, elems: u32, size: u32) bool {
+    fn should_shrink(self: *Core, elems: u32, size: u32) bool {
         const min_size = size_for_shift(self.min_shift);
 
         return switch (self.policy) {
@@ -429,9 +432,9 @@ const Core = struct {
     /// This avoids going through multiple steps when resizing a busy table,
     /// i.e instead of doubling the size and doing 16 -> 32 -> 64,
     /// we can just do 16 -> 64 in a single resize.
-    fn target_shift_for(self: *Self, elems: u32) u5 {
+    fn target_shift_for(self: *Core, elems: u32) u5 {
         const depth = ResizePolicy.depth_for(self.policy);
-        const needed = std.math.divCeil(usize, elems, depth) catch unreachable;
+        const needed = @divCeil(elems, depth);
 
         var shift = self.min_shift;
         while (size_for_shift(shift) < needed) : (shift += 1) {}
@@ -470,7 +473,8 @@ pub fn Table(
 
     return struct {
         core: Core,
-        const Self = @This();
+
+        const Map = @This();
 
         const Options = struct {
             smr: *ke.smr.Domain,
@@ -481,13 +485,13 @@ pub fn Table(
         /// Initialize a new table, `min_size` provides the minimum count of
         /// buckets. If `min_size` is 0, it will get clamped to sane defaults
         /// depending on the chosen policy.
-        pub fn init(self: *Self, opts: Options) !void {
+        pub fn init(self: *Map, opts: Options) !void {
             try self.core.init(opts.smr, opts.policy, opts.min_size);
             self.core.hash_link = hash_link;
         }
 
         /// Get an element given a key, SMR must be entered.
-        pub fn get(self: *Self, key: Context.Key) ?*T {
+        pub fn get(self: *Map, key: Context.Key) ?*T {
             const state = self.core.state.load(.acquire);
             const h = Context.hash(
                 key,
@@ -521,7 +525,7 @@ pub fn Table(
 
         /// Find an element or insert it given a key, SMR must be entered.
         pub fn get_or_insert(
-            self: *Self,
+            self: *Map,
             key: Context.Key,
             value: *rcu.SList.Entry,
         ) ?*T {
@@ -590,11 +594,11 @@ pub fn Table(
         }
 
         /// Remove a given element from the table, SMR must be entered.
-        pub fn remove(self: *Self, link: *rcu.SList.Entry) void {
+        pub fn remove(self: *Map, link: *rcu.SList.Entry) void {
             self.core.remove(link);
         }
 
-        fn get_slow(self: *Self, key: Context.Key, bucket: *Bucket) ?*T {
+        fn get_slow(self: *Map, key: Context.Key, bucket: *Bucket) ?*T {
             // Wait until the bucket finishes moving.
             while (bucket.word.load(.monotonic) != Bucket.moved) {
                 std.atomic.spinLoopHint();

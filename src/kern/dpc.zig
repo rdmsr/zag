@@ -1,9 +1,13 @@
-const std = @import("std");
+//! Deferred procedure calls (DPC).
+
 const config = @import("config");
 const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 /// Deferred Procedure Call (DPC) structure.
 /// Used for scheduling work to be done when IPL is lowered below `.Dispatch`.
@@ -23,7 +27,7 @@ pub const Dpc = struct {
             .link = undefined,
             .func = func,
             .arg = undefined,
-            .inserted = .init(false),
+            .inserted = std.atomic.Value(bool).init(false),
         };
     }
 };
@@ -108,7 +112,7 @@ fn dispatch_queue(cpu: u32) void {
         const arg = dpc.arg;
 
         dpc_cpu.lock.release(ipl);
-        std.debug.assert(ke.ipl.current() == .Dispatch);
+        assert(ke.ipl.current() == .Dispatch);
 
         dpc.func(dpc, arg);
     }
@@ -137,7 +141,7 @@ fn dispatch_queue(cpu: u32) void {
     kep.shootdown.process_shootdowns();
 
     if (sched_cpu.next_thread != null) {
-        const curtd = sched_cpu.current_thread.?;
+        const curtd = sched_cpu.current_thread orelse unreachable;
 
         if (!curtd.smr_sections.is_empty()) {
             kep.smr.mark_thread_stalled(curtd);

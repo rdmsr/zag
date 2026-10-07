@@ -1,3 +1,5 @@
+//! amd64-specific kernel initialization code.
+
 const amd64 = @import("arch");
 const int = @import("int.zig");
 const r = @import("root");
@@ -26,7 +28,7 @@ var gdt = extern struct {
     .tss = undefined,
 };
 
-extern fn gdt_load(gdtr: *const amd64.Gdtr) callconv(.{ .x86_64_sysv = .{} }) void;
+extern fn gdt_load(gdtr: *const amd64.Gdtr) callconv(.c) void;
 
 fn early_cpu_init() linksection(r.init) void {
     const gdtr: amd64.Gdtr = .{

@@ -14,27 +14,29 @@ pub var nil: Node = .{
 };
 
 /// Base struct for binary search trees.
-/// This should be used as a field in other types that are based on binary search trees, such as red-black trees or AVL trees.
+/// This should be used as a field in other types that are based on
+/// binary search trees, such as red-black trees or AVL trees.
 pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
     return struct {
-        const Self = @This();
+        const Tree = @This();
 
         root: *Node = &nil,
 
-        pub fn init() Self {
-            return Self{
+        pub fn init() Tree {
+            return Tree{
                 .root = &nil,
             };
         }
 
         /// Return whether or not the given node is the sentinel nil node.
-        pub fn is_nil(self: *Self, node: *Node) bool {
+        pub fn is_nil(self: *Tree, node: *Node) bool {
             _ = self;
             return node == &nil;
         }
 
-        /// Search for a node in the BST that matches `elem`, and return a pointer to it if found.
-        pub fn search(self: *Self, elem: *Node) ?*Node {
+        /// Search for a node in the BST that matches `elem`.
+        /// Return a pointer to it if found.
+        pub fn search(self: *Tree, elem: *Node) ?*Node {
             var node = self.root;
             while (!self.is_nil(node)) {
                 const order = cmp(elem, node);
@@ -49,8 +51,9 @@ pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
             return null;
         }
 
-        /// Return a pointer to the minimum node in the subtree rooted at `node`.
-        pub fn minimum(self: *Self, node: *Node) *Node {
+        /// Return a pointer to the minimum node in the subtree
+        /// rooted at `node`.
+        pub fn minimum(self: *Tree, node: *Node) *Node {
             var current = node;
             while (!self.is_nil(current.left)) {
                 current = current.left;
@@ -58,8 +61,9 @@ pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
             return current;
         }
 
-        /// Return a pointer to the maximum node in the subtree rooted at `node`.
-        pub fn maximum(self: *Self, node: *Node) *Node {
+        /// Return a pointer to the maximum node in the subtree
+        /// rooted at `node`.
+        pub fn maximum(self: *Tree, node: *Node) *Node {
             var current = node;
             while (!self.is_nil(current.right)) {
                 current = current.right;
@@ -67,8 +71,9 @@ pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
             return current;
         }
 
-        /// Return a pointer to the successor of `node`, or nil if `node` is the maximum element in the tree.
-        pub fn successor(self: *Self, node: *Node) *Node {
+        /// Return a pointer to the successor of `node`, or nil if `node`
+        /// is the maximum element in the tree.
+        pub fn successor(self: *Tree, node: *Node) *Node {
             if (!self.is_nil(node.right)) {
                 // Minimum of right subtree
                 return self.minimum(node.right);
@@ -76,10 +81,10 @@ pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
 
             // Go up and find it.
             var current = node;
-            var parent = current.parent.get_ptr();
+            var parent = current.parent.ptr();
             while (!self.is_nil(parent) and current == parent.right) {
                 current = parent;
-                parent = parent.parent.get_ptr();
+                parent = parent.parent.ptr();
             }
 
             if (parent == self.root) {
@@ -89,9 +94,9 @@ pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
             return parent;
         }
 
-        /// Transplant the subtree rooted at `u` with the subtree rooted at `v`. This is used as a helper function.
-        pub fn transplant(self: *Self, u: *Node, v: *Node) void {
-            const u_parent = u.parent.get_ptr();
+        /// Transplant the subtree rooted at `u` with the subtree rooted at `v`.
+        pub fn transplant(self: *Tree, u: *Node, v: *Node) void {
+            const u_parent = u.parent.ptr();
             if (self.is_nil(u_parent)) {
                 self.root = v;
             } else if (u == u_parent.left) {
@@ -104,7 +109,7 @@ pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
 
         // Insert `elem` into the BST, if already inserted, do nothing.
         // This does not perform any balancing.
-        pub fn insert(self: *Self, elem: *Node) !void {
+        pub fn insert(self: *Tree, elem: *Node) !void {
             var current = self.root;
 
             if (self.is_nil(current)) {
@@ -142,7 +147,7 @@ pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
         }
 
         /// Return whether or not the tree is empty.
-        pub fn is_empty(self: *Self) bool {
+        pub fn is_empty(self: *Tree) bool {
             return self.is_nil(self.root);
         }
     };
@@ -162,7 +167,7 @@ fn node_cmp(a: *const Node, b: *const Node) std.math.Order {
 }
 
 test BST {
-    var tree: BST(node_cmp) = .init();
+    var tree = BST(node_cmp).init();
 
     var nodes = [_]MyNode{
         .{ .value = 5, .node = undefined },
@@ -181,6 +186,11 @@ test BST {
     for (&nodes) |*node| {
         const found = tree.search(&node.node);
         try std.testing.expect(found != null);
-        try std.testing.expectEqual(node.value, @as(*MyNode, @fieldParentPtr("node", found.?)).value);
+        const f = found orelse unreachable;
+
+        try std.testing.expectEqual(
+            node.value,
+            @as(*MyNode, @fieldParentPtr("node", f)).value,
+        );
     }
 }

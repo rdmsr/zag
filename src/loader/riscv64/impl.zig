@@ -75,7 +75,11 @@ pub inline fn make_table_pte(pa: usize) Pte {
     };
 }
 
-pub inline fn make_leaf_pte(pa: usize, flags: r.mem.MapFlags, level: usize) Pte {
+pub inline fn make_leaf_pte(
+    pa: usize,
+    flags: r.mem.MapFlags,
+    level: usize,
+) Pte {
     _ = level;
     return Pte{
         .present = true,

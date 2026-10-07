@@ -3,7 +3,11 @@ const std = @import("std");
 
 const Dimension = enum { Time };
 
-fn scale_value(comptime from_scale: u64, comptime to_scale: u64, value: u64) u64 {
+fn scale_value(
+    comptime from_scale: u64,
+    comptime to_scale: u64,
+    value: u64,
+) u64 {
     if (comptime from_scale >= to_scale) {
         return value * comptime (from_scale / to_scale);
     } else {
@@ -17,7 +21,7 @@ pub fn Unit(
     comptime unit_suffix: []const u8,
 ) type {
     return struct {
-        const Self = @This();
+        const UnitType = @This();
         pub const dimension = dim;
         pub const base_per_unit = scale;
 
@@ -28,27 +32,30 @@ pub fn Unit(
                 if (!(@typeInfo(T) == .@"struct" and @hasDecl(T, "dimension")))
                     @compileError(@typeName(T) ++ " is not a unit");
                 if (T.dimension != dim)
-                    @compileError("cannot convert between " ++ @tagName(T.dimension) ++
+                    @compileError("cannot convert between " ++
+                        @tagName(T.dimension) ++
                         " and " ++ @tagName(dim));
             }
         }
 
-        pub fn init(value: u64) Self {
+        pub fn init(value: u64) UnitType {
             return .{ .value = value };
         }
 
-        pub fn to(self: Self, comptime T: type) T {
+        pub fn to(self: UnitType, comptime T: type) T {
             check(T);
             return T.init(scale_value(scale, T.base_per_unit, self.value));
         }
 
-        pub fn from(other: anytype) Self {
+        pub fn from(other: anytype) UnitType {
             const From = @TypeOf(other);
             check(From);
-            return Self.init(scale_value(From.base_per_unit, scale, other.value));
+            return UnitType.init(
+                scale_value(From.base_per_unit, scale, other.value),
+            );
         }
 
-        pub inline fn format(self: Self, writer: *std.Io.Writer) !void {
+        pub inline fn format(self: UnitType, writer: *std.Io.Writer) !void {
             try writer.print("{} {s}", .{ self.value, unit_suffix });
         }
     };

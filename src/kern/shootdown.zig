@@ -1,4 +1,5 @@
-//! Kernel-side mechanism for asynchronous TLB shootdown and deferred memory reclamation.
+//! Kernel-side mechanism for asynchronous TLB shootdowns and deferred
+//! memory reclamation.
 
 const std = @import("std");
 const config = @import("config");
@@ -32,8 +33,9 @@ const PerCpu = struct {
     /// States attached to this CPU.
     states: [64]ShootdownState,
     /// States relevant to each CPU.
-    /// If CPU0 sent a shootdown to CPU1, then CPU0 will have `valid_states[CPU1]`
-    /// pointing to that shootdown, which will sit in `states`.
+    /// If CPU0 sent a shootdown to CPU1, then CPU0 will have
+    /// `valid_states[CPU1]` pointing to that shootdown,
+    /// which will sit in `states`.
     valid_states: [config.ncpus]std.atomic.Value(u64),
     /// CPUs that have sent this CPU a shootdown.
     senders: ke.AtomicCpuMask,
@@ -52,17 +54,17 @@ pub var shootdowns: rtl.HandoffList = undefined;
 fn pcpu_init() linksection(r.init) void {
     const local = percpu.local();
 
-    local.valid_states = @splat(.init(0));
-    local.senders = .init(false);
+    local.valid_states = @splat(std.atomic.Value(u64).init(0));
+    local.senders = ke.AtomicCpuMask.init(false);
     local.states = @splat(.{
         .base = 0,
         .npages = 0,
-        .state = .init(slot_free),
+        .state = std.atomic.Value(u16).init(slot_free),
         .payload = undefined,
         .link = undefined,
     });
 
-    local.npages = .init(0);
+    local.npages = std.atomic.Value(u32).init(0);
 }
 
 comptime {
@@ -176,10 +178,6 @@ pub fn process_shootdowns() void {
             }
         }
     }
-}
-
-fn process_shootdowns_kick(_: u32, _: ?*anyopaque) void {
-    process_shootdowns();
 }
 
 /// Submit a shootdown to occur asynchronously on `target_mask`.

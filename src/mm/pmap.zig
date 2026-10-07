@@ -2,9 +2,11 @@
 
 const r = @import("root");
 const rtl = @import("rtl");
-const std = @import("std");
 const mm = r.mm;
 const mmp = mm.private;
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 /// Describes a contiguous region of physical memory to be mapped
 /// at a given virtual address.
@@ -45,8 +47,6 @@ fn index_for_level(va: usize, level: usize) usize {
 }
 
 pub const PMap = struct {
-    const Self = @This();
-
     const num_levels = mmp.impl.levels.len;
     const entries_per_table = 512;
     const index_mask = entries_per_table - 1;
@@ -61,7 +61,7 @@ pub const PMap = struct {
         return is_leaf_level(level) and mmp.impl.is_leaf_level_enabled(level);
     }
 
-    fn cursor(self: *Self, va: r.VAddr) Cursor {
+    fn cursor(self: *PMap, va: r.VAddr) Cursor {
         var c = Cursor{
             .pmap = self,
             .va = va,
@@ -73,11 +73,16 @@ pub const PMap = struct {
         return c;
     }
 
-    pub fn activate(self: *Self) void {
+    pub fn activate(self: *PMap) void {
         mmp.impl.activate(self.root_pa);
     }
 
-    pub fn map_from(self: *Self, va: r.VAddr, size: usize, source: anytype) void {
+    pub fn map_from(
+        self: *PMap,
+        va: r.VAddr,
+        size: usize,
+        source: anytype,
+    ) void {
         var c = self.cursor(va);
         var remain = size;
 
@@ -91,7 +96,7 @@ pub const PMap = struct {
     /// Map a contiguous virtual address range to a
     /// contiguous physical address range.
     pub fn map_contiguous_range(
-        self: *Self,
+        self: *PMap,
         va: r.VAddr,
         pa: r.PAddr,
         size: usize,
@@ -107,7 +112,7 @@ pub const PMap = struct {
         self.map_from(va, size, src);
     }
 
-    pub fn query(self: *Self, va: r.VAddr) ?r.PAddr {
+    pub fn query(self: *PMap, va: r.VAddr) ?r.PAddr {
         var c = self.cursor(va);
 
         var level: usize = num_levels - 1;
@@ -129,8 +134,8 @@ pub const PMap = struct {
     /// Unmap a contiguous range of virtual pages.
     /// Only small pages are supported.
     /// Return a pfn that points to the physical pages that were unmapped.
-    pub fn unmap(self: *Self, va: r.VAddr, size: usize) ?mmp.PfnList {
-        std.debug.assert(std.mem.isAligned(va, mm.page_size));
+    pub fn unmap(self: *PMap, va: r.VAddr, size: usize) ?mmp.PfnList {
+        assert(std.mem.isAligned(va, mm.page_size));
 
         var c = self.cursor(va);
 
@@ -178,7 +183,7 @@ pub const PMap = struct {
     }
 
     pub const Cursor = struct {
-        pmap: *Self,
+        pmap: *PMap,
         va: r.VAddr,
         /// Cached pointers to each level's page table, filled as the cursor
         /// descends. Only indices in `[0, top_level]` are valid.
@@ -283,9 +288,12 @@ pub fn wire_pte(
     va: r.VAddr,
     policy: mm.WaitPolicy,
 ) mm.Error!*mmp.impl.Pte {
-    std.debug.assert(space.lock.is_locked());
+    assert(space.lock.is_locked());
 
-    var table: [*]mmp.impl.Pte = @ptrFromInt(mm.p2v(mmp.kernel_space.pmap.root_pa));
+    var table: [*]mmp.impl.Pte = @ptrFromInt(
+        mm.p2v(mmp.kernel_space.pmap.root_pa),
+    );
+
     var level = mmp.impl.levels.len - 1;
 
     while (true) {
@@ -293,7 +301,7 @@ pub fn wire_pte(
         var entry = table[idx];
 
         if (level == 0) {
-            std.debug.assert(!entry.present);
+            assert(!entry.present);
             return &table[idx];
         }
 
@@ -302,10 +310,13 @@ pub fn wire_pte(
             // since that may block.
             space.lock.release();
 
-            const new_table_pa = mmp.phys.alloc_opts(.{ .policy = policy }) orelse {
-                space.lock.acquire();
-                return mm.Error.OutOfMemory;
-            };
+            const new_table_pa = mmp.phys.alloc_opts(
+                .{ .policy = policy },
+            ) orelse
+                {
+                    space.lock.acquire();
+                    return mm.Error.OutOfMemory;
+                };
 
             // Re-acquire the lock and re-validate the entry,
             // since another thread may have raced to allocate it.

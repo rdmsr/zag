@@ -1,5 +1,6 @@
 //! Platform interface: each port must implement these functions and variables.
-//! To add a new platform, create a new file and implement all required functions.
+//! To add a new platform, create a new file and implement all required
+//! functions.
 
 const config = @import("config");
 const r = @import("root");

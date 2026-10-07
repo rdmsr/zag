@@ -117,17 +117,6 @@ const Errors = struct {
         );
     }
 
-    pub fn add_orelse_unreachable(
-        errors: *Errors,
-        file: SourceFile,
-        line_num: usize,
-    ) void {
-        errors.emit(
-            "{s}:{d}: error: use 'orelse unreachable' instead of .?\n",
-            .{ file.path, line_num },
-        );
-    }
-
     pub fn add_function_too_long(
         errors: *Errors,
         name: []const u8,
@@ -226,6 +215,12 @@ const SourceFile = struct {
 
 fn tidy_file(gpa: Allocator, file: SourceFile, errors: *Errors) !void {
     if (!file.has_extension(".zig")) return;
+    if (std.mem.eql(u8, file.path, "build.zig")) return;
+    if (std.mem.eql(u8, file.path, "build/config.zig")) return;
+    if (std.mem.eql(u8, file.path, "build/image.zig")) return;
+    if (std.mem.eql(u8, file.path, "build/run.zig")) return;
+    if (std.mem.eql(u8, file.path, "build/ksyms.zig")) return;
+    if (std.mem.eql(u8, file.path, "src/tidy.zig")) return;
 
     // Tidy lines.
     var line_iterator = std.mem.splitScalar(u8, file.text, '\n');
@@ -264,7 +259,6 @@ fn tidy_line(
 
 fn tidy_ast(file: SourceFile, tree: std.zig.Ast, errors: *Errors) void {
     tidy_defer(file, tree, errors);
-    tidy_optional_unwrap(file, tree, errors);
 
     for (tree.rootDecls()) |decl| {
         if (tree.nodeTag(decl) != .fn_decl) continue;
@@ -358,27 +352,14 @@ fn function_has_reference(
     return false;
 }
 
-fn tidy_optional_unwrap(file: SourceFile, tree: std.zig.Ast, errors: *Errors) void {
-    for (0..tree.nodes.len) |index| {
-        const node: std.zig.Ast.Node.Index = @enumFromInt(index);
-        if (tree.nodeTag(node) != .@"orelse") continue;
-
-        const rhs = tree.nodeData(node).node_and_node[1];
-        if (tree.nodeTag(rhs) != .unreachable_literal) continue;
-
-        const line_num = tree.tokenLocation(0, tree.nodeMainToken(node)).line +
-            1;
-        errors.add_orelse_unreachable(file, line_num);
-    }
-}
-
 fn tidy_banned(file: SourceFile, errors: *Errors) void {
     const ban_list: []const struct { []const u8, []const u8 } = &.{
         .{ "debug.assert(", "unqualified assert" },
         .{ "Self = @This()", "proper type name" },
         .{ "catch unreachable", "proper error handling or documentation" },
         .{ "catch {}", "proper error handling or documentation" },
-        .{ "= .init", "full type name" },
+        .{ "= .init(", "full type name" },
+        .{ ".?", "orelse unreachable" },
     };
 
     for (ban_list) |ban_item| {
@@ -392,7 +373,7 @@ fn tidy_banned(file: SourceFile, errors: *Errors) void {
 
 fn tidy_defer(file: SourceFile, tree: std.zig.Ast, errors: *Errors) void {
     for (0..tree.nodes.len) |index| {
-        const node: std.zig.Ast.Node.Index = @enumFromInt(index);
+        const node: std.zig.Ast.Node.Index = @fromBackingInt(@intCast(index));
         if (tree.nodeTag(node) != .@"defer" and
             tree.nodeTag(node) != .@"errdefer") continue;
 

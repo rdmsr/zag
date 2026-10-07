@@ -53,12 +53,12 @@ fn store_int(comptime T: type, addr: *anyopaque, value: anytype) bool {
 }
 
 fn apply_num(
-    comptime ValueT: type,
+    comptime VT: type,
     cmdline: []const u8,
     entry: *const Entry,
     info: std.builtin.Type.Int,
 ) void {
-    const value = rtl.cmdline.get_number(ValueT, cmdline, entry.name) catch |e| {
+    const value = rtl.cmdline.get_number(VT, cmdline, entry.name) catch |e| {
         if (e == error.Format) {
             std.log.warn(
                 "Invalid number value for '{s}', falling back.",
@@ -68,7 +68,7 @@ fn apply_num(
         return;
     };
 
-    const sign = @typeInfo(ValueT).int.signedness;
+    const sign = @typeInfo(VT).int.signedness;
 
     _ = switch (info.bits) {
         8 => store_int(@Int(sign, 8), entry.address, value),

@@ -35,7 +35,7 @@ comptime {
     if (@sizeOf(Page) != r.BootInfo.page_struct_size) {
         @compileError(
             std.fmt.comptimePrint(
-                "'Page' size mismatch between loader and kernel: kernel={} loader={}",
+                "'Page' size mismatch between loader and kernel: k={} l={}",
                 .{ @sizeOf(Page), r.BootInfo.page_struct_size },
             ),
         );
@@ -68,11 +68,13 @@ pub inline fn pfn_to_page(pfn: Pfn) usize {
 }
 
 pub inline fn struct_page_to_pfn(page: *Page) Pfn {
-    return @intCast((@intFromPtr(page) - private.impl.pfndb_base) / @sizeOf(Page));
+    return @intCast((@intFromPtr(page) - private.impl.pfndb_base) /
+        @sizeOf(Page));
 }
 
 pub inline fn pfn_to_struct_page(pfn: Pfn) *Page {
-    return @ptrFromInt(private.impl.pfndb_base + (@as(usize, @intCast(pfn)) * @sizeOf(Page)));
+    return @ptrFromInt(private.impl.pfndb_base +
+        (@as(usize, pfn) * @sizeOf(Page)));
 }
 
 pub var pfndb: [*]Page = @ptrFromInt(private.impl.pfndb_base);

@@ -22,6 +22,45 @@ pub fn comptime_error(comptime msg: []const u8, args: anytype) void {
     @compileError(std.fmt.comptimePrint(msg, args));
 }
 
+const InterfaceError = enum {
+    MissingField,
+    FieldType,
+    MissingMethod,
+    ParameterCount,
+    ReturnType,
+    ParameterType,
+    MissingType,
+    TypeDeclaration,
+    MissingVariable,
+    VariableType,
+};
+
+fn interface_error(comptime err: InterfaceError, args: anytype) void {
+    const msg = switch (err) {
+        .MissingField => "Expected field '{s}' of type '{s}' in type '{s}'" ++
+            "required by '{s}'",
+        .FieldType => "Expected field '{s}' of type '{s}' in type '{s}'" ++
+            "required by '{s}', got '{s}'",
+        .MissingMethod => "Expected method '{s}' in type '{s}' " ++
+            "required by '{s}'",
+        .ParameterCount => "Parameter count mismatch in method '{s}' " ++
+            "in type '{s}'" ++ "required by '{s}'",
+        .ReturnType => "Return type mismatch in method '{s}' in type '{s}'" ++
+            "required by '{s}'",
+        .ParameterType => "Parameter type mismatch in method '{s}' in " ++
+            "type '{s}' required by '{s}'",
+        .MissingType => "Expected type declaration '{s}' in type '{s}'" ++
+            "required by '{s}'",
+        .TypeDeclaration => "Declaration '{s}' in type '{s}' " ++
+            "is required to be a" ++ "type by '{s}', but got '{s}'",
+        .MissingVariable => "Expected variable declaration '{s}' " ++
+            "in type '{s}'" ++ "required by '{s}'",
+        .VariableType => "Declaration '{s}' in type '{s}' is required to be" ++
+            "a variable of type '{s}' by '{s}', but got '{s}'",
+    };
+    comptime_error(msg, args);
+}
+
 /// Asserts that a given type `T` matches the schema declared by `I`.
 /// This includes public methods and fields.
 pub fn assert_interface(T: type, I: type) void {
@@ -31,19 +70,14 @@ pub fn assert_interface(T: type, I: type) void {
 
     inline for (info.field_names, info.field_types) |name, t| {
         if (!@hasField(T, name)) {
-            comptime_error(
-                "Expected field '{s}' of type '{s}' in type '{s}' required by '{s}'",
-                .{
-                    name,
-                    @typeName(t),
-                    @typeName(T),
-                    @typeName(I),
-                },
+            interface_error(
+                .MissingField,
+                .{ name, @typeName(t), @typeName(T), @typeName(I) },
             );
         } else {
             if (@FieldType(T, name) != t) {
-                comptime_error(
-                    "Expected field '{s}' of type '{s}' in type '{s}' required by '{s}', got '{s}'",
+                interface_error(
+                    .FieldType,
                     .{
                         name,
                         @typeName(t),
@@ -61,8 +95,8 @@ pub fn assert_interface(T: type, I: type) void {
 
         if (@typeInfo(@TypeOf(member)) == .@"fn") {
             if (!@hasDecl(T, decl)) {
-                comptime_error(
-                    "Expected method '{s}' in type '{s}' required by '{s}'",
+                interface_error(
+                    .MissingMethod,
                     .{
                         decl,
                         @typeName(T),
@@ -80,55 +114,39 @@ pub fn assert_interface(T: type, I: type) void {
                 const impl_fn = @typeInfo(ImplFnType).@"fn";
 
                 if (iface_fn.param_types.len != impl_fn.param_types.len) {
-                    comptime_error(
-                        "Parameter count mismatch in method '{s}' in type '{s}' required by '{s}'",
-                        .{
-                            decl,
-                            @typeName(T),
-                            @typeName(I),
-                        },
+                    interface_error(
+                        .ParameterCount,
+                        .{ decl, @typeName(T), @typeName(I) },
                     );
                 }
                 if (iface_fn.return_type != impl_fn.return_type) {
-                    comptime_error(
-                        "Return type mismatch in method '{s}' in type '{s}' required by '{s}'",
-                        .{
-                            decl,
-                            @typeName(T),
-                            @typeName(I),
-                        },
+                    interface_error(
+                        .ReturnType,
+                        .{ decl, @typeName(T), @typeName(I) },
                     );
                 }
 
                 for (iface_fn.param_types, impl_fn.param_types) |a, b| {
                     if (a != b) {
-                        comptime_error(
-                            "Parameter type mismatch in method '{s}' in type '{s}' required by '{s}'",
-                            .{
-                                decl,
-                                @typeName(T),
-                                @typeName(I),
-                            },
+                        interface_error(
+                            .ParameterType,
+                            .{ decl, @typeName(T), @typeName(I) },
                         );
                     }
                 }
             }
         } else if (@TypeOf(member) == type) {
             if (!@hasDecl(T, decl)) {
-                comptime_error(
-                    "Expected type declaration '{s}' in type '{s}' required by '{s}'",
-                    .{
-                        decl,
-                        @typeName(T),
-                        @typeName(I),
-                    },
+                interface_error(
+                    .MissingType,
+                    .{ decl, @typeName(T), @typeName(I) },
                 );
             }
 
             const impl_member = @field(T, decl);
             if (@TypeOf(impl_member) != type) {
-                comptime_error(
-                    "Declaration '{s}' in type '{s}' is required to be a type by '{s}', but got '{s}'",
+                interface_error(
+                    .TypeDeclaration,
                     .{
                         decl,
                         @typeName(T),
@@ -139,20 +157,16 @@ pub fn assert_interface(T: type, I: type) void {
             }
         } else {
             if (!@hasDecl(T, decl)) {
-                comptime_error(
-                    "Expected variable declaration '{s}' in type '{s}' required by '{s}'",
-                    .{
-                        decl,
-                        @typeName(T),
-                        @typeName(I),
-                    },
+                interface_error(
+                    .MissingVariable,
+                    .{ decl, @typeName(T), @typeName(I) },
                 );
             }
 
             const impl_member = @field(T, decl);
             if (@TypeOf(impl_member) != @TypeOf(member)) {
-                comptime_error(
-                    "Declaration '{s}' in type '{s}' is required to be a variable of type '{s}' by '{s}', but got '{s}'",
+                interface_error(
+                    .VariableType,
                     .{
                         decl,
                         @typeName(T),

@@ -58,7 +58,7 @@ pub fn addRun(b: *std.Build, kernel: *std.Build.Step.Compile, loader: *std.Build
 
         switch (plat.arch) {
             .x86_64 => {
-                qemu.addArgs(&.{ "-serial", "stdio", "-m", "1G", "-smp", "4" });
+                qemu.addArgs(&.{ "-serial", "stdio", "-m", "1G", "-smp", "1" });
 
                 if (!debug and builtin.target.os.tag == .linux and builtin.cpu.arch == .x86_64) qemu.addArgs(&.{ "-enable-kvm", "-cpu", "host,+invtsc" });
             },

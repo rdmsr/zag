@@ -1,5 +1,6 @@
 //! Wrappers over amd64 CPU definitions and CPUID.
 const std = @import("std");
+const assert = std.debug.assert;
 
 pub const hypervisor = @import("hypervisor.zig");
 
@@ -286,14 +287,14 @@ pub const Cr4 = packed struct(u64) {
 };
 
 pub inline fn read_cr(comptime n: u8) u64 {
-    comptime std.debug.assert(n != 1);
+    comptime assert(n != 1);
     return asm volatile (std.fmt.comptimePrint("mov %%cr{}, %[ret]", .{n})
         : [ret] "=r" (-> u64),
     );
 }
 
 pub inline fn write_cr(comptime n: u8, value: u64) void {
-    comptime std.debug.assert(n != 1);
+    comptime assert(n != 1);
     asm volatile (std.fmt.comptimePrint("mov %[value], %%cr{}", .{n})
         :
         : [value] "r" (value),
@@ -519,23 +520,23 @@ const known_vendors = [_]struct {
 };
 
 pub const CpuFeatures = struct {
-    x2apic: bool,
-    five_level_paging: bool,
-    gib_pages: bool,
-    tsc_deadline: bool,
-    fxsave: bool,
-    xsave: bool,
-    invariant_tsc: bool,
-    nx: bool,
-    pcid: bool,
-    smap: bool,
-    smep: bool,
-    pge: bool,
-    syscall: bool,
-    umip: bool,
-    vendor: CpuVendor,
-    family: u8,
-    brand_string: [48]u8,
+    x2apic: bool = false,
+    five_level_paging: bool = false,
+    gib_pages: bool = false,
+    tsc_deadline: bool = false,
+    fxsave: bool = false,
+    xsave: bool = false,
+    invariant_tsc: bool = false,
+    nx: bool = false,
+    pcid: bool = false,
+    smap: bool = false,
+    smep: bool = false,
+    pge: bool = false,
+    syscall: bool = false,
+    umip: bool = false,
+    vendor: CpuVendor = undefined,
+    family: u8 = 0,
+    brand_string: [48]u8 = undefined,
 };
 
 pub const HypervisorVendor = enum(u32) {
@@ -563,71 +564,59 @@ fn detect_vendor(string: [12]u8) CpuVendor {
 pub fn detect_cpu_features() void {
     const vendor_info = CpuidRequest.execute(.VendorInfo);
     const max_ext = CpuidRequest.execute(.HighestExtendedFunction).eax;
-
     const max_basic = vendor_info.eax;
 
-    var x2apic = false;
-    var five_level_paging = false;
-    var gib_pages = false;
-    var tsc_deadline = false;
-    var xsave = false;
-    var fxsave = false;
-    var invtsc = false;
-    var nx = false;
-    var pcid = false;
-    var smap = false;
-    var smep = false;
-    var pge = false;
     var hypervisor_flag = false;
-    var syscall = false;
-    var family: u8 = 0;
-    var umip = false;
-
     var vendor_string: [12]u8 = undefined;
-    var brand_string: [48]u8 = undefined;
+
+    cpu_features = .{};
 
     std.mem.writeInt(u32, vendor_string[0..4], vendor_info.ebx, .little);
     std.mem.writeInt(u32, vendor_string[4..8], vendor_info.edx, .little);
     std.mem.writeInt(u32, vendor_string[8..12], vendor_info.ecx, .little);
 
-    const vendor = detect_vendor(vendor_string);
+    cpu_features.vendor = detect_vendor(vendor_string);
 
     if (max_basic >= 0x1) {
         const r = CpuidRequest.execute(.FeatureInfo);
         const ecx: FeatureInfoEcx = @bitCast(r.ecx);
         const edx: FeatureInfoEdx = @bitCast(r.edx);
 
-        x2apic = ecx.x2apic;
-        tsc_deadline = ecx.tsc_deadline;
-        xsave = ecx.xsave;
-        pcid = ecx.pcid;
-        fxsave = edx.fxsave;
-        pge = edx.pge;
+        cpu_features.x2apic = ecx.x2apic;
+        cpu_features.tsc_deadline = ecx.tsc_deadline;
+        cpu_features.xsave = ecx.xsave;
+        cpu_features.pcid = ecx.pcid;
+        cpu_features.fxsave = edx.fxsave;
+        cpu_features.pge = edx.pge;
+
         hypervisor_flag = ecx.hypervisor;
 
         const sig = r.eax;
-        family = @truncate((sig >> 8) & 0xf);
+        var family: u8 = @truncate((sig >> 8) & 0xf);
+
         if (family == 0xf) {
             family +%= @truncate((sig >> 20) & 0xff);
         }
+
+        cpu_features.family = family;
     }
 
     if (max_basic >= 0x7) {
         const r = CpuidRequest.execute(.{ .ExtendedFeatures = .First });
         const ecx: ExtendedFeaturesEcx = @bitCast(r.ecx);
         const ebx: ExtendedFeaturesEbx = @bitCast(r.ebx);
-        smap = ebx.smap;
-        smep = ebx.smep;
-        five_level_paging = ecx.la57;
-        umip = ecx.umip;
+        cpu_features.smap = ebx.smap;
+        cpu_features.smep = ebx.smep;
+        cpu_features.five_level_paging = ecx.la57;
+        cpu_features.umip = ecx.umip;
     }
 
     if (max_ext >= 0x80000001) {
         const r = CpuidRequest.execute(.ExtendedInfo);
         const edx: ExtendedProcessorInfoEdx = @bitCast(r.edx);
-        gib_pages = edx.pdpe1gb;
-        nx = edx.nx;
-        syscall = edx.syscall_sysret;
+        cpu_features.gib_pages = edx.pdpe1gb;
+        cpu_features.nx = edx.nx;
+        cpu_features.syscall = edx.syscall_sysret;
     }
 
     if (max_ext >= 0x80000004) {
@@ -638,6 +627,8 @@ pub fn detect_cpu_features() void {
         };
 
         var off: usize = 0;
+        const brand_string = &cpu_features.brand_string;
+
         for (parts) |p| {
             for ([_]u32{ p.eax, p.ebx, p.ecx, p.edx }) |reg| {
                 const dst: *[4]u8 = @ptrCast(brand_string[off..].ptr);
@@ -650,32 +641,12 @@ pub fn detect_cpu_features() void {
     if (max_ext >= 0x80000007) {
         const r = CpuidRequest.execute(.PowerManagementInfo);
         const edx: PowerManagementInfoEdx = @bitCast(r.edx);
-        invtsc = edx.invtsc;
+        cpu_features.invariant_tsc = edx.invtsc;
     }
 
     if (hypervisor_flag) {
         hypervisor.detect();
     }
-
-    cpu_features = .{
-        .x2apic = x2apic,
-        .five_level_paging = five_level_paging,
-        .gib_pages = gib_pages,
-        .tsc_deadline = tsc_deadline,
-        .fxsave = fxsave,
-        .xsave = xsave,
-        .invariant_tsc = invtsc,
-        .nx = nx,
-        .pcid = pcid,
-        .smap = smap,
-        .smep = smep,
-        .vendor = vendor,
-        .brand_string = brand_string,
-        .pge = pge,
-        .family = family,
-        .umip = umip,
-        .syscall = syscall,
-    };
 }
 
 pub const TssDescriptor = extern struct {

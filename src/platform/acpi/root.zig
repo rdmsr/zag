@@ -276,7 +276,8 @@ pub var rsdt: ?*Rsdt = null;
 
 pub fn find_table(signature: []const u8) ?*SdtHeader {
     if (xsdt) |x| {
-        const entry_count = (x.header.length - @sizeOf(SdtHeader)) / @sizeOf(u64);
+        const entry_count = (x.header.length - @sizeOf(SdtHeader)) /
+            @sizeOf(u64);
         const entries_ptr: [*]align(1) u64 = @ptrCast(&x.entries);
 
         for (0..entry_count) |i| {
@@ -286,7 +287,8 @@ pub fn find_table(signature: []const u8) ?*SdtHeader {
             }
         }
     } else if (rsdt) |rsdt_table| {
-        const entry_count = (rsdt_table.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
+        const entry_count = (rsdt_table.header.length - @sizeOf(SdtHeader)) /
+            @sizeOf(u32);
         const entries_ptr: [*]align(1) u32 = @ptrCast(&rsdt_table.entries);
 
         for (0..entry_count) |i| {
@@ -316,7 +318,8 @@ fn format_table(hdr: *SdtHeader, phys_addr: u64) void {
 
 fn enumerate_tables() void {
     if (xsdt) |x| {
-        const entry_count = (x.header.length - @sizeOf(SdtHeader)) / @sizeOf(u64);
+        const entry_count = (x.header.length - @sizeOf(SdtHeader)) /
+            @sizeOf(u64);
         const entries_ptr: [*]align(1) u64 = @ptrCast(&x.entries);
 
         for (0..entry_count) |i| {
@@ -325,7 +328,8 @@ fn enumerate_tables() void {
             format_table(hdr, phys);
         }
     } else if (rsdt) |rsdt_table| {
-        const entry_count = (rsdt_table.header.length - @sizeOf(SdtHeader)) / @sizeOf(u32);
+        const entry_count = (rsdt_table.header.length - @sizeOf(SdtHeader)) /
+            @sizeOf(u32);
         const entries_ptr: [*]align(1) u32 = @ptrCast(&rsdt_table.entries);
 
         for (0..entry_count) |i| {

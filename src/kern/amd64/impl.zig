@@ -1,3 +1,5 @@
+//! amd64-specific kernel code.
+
 const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
@@ -139,7 +141,10 @@ pub fn switch_cont_to_normal(
     );
 }
 
-pub fn call_continuation(ctx: *Context, continuation: ke.Continuation) noreturn {
+pub fn call_continuation(
+    ctx: *Context,
+    continuation: ke.Continuation,
+) noreturn {
     const td: *ke.Thread = @alignCast(@fieldParentPtr("context", ctx));
 
     amd64_call_continuation(

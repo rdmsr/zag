@@ -62,10 +62,10 @@
 //! # Wrap handling
 //!
 //! Data blocks are never split across the physical boundary of the data array.
-//! If an allocation would cross the boundary, the block is placed at offset 0 of
-//! the next generation and a stub (containing only the descriptor ID) is left at
-//! the original position so the data ring can be walked linearly during eviction.
-//!
+//! If an allocation would cross the boundary, the block is placed at offset 0
+//! of the next generation and a stub (containing only the descriptor ID) is
+//! left at the original position so the data ring can be walked linearly
+//! during eviction.
 
 const std = @import("std");
 const r = @import("root");
@@ -154,10 +154,10 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         /// Beginning of the oldest data block.
         tail_lpos: std.atomic.Value(usize),
 
-        const Self = @This();
+        const Ring = @This();
 
-        // Return the exact Id of the descriptor that occupied this physical slot
-        // one generation ago.
+        // Return the exact Id of the descriptor that occupied this physical
+        // slot one generation ago.
         fn prev_wrap(id: Id) Id {
             return id -% desc_count;
         }
@@ -178,15 +178,15 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             return sz;
         }
 
-        fn to_desc(self: *Self, id: Id) *Desc {
+        fn to_desc(self: *Ring, id: Id) *Desc {
             return &self.descs[id & desc_mask];
         }
 
-        fn to_info(self: *Self, id: Id) *Info {
+        fn to_info(self: *Ring, id: Id) *Info {
             return &self.infos[id & desc_mask];
         }
 
-        fn to_block(self: *Self, lpos: usize) *DataBlock {
+        fn to_block(self: *Ring, lpos: usize) *DataBlock {
             return @ptrCast(@alignCast(&self.data[lpos & data_mask]));
         }
 
@@ -198,12 +198,12 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
 
         // Return true if `lpos_current` has not yet reached `lpos_next`.
         // Uses wrapping subtraction so that:
-        //   - if current > next (another CPU already advanced past the target),
-        //   returns false.
-        //   - if current == next (already at target), the -1 wraps to usize max,
-        //   returns false.
-        //   - if the distance exceeds data_size (should never happen),
-        //   returns false.
+        //  - if current > next (another CPU already advanced past the target),
+        //  returns false.
+        //  - if current == next (already at target), the -1 wraps to usize_max,
+        //  returns false.
+        //  - if the distance exceeds data_size (should never happen),
+        //  returns false.
         fn need_more_space(lpos_current: usize, lpos_next: usize) bool {
             return lpos_next -% lpos_current -% 1 < data_size;
         }
@@ -214,7 +214,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             desc: Desc = undefined,
         };
 
-        fn read_desc(self: *Self, id: Id) ReadDescResult {
+        fn read_desc(self: *Ring, id: Id) ReadDescResult {
             const desc = self.to_desc(id);
             const info = self.to_info(id);
             var state_var = desc.state.load(.acquire);
@@ -245,7 +245,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         fn read_desc_finalized(
-            self: *Self,
+            self: *Ring,
             id: Id,
             seq: u64,
             desc_out: *Desc,
@@ -263,7 +263,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
                 return error.DataLost;
         }
 
-        fn free_desc(self: *Self, id: Id) void {
+        fn free_desc(self: *Ring, id: Id) void {
             var desc = self.to_desc(id);
             const expected_state: State = .{
                 .state = .Published,
@@ -282,7 +282,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             );
         }
 
-        fn free_data(self: *Self, begin: usize, end: usize) ?usize {
+        fn free_data(self: *Ring, begin: usize, end: usize) ?usize {
             var desc: Desc = undefined;
             var cur_begin = begin;
 
@@ -330,7 +330,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             return cur_begin;
         }
 
-        fn data_advance_tail(self: *Self, new_tail_lpos: usize) !void {
+        fn data_advance_tail(self: *Ring, new_tail_lpos: usize) !void {
             if (new_tail_lpos & 1 != 0) {
                 // No data.
                 return;
@@ -355,8 +355,8 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
                         break;
                     }
                 } else {
-                    // Failed to free the data, which means we either lost a race
-                    // or the descriptor is still in use.
+                    // Failed to free the data, which means we either lost a
+                    // race or the descriptor is still in use.
                     // Reload the tail position to try again.
                     const new_tail = self.tail_lpos.load(.acquire);
                     if (new_tail == cur_tail) {
@@ -372,7 +372,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         // Try advancing the tail.
-        fn advance_tail(self: *Self, tail_id: Id) !void {
+        fn advance_tail(self: *Ring, tail_id: Id) !void {
             const res = self.read_desc(tail_id);
             const tail_desc = res.desc;
 
@@ -387,7 +387,8 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
                     return error.ReservationFailed;
                 },
                 .Miss => {
-                    if (tail_desc.state.load(.monotonic).id == prev_wrap(tail_id)) {
+                    const tail_desc_id = tail_desc.state.load(.monotonic).id;
+                    if (tail_desc_id == prev_wrap(tail_id)) {
                         // This must mean that the descriptor is currently
                         // getting reserved by another writer.
                         return error.ReservationFailed;
@@ -411,8 +412,9 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
 
             if (next_res.state == .Published or next_res.state == .Free) {
                 // Advance the tail to the next descriptor.
-                // release: push all previous state changes before the tail update,
-                // guaranteeing the new tail is visible after all evictions.
+                // release: push all previous state changes before the tail
+                // update,  guaranteeing the new tail is visible after all
+                // evictions.
                 _ = self.tail_id.cmpxchgStrong(
                     @as(usize, tail_id),
                     @as(usize, tail_id +% 1),
@@ -433,7 +435,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         // Reserve a new descriptor and make space for it if needed.
-        fn reserve_desc(self: *Self) !Id {
+        fn reserve_desc(self: *Ring) !Id {
             var head_id: Id = @truncate(self.head_id.load(.acquire));
             var new_id: Id = undefined;
             var prev_id: Id = undefined;
@@ -520,7 +522,12 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             return next_lpos;
         }
 
-        fn alloc_data(self: *Self, size: usize, id: Id, out_position: *BlkPos) ReserveError![]u8 {
+        fn alloc_data(
+            self: *Ring,
+            size: usize,
+            id: Id,
+            out_position: *BlkPos,
+        ) ReserveError![]u8 {
             const blk_size = to_block_size(size);
             var head_lpos = self.head_lpos.load(.monotonic);
             var new_head_lpos = head_lpos;
@@ -534,7 +541,8 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             while (true) {
                 new_head_lpos = get_next_lpos(head_lpos, blk_size);
 
-                // Make room if needed, try advancing the tail until we have enough space.
+                // Make room if needed, try advancing the tail until we have
+                // enough space.
                 self.data_advance_tail(new_head_lpos -% data_size) catch |e| {
                     out_position.begin = lpos_no_data;
                     out_position.end = lpos_no_data;
@@ -570,7 +578,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
             return @as([*]u8, @ptrCast(&blk.data))[0..size];
         }
 
-        fn read_internal(self: *Self, seq: u64, buf: ?[]u8) !Info {
+        fn read_internal(self: *Ring, seq: u64, buf: ?[]u8) !Info {
             const rdesc = self.to_desc(@truncate(seq));
             const info = self.to_info(@truncate(seq));
             var desc: Desc = undefined;
@@ -601,14 +609,14 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         /// Initialize and return a new ring buffer instance.
-        pub fn init() Self {
+        pub fn init() Ring {
             // Start near usize max so that the first wrap of the ID/lpos space
             // happens almost immediately, testing overflow handling early
             // rather than after billions of records.
             const dummy_id: Id = 0 -% @as(Id, desc_count + 1);
             const blk0: usize = -%@as(usize, data_size);
 
-            var self: Self = std.mem.zeroes(Self);
+            var self: Ring = std.mem.zeroes(Ring);
 
             // Place a dummy descriptor in the last slot. head_id and tail_id
             // both start here so that the first reservation (head_id + 1) lands
@@ -638,7 +646,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         /// Reserve space for a record and return a reservation.
-        pub fn reserve(self: *Self, size: usize) ReserveError!Reservation {
+        pub fn reserve(self: *Ring, size: usize) ReserveError!Reservation {
             if (!check_size(size)) {
                 return error.NoSpace;
             }
@@ -657,15 +665,15 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
 
             if (seq == 0 and (id & desc_mask) != 0) {
                 // First time this slot has been used.
-                // Slot 0 never hits this branch, its seq is set to -(desc_count)
-                // in init() so that the else branch below produces seq=0 on
-                // its first use.
+                // Slot 0 never hits this branch, its seq is set
+                // to -(desc_count) in init() so that the else branch
+                // below produces seq=0 on its first use.
                 info.sequence = @as(u64, id & desc_mask);
             } else {
                 // Slot is being recycled (or is slot 0 on first use).
-                // Adding desc_count advances the sequence by one full ring wrap,
-                // keeping sequence numbers monotonically increasing across
-                // generations.
+                // Adding desc_count advances the sequence by one full
+                // ring wrap, keeping sequence numbers monotonically increasing
+                // across generations.
                 info.sequence = seq +% desc_count;
             }
 
@@ -686,7 +694,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         /// Publish a previously reserved record.
-        pub fn publish(self: *Self, res: Reservation) void {
+        pub fn publish(self: *Ring, res: Reservation) void {
             const desc = self.to_desc(res.id);
 
             _ = desc.state.cmpxchgStrong(
@@ -707,7 +715,7 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         /// Return the first readable sequence currently retained by the ring.
-        pub fn first_seq(self: *Self) u64 {
+        pub fn first_seq(self: *Ring) u64 {
             var seq: u64 = undefined;
 
             while (true) {
@@ -723,30 +731,31 @@ pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
         }
 
         /// Read a record at `seq` into `buf`.
-        pub fn read(self: *Self, seq: u64, buf: ?[]u8) ReadError!Info {
+        pub fn read(self: *Ring, seq: u64, buf: ?[]u8) ReadError!Info {
             var cur_seq = seq;
 
             while (true) {
-                return self.read_internal(cur_seq, buf) catch |err| switch (err) {
-                    error.Invalid => {
-                        const first = self.first_seq();
-                        if (cur_seq < first) {
-                            // Behind the tail, catch up and try again.
-                            cur_seq = first;
+                return self.read_internal(cur_seq, buf) catch |err|
+                    switch (err) {
+                        error.Invalid => {
+                            const first = self.first_seq();
+                            if (cur_seq < first) {
+                                // Behind the tail, catch up and try again.
+                                cur_seq = first;
+                                continue;
+                            }
+                            return error.NotYetAvailable;
+                        },
+                        error.DataLost => {
+                            // Record at cur_seq was overwritten, skip forward.
+                            const first = self.first_seq();
+                            if (cur_seq < first)
+                                cur_seq = first
+                            else
+                                cur_seq += 1;
                             continue;
-                        }
-                        return error.NotYetAvailable;
-                    },
-                    error.DataLost => {
-                        // Record at cur_seq was overwritten, skip forward.
-                        const first = self.first_seq();
-                        if (cur_seq < first)
-                            cur_seq = first
-                        else
-                            cur_seq += 1;
-                        continue;
-                    },
-                };
+                        },
+                    };
             }
         }
     };

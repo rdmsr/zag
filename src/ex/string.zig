@@ -44,18 +44,16 @@ const Context = struct {
 pub const InternedString = packed struct(usize) {
     bits: usize,
 
-    const Self = @This();
-
-    fn from_ptr(e: *Entry) Self {
+    fn from_ptr(e: *Entry) InternedString {
         return .{ .bits = @intFromPtr(e) };
     }
 
-    fn as_entry(self: *const Self) ?*Entry {
+    fn as_entry(self: *const InternedString) ?*Entry {
         if (self.bits & 1 != 0) return null;
         return @ptrFromInt(self.bits);
     }
 
-    fn from_inline(s: []const u8) Self {
+    fn from_inline(s: []const u8) InternedString {
         var buf: [@sizeOf(usize)]u8 = @splat(0);
 
         // byte 0: tag (bit 0) | len (bits 1-7)
@@ -71,7 +69,7 @@ pub const InternedString = packed struct(usize) {
         return @sizeOf(usize) > 4 and len <= 7;
     }
 
-    pub fn slice(self: *const Self) []const u8 {
+    pub fn slice(self: *const InternedString) []const u8 {
         if (self.bits & 1 != 0) {
             const buf: *const [@sizeOf(usize)]u8 = @ptrCast(&self.bits);
             const len: usize = buf[0] >> 1;
@@ -97,7 +95,7 @@ pub fn init() void {
     table.init(.{
         .smr = domain,
         .policy = .Balanced,
-    }) catch unreachable;
+    }) catch @panic("Failed to initialize string interning");
 
     entry_zone.init("str entry", .{
         .smr = domain,
@@ -114,6 +112,7 @@ pub fn retain(string: []const u8) InternedString {
         // Fast path where the string already exists.
         const ipl = ke.smr.enter(domain);
         defer ke.smr.exit(domain, ipl);
+
         if (table.get(string)) |e| {
             _ = e.ref.fetchAdd(1, .monotonic);
             return .from_ptr(e);
@@ -121,10 +120,17 @@ pub fn retain(string: []const u8) InternedString {
     }
 
     // The string (probably) doesn't exist, create a new one.
-    var new_entry: *Entry = entry_zone.create() catch unreachable;
+    var new_entry: *Entry = entry_zone.create() catch {
+        // This can't error since the allocation will wait for free memory.
+        unreachable;
+    };
 
-    new_entry.string = mm.zone.gpa.dupe(u8, string) catch unreachable;
-    new_entry.ref = .init(1);
+    new_entry.string = mm.zone.gpa.dupe(u8, string) catch {
+        // This can't error since the allocation will wait for free memory.
+        unreachable;
+    };
+
+    new_entry.ref = std.atomic.Value(u32).init(1);
 
     const ipl = ke.smr.enter(domain);
     const entry = table.get_or_insert(string, &new_entry.link);

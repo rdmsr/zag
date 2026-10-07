@@ -1,3 +1,5 @@
+//! amd64-specific loader code.
+
 const amd64 = @import("arch");
 const r = @import("root");
 const pmap = @import("../pmap.zig");
@@ -75,7 +77,11 @@ pub inline fn make_table_pte(pa: usize) Pte {
     };
 }
 
-pub inline fn make_leaf_pte(pa: usize, flags: r.mem.MapFlags, level: usize) Pte {
+pub inline fn make_leaf_pte(
+    pa: usize,
+    flags: r.mem.MapFlags,
+    level: usize,
+) Pte {
     return Pte{
         .present = true,
         .writable = flags.write,

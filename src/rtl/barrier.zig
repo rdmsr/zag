@@ -1,8 +1,10 @@
 //! Atomic barrier implementations on various architectures.
 //! This is needed since Zig removed @fence.
 
-const std = @import("std");
 const builtin = @import("builtin");
+
+const std = @import("std");
+const assert = std.debug.assert;
 
 pub inline fn fence(comptime ordering: std.builtin.AtomicOrder) void {
     switch (ordering) {
@@ -67,7 +69,11 @@ inline fn rel() void {
 
 /// Copy to dest from src with atomic loads.
 /// Both addresses need to be aligned.
-pub fn atomic_load_memcpy(dest: anytype, src: anytype, comptime ordering: std.builtin.AtomicOrder) void {
+pub fn atomic_load_memcpy(
+    dest: anytype,
+    src: anytype,
+    comptime ordering: std.builtin.AtomicOrder,
+) void {
     const T = @TypeOf(dest.*);
     const Word = switch (@alignOf(T)) {
         1 => u8,
@@ -78,7 +84,7 @@ pub fn atomic_load_memcpy(dest: anytype, src: anytype, comptime ordering: std.bu
 
     const word_size = @sizeOf(Word);
     const n = @sizeOf(T);
-    comptime std.debug.assert(n % word_size == 0);
+    comptime assert(n % word_size == 0);
 
     const src_words: [*]const volatile Word = @ptrCast(src);
     const dest_words: [*]Word = @ptrCast(dest);
@@ -91,7 +97,11 @@ pub fn atomic_load_memcpy(dest: anytype, src: anytype, comptime ordering: std.bu
 
 /// Copy to dest from src with atomic stores.
 /// Both addresses need to be aligned.
-pub fn atomic_store_memcpy(dest: anytype, src: anytype, comptime ordering: std.builtin.AtomicOrder) void {
+pub fn atomic_store_memcpy(
+    dest: anytype,
+    src: anytype,
+    comptime ordering: std.builtin.AtomicOrder,
+) void {
     const T = @TypeOf(dest.*);
     const Word = switch (@alignOf(T)) {
         1 => u8,
@@ -102,7 +112,7 @@ pub fn atomic_store_memcpy(dest: anytype, src: anytype, comptime ordering: std.b
 
     const word_size = @sizeOf(Word);
     const n = @sizeOf(T);
-    comptime std.debug.assert(n % word_size == 0);
+    comptime assert(n % word_size == 0);
 
     const src_words: [*]const volatile Word = @ptrCast(src);
     const dest_words: [*]Word = @ptrCast(dest);

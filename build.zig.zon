@@ -13,8 +13,8 @@
             .hash = "N-V-__8AAAAAjAwsopZIlbp4U6NN1Eh573uVdLTwl1mkFUug",
         },
         .zonfig = .{
-            .url = "git+https://github.com/rdmsr/zonfig?ref=HEAD#7cb4e030077acbef88458aef2d3fec4331b3b6da",
-            .hash = "zonfig-0.1.0-V0D8-aRMFAAQ3Yb-0u8JNpdceK6lUOWUP7EY5BRXz12C",
+            .url = "git+https://github.com/rdmsr/zonfig?ref=HEAD#d02cbb9262c5e617676a252116c9cee3560b6e59",
+            .hash = "zonfig-0.1.0-V0D8-YtLFAAKh8PQgGaoCiGG1WUxWdqcY-iTysVPllQV",
         },
     },
 

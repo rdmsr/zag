@@ -88,7 +88,11 @@ pub inline fn make_table_pte(pa: r.PAddr) Pte {
     };
 }
 
-pub inline fn make_leaf_pte(pa: r.PAddr, flags: mm.MapFlags, level: usize) Pte {
+pub inline fn make_leaf_pte(
+    pa: r.PAddr,
+    flags: mm.MapFlags,
+    level: usize,
+) Pte {
     _ = level;
     return Pte{
         .present = true,
@@ -118,5 +122,6 @@ pub fn is_leaf_level_enabled(level: usize) bool {
 }
 
 pub fn init_kernel() void {
-    mmp.kernel_space.pmap.root_pa = (rv64.read_csr("satp") & ((@as(u64, 1) << 44) - 1)) << 12;
+    mmp.kernel_space.pmap.root_pa = (rv64.read_csr("satp") &
+        ((@as(u64, 1) << 44) - 1)) << 12;
 }

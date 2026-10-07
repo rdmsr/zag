@@ -38,10 +38,6 @@ const Msr = enum(u32) {
     _,
 };
 
-fn read_msr(msr: Msr) u64 {
-    return amd64.rdmsr(@intFromEnum(msr));
-}
-
 fn write_msr(msr: Msr, value: u64) void {
     amd64.wrmsr(@intFromEnum(msr), value);
 }

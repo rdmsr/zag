@@ -39,7 +39,7 @@ const Cursor = struct {
 
 const font_file = @embedFile("sun12x22-ascii.psf");
 const text_color: u32 = 0xFFFFFFFF;
-const bg_color: u32 = 0xFF000000;
+const bg_color: u32 = 0xFF574c8f;
 const crash_bg_color: u32 = 0xFF0000FF;
 const window_padding: usize = 10;
 
@@ -93,8 +93,8 @@ fn load_font() void {
 
 fn plot_character(x: usize, y: usize, c: u8) void {
     const bytes_per_row = font.glyph_size / font.height;
-    const glyph_offset = font.header_size + (@as(usize, c) * font.glyph_size);
-    const glyph_data = font_file[glyph_offset..(glyph_offset + font.glyph_size)];
+    const offset = font.header_size + (@as(usize, c) * font.glyph_size);
+    const glyph_data = font_file[offset .. offset + font.glyph_size];
     const start_x = window_padding + x;
     const start_y = window_padding + y;
 
@@ -102,14 +102,19 @@ fn plot_character(x: usize, y: usize, c: u8) void {
         var row_data: u32 = 0;
 
         for (0..bytes_per_row) |b| {
-            row_data = (row_data << 8) | @as(u32, glyph_data[row * bytes_per_row + b]);
+            row_data = (row_data << 8) |
+                @as(u32, glyph_data[row * bytes_per_row + b]);
         }
 
         const shift_base = bytes_per_row * 8;
 
         for (0..font.width) |col| {
-            if ((row_data & (@as(u32, 1) << @intCast(shift_base - 1 - col))) != 0) {
-                framebuffer[(start_y + row) * framebuffer_width + (start_x + col)] = text_color;
+            const mask = @as(u32, 1) << @intCast(shift_base - 1 - col);
+
+            if (row_data & mask != 0) {
+                framebuffer[
+                    (start_y + row) * framebuffer_width + (start_x + col)
+                ] = text_color;
             }
         }
     }
@@ -134,7 +139,9 @@ fn scroll() void {
         const dst_y = window_padding + (console_height - 1) * font.height + row;
 
         for (0..content_w) |col| {
-            framebuffer[dst_y * framebuffer_width + window_padding + col] = bg_color;
+            framebuffer[
+                dst_y * framebuffer_width + window_padding + col
+            ] = bg_color;
         }
     }
 }
@@ -187,11 +194,10 @@ pub fn init(boot_info: *r.BootInfo) void {
     content_h = framebuffer_height - (window_padding * 2);
 
     console_width = @intCast(content_w / font.width);
-    console_height = std.math.divCeil(
-        u16,
-        @intCast(content_h),
+    console_height = @divFloor(
+        @as(u16, @intCast(content_h)),
         font.height,
-    ) catch unreachable;
+    );
 
     for (0..framebuffer_width * framebuffer_height) |i| {
         framebuffer[i] = bg_color;

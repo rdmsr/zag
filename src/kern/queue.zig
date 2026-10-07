@@ -9,7 +9,9 @@ const r = @import("root");
 const rtl = @import("rtl");
 const ke = r.ke;
 const kep = ke.private;
+
 const std = @import("std");
+const assert = std.debug.assert;
 
 pub const Queue = struct {
     hdr: kep.wait.DispatchHeader,
@@ -56,11 +58,11 @@ pub const Queue = struct {
     /// This blocks until an item is actually popped.
     pub fn remove(self: *Queue, timeout: ?r.Nanoseconds) !*rtl.List.Entry {
         const ipl = self.hdr.lock.acquire();
-        const td = kep.sched.percpu.local().current_thread.?;
+        const td = kep.sched.percpu.local().current_thread orelse unreachable;
 
         if (td.queue) |q| {
-            std.debug.assert(q == self);
-            std.debug.assert(self.active > 0);
+            assert(q == self);
+            assert(self.active > 0);
 
             self.active -= 1;
             if (self.hdr.signaled > 0 and self.active < self.max_active) {
@@ -90,7 +92,7 @@ pub const Queue = struct {
 /// than the queue.
 pub fn signal_wait(queue: *Queue) void {
     const ipl = queue.hdr.lock.acquire();
-    std.debug.assert(queue.active > 0);
+    assert(queue.active > 0);
 
     queue.active -= 1;
 

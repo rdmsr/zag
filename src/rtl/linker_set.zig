@@ -1,3 +1,5 @@
+//! Linker sets, inspired by FreeBSD.
+
 const std = @import("std");
 
 /// Used for declaring global objects that get collected by the linker
@@ -12,8 +14,6 @@ pub fn LinkerSet(name: []const u8, comptime T: type) type {
     return struct {
         const start = @extern(*u8, .{ .name = "__start_set_" ++ name });
         const end = @extern(*u8, .{ .name = "__stop_set_" ++ name });
-
-        const Self = @This();
 
         pub fn count() usize {
             return (@intFromPtr(end) - @intFromPtr(start)) / @sizeOf(T);
@@ -41,7 +41,8 @@ pub fn LinkerSet(name: []const u8, comptime T: type) type {
                     @export(
                         @as(*const usize, @ptrCast(&storage)),
                         .{
-                            .name = "_set_elem_" ++ name ++ "_" ++ @typeName(Tag(elem)),
+                            .name = "_set_elem_" ++ name ++ "_" ++
+                                @typeName(Tag(elem)),
                             .section = "set_" ++ name,
                         },
                     );
