@@ -1,22 +1,23 @@
 const std = @import("std");
 
-pub const units = @import("units.zig");
+pub const Duration = @import("units.zig").Duration;
+pub const Timestamp = @import("units.zig").Timestamp;
 pub const List = @import("list.zig").List;
-pub const SeqLock = @import("seqlock.zig").SeqLock;
+pub const SeqLockType = @import("seqlock.zig").SeqLockType;
 pub const barrier = @import("barrier.zig");
 pub const cmdline = @import("cmdline.zig");
 pub const pairing_heap = @import("pairing_heap.zig");
-pub const PairingHeap = pairing_heap.PairingHeap;
-pub const TaggedPtr = @import("tagged_ptr.zig").TaggedPtr;
+pub const PairingHeapType = pairing_heap.PairingHeapType;
+pub const TaggedPtrType = @import("tagged_ptr.zig").TaggedPtrType;
 pub const bst = @import("bst.zig");
-pub const BST = bst.BST;
-pub const RBTree = @import("rbtree.zig").RBTree;
-pub const AVLTree = @import("avl.zig").AVLTree;
-pub const BitMap = @import("bitmap.zig").BitMap;
-pub const AtomicBitMap = @import("bitmap.zig").AtomicBitMap;
+pub const BstType = bst.BstType;
+pub const RbTreeType = @import("rbtree.zig").RbTreeType;
+pub const AvlTreeType = @import("avl.zig").AvlTreeType;
+pub const BitmapType = @import("bitmap.zig").BitmapType;
+pub const AtomicBitmapType = @import("bitmap.zig").AtomicBitmapType;
 pub const HandoffList = @import("handoff.zig").HandoffList;
-pub const LinkerSet = @import("linker_set.zig").LinkerSet;
-pub const CachePadded = @import("cache_padded.zig").CachePadded;
+pub const LinkerSetType = @import("linker_set.zig").LinkerSetType;
+pub const CachePaddedType = @import("cache_padded.zig").CachePaddedType;
 
 pub fn comptime_error(comptime msg: []const u8, args: anytype) void {
     @compileError(std.fmt.comptimePrint(msg, args));

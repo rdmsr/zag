@@ -3,7 +3,7 @@
 //!
 //! # Overview
 //!
-//! `RingBuffer` is a concurrent ring buffer that allows multiple writers
+//! `RingBufferType` is a concurrent ring buffer that allows multiple writers
 //! and readers to operate concurrently without locks, and also supports re-
 //! entrancy, making it safe to use from interrupt context.
 //! It is modelled after Linux's `printk_ringbuffer`, but is simplified,
@@ -68,8 +68,9 @@
 //! during eviction.
 
 const std = @import("std");
-const r = @import("root");
 const rtl = @import("rtl");
+
+const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
 
@@ -101,7 +102,7 @@ const Desc = struct {
 
 pub const Info = struct {
     sequence: u64,
-    timestamp: r.Nanoseconds,
+    timestamp: rtl.Timestamp,
     length: u16,
 };
 
@@ -131,7 +132,7 @@ pub const ReadError = error{NotYetAvailable};
 // block position.
 const lpos_no_data = 1;
 
-pub fn RingBuffer(data_size_bits: usize, avg_msg_bits: usize) type {
+pub fn RingBufferType(data_size_bits: usize, avg_msg_bits: usize) type {
     return struct {
         const data_size = 1 << data_size_bits;
         const desc_bits = data_size_bits - avg_msg_bits;

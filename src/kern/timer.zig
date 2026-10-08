@@ -10,7 +10,7 @@ const pl = r.pl;
 const std = @import("std");
 const assert = std.debug.assert;
 
-const TimerHeap = rtl.PairingHeap(.Min, kep.timer.cmp_timer);
+const TimerHeap = rtl.PairingHeapType(.Min, kep.timer.cmp_timer);
 
 const PerCpu = struct {
     /// Heap of pending timers on this CPU.
@@ -35,7 +35,7 @@ pub const Timer = struct {
     /// Timer state.
     state: std.atomic.Value(State),
     /// When the timer is bound to expire.
-    deadline: r.Nanoseconds,
+    deadline: rtl.Timestamp,
     /// Attached DPC.
     dpc: ?*ke.Dpc,
     /// Intrusive pairing heap node.
@@ -47,7 +47,7 @@ pub const Timer = struct {
         self.* = .{
             .hdr = undefined,
             .state = std.atomic.Value(State).init(.Stopped),
-            .deadline = r.Nanoseconds.init(0),
+            .deadline = .{ .value = 0 },
             .dpc = null,
             .node = .{},
             .cpu = null,
@@ -57,10 +57,10 @@ pub const Timer = struct {
     }
 };
 
-const percpu = ke.CpuLocal(PerCpu, .{
+const percpu = ke.CpuLocalType(PerCpu, .{
     .timers = TimerHeap.init(),
     .lock = undefined,
-    .dpc = .init(handle_expiry),
+    .dpc = ke.Dpc.init(handle_expiry),
 });
 
 fn pcpu_init() linksection(r.init) void {
@@ -77,7 +77,7 @@ const Options = struct {
 
 /// Start a timer with an expiration time.
 /// A DPC that will be enqueued upon expiration can be passed.
-pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
+pub fn set(timer: *Timer, duration: rtl.Duration, opts: Options) void {
     const ipl = timer.hdr.lock.acquire();
     defer timer.hdr.lock.release(ipl);
 
@@ -92,7 +92,7 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
     defer cpu.lock.release_no_ipl();
 
     // Initialize the timer.
-    timer.deadline = .init(ke.time.read_time().value + time.value);
+    timer.deadline = ke.time.read_time().add(duration);
 
     timer.cpu = cpu;
     timer.dpc = opts.dpc;
@@ -102,7 +102,7 @@ pub fn set(timer: *Timer, time: r.Nanoseconds, opts: Options) void {
 
     if (cpu.timers.root == &timer.node) {
         // This is the earliest timer to expire, arm the hardware timer.
-        pl.arm_timer(time);
+        pl.arm_timer(duration);
     }
 
     // Locks dropped
@@ -198,7 +198,7 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
             if (timer.deadline.value > now.value and
                 timer.deadline.value - now.value > std.time.ns_per_ms)
             {
-                pl.arm_timer(.init(timer.deadline.value - now.value));
+                pl.arm_timer(rtl.Duration.ns(timer.deadline.value - now.value));
                 cpu.lock.release_no_ipl();
                 return;
             }

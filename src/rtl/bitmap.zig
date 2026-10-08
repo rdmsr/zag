@@ -16,7 +16,7 @@ fn bit_mask(comptime Word: type, bit_index: usize) Word {
 }
 
 /// Static bitmap that uses the most efficient underlying word size for N < 64
-pub fn BitMap(comptime N: usize) type {
+pub fn BitmapType(comptime N: usize) type {
     return struct {
         pub const Word = if (N > 32) u64 else ClosestType(N);
         const Bitmap = @This();
@@ -107,7 +107,8 @@ pub fn BitMap(comptime N: usize) type {
 
         /// Check whether all bits in the bitmap are equal to a given value.
         pub fn is_all(self: *const Bitmap, value: bool) bool {
-            const v: Bitmap.Word = if (value) std.math.maxInt(Bitmap.Word)
+            const v: Bitmap.Word = if (value)
+                std.math.maxInt(Bitmap.Word)
             else
                 0;
             for (self.storage) |word| {
@@ -118,9 +119,9 @@ pub fn BitMap(comptime N: usize) type {
     };
 }
 
-/// Atomic static bitmap with the same API as `BitMap`, but each operation
+/// Atomic static bitmap with the same API as `BitmapType`, but each operation
 /// accepts a memory ordering.
-pub fn AtomicBitMap(comptime N: usize) type {
+pub fn AtomicBitmapType(comptime N: usize) type {
     return struct {
         pub const Word = if (N > 32) u64 else ClosestType(N);
         const Bitmap = @This();
@@ -250,7 +251,9 @@ pub fn AtomicBitMap(comptime N: usize) type {
             value: bool,
             comptime order: AtomicOrder,
         ) bool {
-            const v: Bitmap.Word = if (value) std.math.maxInt(Bitmap.Word) else
+            const v: Bitmap.Word = if (value)
+                std.math.maxInt(Bitmap.Word)
+            else
                 0;
             for (self.storage) |word| {
                 if (word.load(order) != v) return false;
@@ -260,19 +263,19 @@ pub fn AtomicBitMap(comptime N: usize) type {
     };
 }
 
-test "BitMap has proper underlying type" {
-    assert(BitMap(8).Word == u8);
-    assert(BitMap(10).Word == u16);
-    assert(BitMap(16).Word == u16);
-    assert(BitMap(21).Word == u32);
-    assert(BitMap(32).Word == u32);
-    assert(BitMap(64).Word == u64);
-    assert(BitMap(128).Word == u64);
-    assert(BitMap(1024).Word == u64);
+test "BitmapType has proper underlying type" {
+    assert(BitmapType(8).Word == u8);
+    assert(BitmapType(10).Word == u16);
+    assert(BitmapType(16).Word == u16);
+    assert(BitmapType(21).Word == u32);
+    assert(BitmapType(32).Word == u32);
+    assert(BitmapType(64).Word == u64);
+    assert(BitmapType(128).Word == u64);
+    assert(BitmapType(1024).Word == u64);
 }
 
-test BitMap {
-    var bitmap = BitMap(10).init(false);
+test BitmapType {
+    var bitmap = BitmapType(10).init(false);
 
     assert(@TypeOf(bitmap).Word == u16);
     assert(bitmap.get(0) == false);
@@ -285,8 +288,8 @@ test BitMap {
     assert(bitmap.get(0) == false);
 }
 
-test "BitMap count and iter" {
-    var bitmap = BitMap(70).init(false);
+test "BitmapType count and iter" {
+    var bitmap = BitmapType(70).init(false);
 
     assert(bitmap.count() == 0);
     {
@@ -314,7 +317,7 @@ test "BitMap count and iter" {
 
     assert(bitmap.count() == 4);
 
-    var all = BitMap(70).init(true);
+    var all = BitmapType(70).init(true);
     assert(all.count() == 70);
 
     var all_it = all.iter();
@@ -325,8 +328,8 @@ test "BitMap count and iter" {
     assert(expected == 70);
 }
 
-test AtomicBitMap {
-    var bitmap = AtomicBitMap(10).init(false);
+test AtomicBitmapType {
+    var bitmap = AtomicBitmapType(10).init(false);
 
     assert(@TypeOf(bitmap).Word == u16);
     assert(bitmap.get(0, .seq_cst) == false);
@@ -341,8 +344,8 @@ test AtomicBitMap {
     assert(bitmap.is_all(false, .seq_cst) == true);
 }
 
-test "AtomicBitMap count and iter" {
-    var bitmap = AtomicBitMap(70).init(false);
+test "AtomicBitmapType count and iter" {
+    var bitmap = AtomicBitmapType(70).init(false);
 
     assert(bitmap.count(.seq_cst) == 0);
     {
@@ -370,7 +373,7 @@ test "AtomicBitMap count and iter" {
 
     assert(bitmap.count(.seq_cst) == 4);
 
-    var all = AtomicBitMap(70).init(true);
+    var all = AtomicBitmapType(70).init(true);
     assert(all.count(.seq_cst) == 70);
 
     var all_it = all.iter(.seq_cst);

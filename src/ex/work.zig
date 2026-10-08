@@ -22,7 +22,7 @@ const ps = r.ps;
 const mm = r.mm;
 
 /// Maximum number of additional threads created per pool.
-const max_dynamic_threads = ke.Tunable(u8, 4, "ex.work.max_dynamic");
+const max_dynamic_threads = ke.TunableType(u8, 4, "ex.work.max_dynamic");
 
 var pool_manager_event: ke.Event = undefined;
 
@@ -98,7 +98,7 @@ pub const DelayedWorkItem = struct {
     }
 };
 
-const Context = rtl.TaggedPtr(Pool);
+const Context = rtl.TaggedPtrType(Pool);
 
 /// Represents a thread worker pool and its queue.
 const Pool = struct {
@@ -204,7 +204,7 @@ const PerCpu = struct {
     normal: Pool,
 };
 
-const percpu = ke.CpuLocal(PerCpu, undefined);
+const percpu = ke.CpuLocalType(PerCpu, undefined);
 
 /// Low-priority work queue.
 var low: Pool = undefined;
@@ -214,8 +214,8 @@ fn work_loop(p: ?*anyopaque) void {
     const dynamic = ctx.tag() == 1;
 
     while (true) {
-        const timeout: ?r.Nanoseconds = if (dynamic)
-            .from(r.Seconds.init(5))
+        const timeout: ?rtl.Duration = if (dynamic)
+            rtl.Duration.seconds(5)
         else
             null;
         const item = ctx.ptr().queue.remove(timeout) catch {
@@ -239,9 +239,9 @@ fn work_dpc(dpc: *ke.Dpc, _: ?*anyopaque) void {
     enqueue(&item.item);
 }
 
-/// Enqueue a work item in `time`.
-pub fn enqueue_in(item: *DelayedWorkItem, time: r.Nanoseconds) void {
-    ke.timer.set(&item.timer, time, .{ .dpc = &item.dpc });
+/// Enqueue a work item after `duration`.
+pub fn enqueue_in(item: *DelayedWorkItem, duration: rtl.Duration) void {
+    ke.timer.set(&item.timer, duration, .{ .dpc = &item.dpc });
 }
 
 /// Enqueue a work item to be executed eventually.

@@ -19,17 +19,17 @@ fn set_bf(node: *bst.Node, bf: u2) void {
     node.parent.set_tag(bf);
 }
 
-pub fn AVLTree(
+pub fn AvlTreeType(
     comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order,
 ) type {
     return struct {
-        tree: bst.BST(cmp),
+        tree: bst.BstType(cmp),
 
         const Tree = @This();
 
         pub fn init() Tree {
             return Tree{
-                .tree = bst.BST(cmp).init(),
+                .tree = bst.BstType(cmp).init(),
             };
         }
 

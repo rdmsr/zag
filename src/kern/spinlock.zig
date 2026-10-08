@@ -8,7 +8,7 @@ const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;
 
-fn LockTemplate(comptime T: type) type {
+fn LockType(comptime T: type) type {
     comptime {
         if (!@hasDecl(T, "acquire_no_ipl"))
             @compileError("lock backend must implement acquire_no_ipl");
@@ -115,7 +115,7 @@ fn LockTemplate(comptime T: type) type {
 }
 
 /// Simple Spin lock implementation.
-pub const SpinLock = LockTemplate(struct {
+pub const SpinLock = LockType(struct {
     locked: std.atomic.Value(u8),
 
     const Lock = @This();
@@ -163,7 +163,7 @@ const PerCpu = struct {
     curr_idx: u32,
 };
 
-const pcpu = ke.CpuLocal(PerCpu, undefined);
+const pcpu = ke.CpuLocalType(PerCpu, undefined);
 
 /// Initialize a CPU's MCS nodes.
 fn init_cpu() linksection(r.init) void {
@@ -182,7 +182,7 @@ comptime {
 
 /// Queued spin lock implementation.
 /// See https://rdmsr.github.io/writing/qspinlocks
-pub const QSpinLock = LockTemplate(struct {
+pub const QSpinLock = LockType(struct {
     const Tail = packed struct(u16) {
         idx: u2,
         cpu: u14,

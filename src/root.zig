@@ -16,16 +16,11 @@ const config = @import("config");
 
 pub const init = ".text.init";
 
-pub const percpu_init_set = rtl.LinkerSet("percpu_init", *const fn () void);
+pub const percpu_init_set = rtl.LinkerSetType("percpu_init", *const fn () void);
 pub const percpu = ".data.percpu";
 
 pub const VAddr = usize;
 pub const PAddr = usize;
-
-pub const Nanoseconds = rtl.units.Nanoseconds;
-pub const Microseconds = rtl.units.Microseconds;
-pub const Milliseconds = rtl.units.Milliseconds;
-pub const Seconds = rtl.units.Seconds;
 
 pub var kernel_heap_base: usize = 0;
 pub var kernel_pfndb_base: usize = 0;

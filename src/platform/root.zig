@@ -3,7 +3,6 @@
 //! functions.
 
 const config = @import("config");
-const r = @import("root");
 const rtl = @import("rtl");
 
 pub const impl = switch (config.arch) {
@@ -27,7 +26,7 @@ const ImplSchema = struct {
     pub fn send_ipi(cpu: u32) void {
         _ = cpu;
     }
-    pub fn arm_timer(ns: r.Nanoseconds) void {
+    pub fn arm_timer(ns: rtl.Duration) void {
         _ = ns;
     }
 };
@@ -58,7 +57,7 @@ pub inline fn debug_read() u8 {
 }
 
 /// Arm a one-shot timer to fire in `ns` nanoseconds.
-pub inline fn arm_timer(ns: r.Nanoseconds) void {
+pub inline fn arm_timer(ns: rtl.Duration) void {
     return impl.arm_timer(ns);
 }
 

@@ -125,7 +125,7 @@ extern var rodata_end_addr: u8;
 extern var data_start_addr: u8;
 extern var data_end_addr: u8;
 
-fn map_self() void {
+fn map_executable() void {
     const layout = r.impl.get_image_layout();
 
     const text_start = @intFromPtr(&text_start_addr);
@@ -180,6 +180,10 @@ fn map_self() void {
             .global = true,
         },
     );
+}
+
+fn map_self() void {
+    map_executable();
 
     const max_hhdm_address = 4 * 1024 * 1024 * 1024;
 

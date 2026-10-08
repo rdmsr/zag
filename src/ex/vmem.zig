@@ -82,9 +82,9 @@ const Segment = struct {
 const freelist_count = @bitSizeOf(usize);
 const max_qcaches = 16;
 
-var seg_zone: mmp.zone.TypedZone(Segment) = undefined;
+var seg_zone: mmp.zone.ZoneType(Segment) = undefined;
 
-const SegmentTree = rtl.RBTree(Segment.cmp);
+const SegmentTree = rtl.RbTreeType(Segment.cmp);
 
 pub const Arena = struct {
     /// Name of the arena, for debugging purposes.

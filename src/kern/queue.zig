@@ -56,7 +56,7 @@ pub const Queue = struct {
 
     /// Remove the item at the head.
     /// This blocks until an item is actually popped.
-    pub fn remove(self: *Queue, timeout: ?r.Nanoseconds) !*rtl.List.Entry {
+    pub fn remove(self: *Queue, timeout: ?rtl.Duration) !*rtl.List.Entry {
         const ipl = self.hdr.lock.acquire();
         const td = kep.sched.percpu.local().current_thread orelse unreachable;
 

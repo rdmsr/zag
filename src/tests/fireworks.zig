@@ -1,5 +1,6 @@
 //! Fireworks test ported from the Boron operating system.
 const std = @import("std");
+const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
 const mm = r.mm;
@@ -110,7 +111,7 @@ fn get_random_color() u32 {
 
 fn sleep(ms: usize, continuation: ?ke.Continuation) void {
     _ = ke.wait.wait_any(&.{}, "sleep", .{
-        .timeout = .from(r.Milliseconds.init(ms)),
+        .timeout = rtl.Duration.ms(ms),
         .continuation = continuation,
     }) catch {
         return;

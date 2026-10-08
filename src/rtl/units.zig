@@ -1,67 +1,56 @@
 /// Type-safe measurement units.
 const std = @import("std");
 
-const Dimension = enum { Time };
-
-fn scale_value(
-    comptime from_scale: u64,
-    comptime to_scale: u64,
+pub const Duration = struct {
+    /// Value, in nanoseconds.
     value: u64,
-) u64 {
-    if (comptime from_scale >= to_scale) {
-        return value * comptime (from_scale / to_scale);
-    } else {
-        return value / comptime (to_scale / from_scale);
+
+    pub fn ns(count: u64) Duration {
+        return .{ .value = count };
     }
-}
 
-pub fn Unit(
-    comptime dim: Dimension,
-    comptime scale: u64,
-    comptime unit_suffix: []const u8,
-) type {
-    return struct {
-        const UnitType = @This();
-        pub const dimension = dim;
-        pub const base_per_unit = scale;
+    pub fn us(count: u64) Duration {
+        return .{ .value = std.time.ns_per_us * count };
+    }
 
-        value: u64,
+    pub fn ms(count: u64) Duration {
+        return .{ .value = std.time.ns_per_ms * count };
+    }
 
-        fn check(comptime T: type) void {
-            comptime {
-                if (!(@typeInfo(T) == .@"struct" and @hasDecl(T, "dimension")))
-                    @compileError(@typeName(T) ++ " is not a unit");
-                if (T.dimension != dim)
-                    @compileError("cannot convert between " ++
-                        @tagName(T.dimension) ++
-                        " and " ++ @tagName(dim));
-            }
-        }
+    pub fn seconds(count: u64) Duration {
+        return .{ .value = std.time.ns_per_s * count };
+    }
 
-        pub fn init(value: u64) UnitType {
-            return .{ .value = value };
-        }
+    pub fn to_us(duration: Duration) u64 {
+        return duration.value / std.time.ns_per_us;
+    }
 
-        pub fn to(self: UnitType, comptime T: type) T {
-            check(T);
-            return T.init(scale_value(scale, T.base_per_unit, self.value));
-        }
+    pub fn to_ms(duration: Duration) u64 {
+        return duration.value / std.time.ns_per_ms;
+    }
 
-        pub fn from(other: anytype) UnitType {
-            const From = @TypeOf(other);
-            check(From);
-            return UnitType.init(
-                scale_value(From.base_per_unit, scale, other.value),
-            );
-        }
+    pub fn to_seconds(duration: Duration) u64 {
+        return duration.value / std.time.ns_per_s;
+    }
+};
 
-        pub inline fn format(self: UnitType, writer: *std.Io.Writer) !void {
-            try writer.print("{} {s}", .{ self.value, unit_suffix });
-        }
-    };
-}
+pub const Timestamp = struct {
+    /// Value, in nanoseconds.
+    value: u64,
 
-pub const Nanoseconds = Unit(.Time, 1, "ns");
-pub const Microseconds = Unit(.Time, std.time.ns_per_us, "us");
-pub const Milliseconds = Unit(.Time, std.time.ns_per_ms, "ms");
-pub const Seconds = Unit(.Time, std.time.ns_per_s, "s");
+    pub fn add(now: Timestamp, duration: Duration) Timestamp {
+        return .{ .value = now.value + duration.value };
+    }
+
+    pub fn to_us(timestamp: Timestamp) u64 {
+        return timestamp.value / std.time.ns_per_us;
+    }
+
+    pub fn to_ms(timestamp: Timestamp) u64 {
+        return timestamp.value / std.time.ns_per_ms;
+    }
+
+    pub fn to_seconds(timestamp: Timestamp) u64 {
+        return timestamp.value / std.time.ns_per_s;
+    }
+};

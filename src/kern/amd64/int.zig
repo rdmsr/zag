@@ -124,7 +124,7 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.c) void {
 
     _ = ke.ipl.set_hardware(ipl);
 
-    if (@intFromEnum(ipl) < @intFromEnum(ke.Ipl.get_max_software()) and
+    if (@backingInt(ipl) < @backingInt(ke.Ipl.get_max_software()) and
         kep.ipl.is_softint_pending(.Dispatch))
     {
         kep.dpc.dispatch();

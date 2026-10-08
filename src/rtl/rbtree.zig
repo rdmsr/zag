@@ -15,11 +15,11 @@ fn set_color(node: *bst.Node, color: u2) void {
     node.parent.set_tag(color);
 }
 
-pub fn RBTree(
+pub fn RbTreeType(
     comptime cmp: fn (*const bst.Node, *const bst.Node) std.math.Order,
 ) type {
     return struct {
-        tree: bst.BST(cmp),
+        tree: bst.BstType(cmp),
 
         const Tree = @This();
 
@@ -73,7 +73,7 @@ pub fn RBTree(
 
         pub fn init() Tree {
             return Tree{
-                .tree = bst.BST(cmp).init(),
+                .tree = bst.BstType(cmp).init(),
             };
         }
 
@@ -291,7 +291,7 @@ fn cmp_test_node(a: *const bst.Node, b: *const bst.Node) std.math.Order {
     return .eq;
 }
 
-fn get_black_height(tree: *RBTree(cmp_test_node), node: *bst.Node) !usize {
+fn get_black_height(tree: *RbTreeType(cmp_test_node), node: *bst.Node) !usize {
     if (tree.tree.is_nil(node)) return 1;
 
     const left_bh = try get_black_height(tree, node.left);
@@ -309,17 +309,17 @@ fn get_black_height(tree: *RBTree(cmp_test_node), node: *bst.Node) !usize {
     return left_bh + if (get_color(node) == black) @as(usize, 1) else 0;
 }
 
-fn check_invariants(tree: *RBTree(cmp_test_node)) !void {
+fn check_invariants(tree: *RbTreeType(cmp_test_node)) !void {
     if (tree.tree.is_empty()) return;
     try std.testing.expect(get_color(tree.tree.root) == black);
     _ = try get_black_height(tree, tree.tree.root);
 }
 
-fn make_tree() RBTree(cmp_test_node) {
+fn make_tree() RbTreeType(cmp_test_node) {
     return .init();
 }
 
-fn insert_all(tree: *RBTree(cmp_test_node), nodes: []TestNode) !void {
+fn insert_all(tree: *RbTreeType(cmp_test_node), nodes: []TestNode) !void {
     for (nodes) |*n| try tree.insert(&n.node);
 }
 

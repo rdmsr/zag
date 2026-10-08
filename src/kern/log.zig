@@ -45,7 +45,7 @@ const DebugWriter = struct {
 // Messages are on average 2^5 = 32 bytes.
 const avg_msg_size_bits = 5;
 
-pub var ringbuffer = kep.log_ring.RingBuffer(
+pub var ringbuffer = kep.log_ring.RingBufferType(
     config.log_buffer_shift,
     avg_msg_size_bits,
 ).init();
@@ -87,7 +87,7 @@ pub fn log(
     ringbuffer.publish(res);
 
     // Signal whomever is waiting on logs to get published.
-    if (@intFromEnum(ke.ipl.current()) <= @intFromEnum(ke.Ipl.Dispatch)) {
+    if (@backingInt(ke.ipl.current()) <= @backingInt(ke.Ipl.Dispatch)) {
         event.signal();
     }
 

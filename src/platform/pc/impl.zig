@@ -1,3 +1,4 @@
+const rtl = @import("rtl");
 const r = @import("root");
 const pl = r.pl;
 const amd64 = r.arch;
@@ -109,8 +110,8 @@ pub fn debug_read() u8 {
     return amd64.inb(com1);
 }
 
-pub fn arm_timer(deadline: r.Nanoseconds) void {
-    apic.arm_timer(deadline);
+pub fn arm_timer(duration: rtl.Duration) void {
+    apic.arm_timer(duration);
 }
 
 pub fn send_ipi(target_cpu: u32) void {

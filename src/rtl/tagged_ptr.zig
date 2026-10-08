@@ -1,6 +1,6 @@
 /// Struct used to wrap a pointer with a 2-bit tag in the lower bits.
 /// This assumes that the pointer is at least 4-byte aligned.
-pub fn TaggedPtr(comptime T: type) type {
+pub fn TaggedPtrType(comptime T: type) type {
     return struct {
         value: usize,
 
@@ -39,9 +39,9 @@ pub fn TaggedPtr(comptime T: type) type {
 
 const std = @import("std");
 
-test TaggedPtr {
+test TaggedPtrType {
     var x: u32 = 0;
-    var tagged = TaggedPtr(u32).init(&x, 2);
+    var tagged = TaggedPtrType(u32).init(&x, 2);
 
     try std.testing.expectEqual(&x, tagged.ptr());
     try std.testing.expectEqual(2, tagged.tag());

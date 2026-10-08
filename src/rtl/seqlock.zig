@@ -3,7 +3,7 @@
 const std = @import("std");
 const rtl = @import("rtl");
 
-pub fn SeqLock(comptime T: type) type {
+pub fn SeqLockType(comptime T: type) type {
     return struct {
         const Lock = @This();
 

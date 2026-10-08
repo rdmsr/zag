@@ -7,7 +7,7 @@ const r = @import("root");
 const ke = r.ke;
 const kep = r.ke.private;
 
-const id = CpuLocal(u32, 0);
+const id = CpuLocalType(u32, 0);
 
 /// Initialize a CPU. Must be called on all CPUs.
 pub fn init_cpu(cpu_id: u32) void {
@@ -25,7 +25,7 @@ pub fn current() u32 {
 }
 
 /// Wraps around CPU-local data.
-pub fn CpuLocal(comptime T: type, comptime init: T) type {
+pub fn CpuLocalType(comptime T: type, comptime init: T) type {
     return struct {
         var storage: T linksection(".data.percpu") = init;
 
@@ -42,7 +42,7 @@ pub fn CpuLocal(comptime T: type, comptime init: T) type {
 }
 
 /// Wraps around CPU-local data with a designated symbol name.
-pub fn ExportedCpuLocal(
+pub fn ExportedCpuLocalTypeType(
     comptime T: type,
     comptime init: T,
     comptime name: []const u8,
@@ -62,5 +62,5 @@ pub fn ExportedCpuLocal(
 }
 
 /// Bitmask of CPUs.
-pub const CpuMask = rtl.BitMap(config.ncpus);
-pub const AtomicCpuMask = rtl.AtomicBitMap(config.ncpus);
+pub const CpuMask = rtl.BitmapType(config.ncpus);
+pub const AtomicCpuMask = rtl.AtomicBitmapType(config.ncpus);

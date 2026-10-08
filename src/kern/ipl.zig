@@ -33,13 +33,13 @@ const PerCpu = struct {
 };
 
 /// Current IPL on this CPU.
-pub const cpu_ipl = ke.ExportedCpuLocal(
+pub const cpu_ipl = ke.ExportedCpuLocalTypeType(
     Ipl,
     .Passive,
     "cpu_ipl",
 );
 
-pub const percpu = ke.CpuLocal(PerCpu, .{
+pub const percpu = ke.CpuLocalType(PerCpu, .{
     .pending_softints = std.atomic.Value(u8).init(0),
 });
 

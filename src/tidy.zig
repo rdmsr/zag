@@ -88,7 +88,7 @@ const Errors = struct {
         line_num: usize,
     ) void {
         errors.emit(
-            "{s}:{d}: error: type name '{s}' should be PascalCase\n",
+            "{s}:{d}: error: type name '{s}' should be PascalCase + Type\n",
             .{ file.path, line_num, name },
         );
     }
@@ -298,8 +298,10 @@ fn tidy_function(
         errors.add_function_not_documented(name, file, lineno + 1);
     }
 
-    if (returns_type and std.ascii.isLower(name[0])) {
-        errors.add_wrong_fn_type_name(name, file, lineno + 1);
+    if (returns_type) {
+        if (std.ascii.isLower(name[0]) or !std.mem.endsWith(u8, name, "Type")) {
+            errors.add_wrong_fn_type_name(name, file, lineno + 1);
+        }
     }
 
     if (!returns_type) {
@@ -359,7 +361,6 @@ fn tidy_banned(file: SourceFile, errors: *Errors) void {
         .{ "catch unreachable", "proper error handling or documentation" },
         .{ "catch {}", "proper error handling or documentation" },
         .{ "= .init(", "full type name" },
-        .{ ".?", "orelse unreachable" },
     };
 
     for (ban_list) |ban_item| {

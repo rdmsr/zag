@@ -1,3 +1,4 @@
+const rtl = @import("rtl");
 const r = @import("root");
 const rv64 = r.arch;
 const ke = r.ke;
@@ -63,7 +64,10 @@ pub fn debug_read() u8 {
 }
 
 pub fn send_ipi(_: u32) void {}
-pub fn arm_timer(ns: r.Nanoseconds) void {
-    const ticks = @max(1, @as(u64, @intCast((@as(u128, ns.value) * timebase_hz) / std.time.ns_per_s)));
+pub fn arm_timer(ns: rtl.Duration) void {
+    const ticks = @max(1, @as(
+        u64,
+        @intCast((@as(u128, ns.value) * timebase_hz) / std.time.ns_per_s),
+    ));
     set_timer(read_time() +% ticks);
 }

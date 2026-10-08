@@ -39,7 +39,7 @@ const PerCpu = struct {
     lock: ke.SpinLock,
 };
 
-const pcpu = ke.CpuLocal(PerCpu, .{
+const pcpu = ke.CpuLocalType(PerCpu, .{
     .lock = undefined,
     .queue = undefined,
 });
@@ -120,7 +120,7 @@ fn dispatch_queue(cpu: u32) void {
     if (sched_cpu.start_timer) {
         ke.timer.set(
             &sched_cpu.resched_timer,
-            .from(r.Milliseconds.init(config.sched_timeslice)),
+            rtl.Duration.ms(config.sched_timeslice),
             .{ .dpc = &sched_cpu.resched_dpc },
         );
     }
@@ -130,7 +130,7 @@ fn dispatch_queue(cpu: u32) void {
         ke.timer.cancel(&sched_cpu.resched_timer);
         ke.timer.set(
             &sched_cpu.resched_timer,
-            .from(r.Milliseconds.init(config.sched_timeslice)),
+            rtl.Duration.ms(config.sched_timeslice),
             .{ .dpc = &sched_cpu.resched_dpc },
         );
     }

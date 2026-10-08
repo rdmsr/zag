@@ -3,12 +3,12 @@
 const std = @import("std");
 
 /// Used for declaring global objects that get collected by the linker
-/// into a `LinkerSet`. This works by declaring each set its own section
+/// into a `LinkerSetType`. This works by declaring each set its own section
 /// and abusing linker-generated `__start_<name>` and `__stop_<name>` symbols.
 /// Each set stores pointers to objects, so `T` must be a pointer type.
-pub fn LinkerSet(name: []const u8, comptime T: type) type {
+pub fn LinkerSetType(name: []const u8, comptime T: type) type {
     if (@typeInfo(T) != .pointer) {
-        @compileError("LinkerSet type must be a pointer type");
+        @compileError("LinkerSetType type must be a pointer type");
     }
 
     return struct {

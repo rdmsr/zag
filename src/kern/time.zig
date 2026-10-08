@@ -37,7 +37,7 @@ const State = struct {
 
 // SeqLock-protected time state.
 // Avoids a race on `initial_count` and `offset` with `update_overflow`.
-var state = rtl.SeqLock(State).init(.{
+var state = rtl.SeqLockType(State).init(.{
     .initial_count = 0,
     .offset = 0,
 });
@@ -84,14 +84,14 @@ pub fn register_source(tc: *TimeCounter) void {
     }
 }
 
-/// Return the time elapsed since boot in nanoseconds.
-pub fn read_time() r.Nanoseconds {
-    const tc = best_tc orelse return .init(0);
+/// Return the time elapsed since boot.
+pub fn read_time() rtl.Timestamp {
+    const tc = best_tc orelse return .{ .value = 0 };
 
     const s = state.load();
     const curr_count = tc.read_count() & tc.mask;
     const elapsed = (curr_count - s.initial_count) & tc.mask;
-    return .init(s.offset + ticks_to_ns(tc, elapsed));
+    return .{ .value = (s.offset + ticks_to_ns(tc, elapsed)) };
 }
 
 /// Return the best TimeCounter.
@@ -100,7 +100,7 @@ pub fn best() ?*TimeCounter {
 }
 
 /// Do a busy sleep of `ns` nanoseconds using TimeCounter.
-pub fn sleep(ns: r.Nanoseconds) void {
+pub fn sleep(ns: rtl.Duration) void {
     const start = read_time();
 
     while (true) {

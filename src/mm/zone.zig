@@ -139,34 +139,34 @@ const slab_align = 8;
 const zones_num = 32;
 
 /// Number of rounds in a magazine.
-const magazine_size = ke.Tunable(u8, 8, "mm.zone.mag_size");
+const magazine_size = ke.TunableType(u8, 8, "mm.zone.mag_size");
 
 /// How much extra memory CPUs are allowed to keep around.
-const max_local_memory = ke.Tunable(
+const max_local_memory = ke.TunableType(
     u32,
     @intCast(r.kib(128)),
     "mm.zone.max_local_mem",
 );
 
 /// Number of contentions allowed per second before the depot grows.
-const depot_grow_level = ke.Tunable(
+const depot_grow_level = ke.TunableType(
     u32,
     5 * wma_unit,
     "mm.zone.depot_grow_level",
 );
 
 /// Number of contentions allowed per second before the depot shrinks.
-const depot_shrink_level = ke.Tunable(
+const depot_shrink_level = ke.TunableType(
     u32,
     wma_unit / 2,
     "mm.zone.depot_shrink_level",
 );
 
 /// Number of excess magazines in a zone before they are trimmed.
-const excess_magazines = ke.Tunable(u32, 8, "mm.zone.excess_mags");
+const excess_magazines = ke.TunableType(u32, 8, "mm.zone.excess_mags");
 
 /// Excess memory in a zone before magazines are trimmed.
-const excess_memory = ke.Tunable(
+const excess_memory = ke.TunableType(
     u32,
     @intCast(r.kib(16)),
     "mm.zone.excess_mem",
@@ -200,7 +200,7 @@ var zone_list_lock: ke.Mutex = undefined;
 var magazine_zone: Zone = undefined;
 var cpu_zone: Zone = undefined;
 
-var smr_zone: TypedZone(ke.smr.Domain) = undefined;
+var smr_zone: ZoneType(ke.smr.Domain) = undefined;
 var smr_cpu_zone: Zone = undefined;
 
 pub var smr_sys_domain: *ke.smr.Domain = undefined;
@@ -491,10 +491,10 @@ inline fn wma_mix(old: usize, new: usize) usize {
     return (3 * old + new * wma_unit) / 4;
 }
 
-fn cpus_alloc() []rtl.CachePadded(Cpu) {
+fn cpus_alloc() []rtl.CachePaddedType(Cpu) {
     const ptr = cpu_zone.alloc(.{}) catch
         @panic("failed to allocate zone CPU state");
-    const raw: [*]rtl.CachePadded(Cpu) = @ptrCast(@alignCast(ptr));
+    const raw: [*]rtl.CachePaddedType(Cpu) = @ptrCast(@alignCast(ptr));
     return raw[0..ke.ncpus];
 }
 
@@ -533,7 +533,7 @@ pub const Zone = struct {
     dont_touch: bool,
 
     /// Per-CPU state.
-    cpus: []rtl.CachePadded(Cpu),
+    cpus: []rtl.CachePaddedType(Cpu),
 
     ctor: ?*const fn (obj: *anyopaque) void,
     dtor: ?*const fn (obj: *anyopaque) void,
@@ -1746,7 +1746,7 @@ pub fn update() void {
 }
 
 /// Parameterized version of Zone, useful for object caches.
-pub fn TypedZone(comptime T: type) type {
+pub fn ZoneType(comptime T: type) type {
     return struct {
         zone: Zone,
 
@@ -1807,7 +1807,7 @@ pub fn early_init() linksection(r.init) void {
 
 /// Post-SMP initialization.
 pub fn late_init() linksection(r.init) void {
-    cpu_zone.init("cpus", @sizeOf(rtl.CachePadded(Cpu)) * ke.ncpus, .{
+    cpu_zone.init("cpus", @sizeOf(rtl.CachePaddedType(Cpu)) * ke.ncpus, .{
         .magazines = false,
         .alignment = std.atomic.cache_line,
     });
@@ -1822,7 +1822,7 @@ pub fn late_init() linksection(r.init) void {
             z.cpus = cpus_alloc();
 
             for (0..ke.ncpus) |i| {
-                z.cpus[i] = rtl.CachePadded(Cpu).init(.{
+                z.cpus[i] = rtl.CachePaddedType(Cpu).init(.{
                     .lock = ke.SpinLock.init("Magazine"),
                     .alloc = null,
                     .free = null,

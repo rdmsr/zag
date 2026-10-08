@@ -81,8 +81,8 @@ pub const InternedString = packed struct(usize) {
     }
 };
 
-const Table = rcu.HashTable(Entry, "link", Context);
-const EntryZone = mm.zone.TypedZone(Entry);
+const Table = rcu.HashTableType(Entry, "link", Context);
+const EntryZone = mm.zone.ZoneType(Entry);
 
 var domain: *ke.smr.Domain = undefined;
 var table: Table = undefined;

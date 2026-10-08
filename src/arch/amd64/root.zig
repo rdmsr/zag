@@ -138,11 +138,11 @@ pub inline fn wrmsr(msr: u32, value: u64) void {
 }
 
 pub inline fn read_msr(comptime msr: Msr) u64 {
-    return rdmsr(@intFromEnum(msr));
+    return rdmsr(@backingInt(msr));
 }
 
 pub inline fn write_msr(comptime msr: Msr, value: u64) void {
-    wrmsr(@intFromEnum(msr), value);
+    wrmsr(@backingInt(msr), value);
 }
 
 pub inline fn rdgsbase() usize {
@@ -348,8 +348,8 @@ pub const CpuidRequest = union(enum) {
             .HighestExtendedFunction => .{ 0x80000000, 0 },
             .ExtendedInfo => .{ 0x80000001, 0 },
             .PowerManagementInfo => .{ 0x80000007, 0 },
-            .ExtendedFeatures => |s| .{ 0x7, @intFromEnum(s) },
-            .BrandString => |p| .{ @intFromEnum(p), 0 },
+            .ExtendedFeatures => |s| .{ 0x7, @backingInt(s) },
+            .BrandString => |p| .{ @backingInt(p), 0 },
             .HypervisorId => .{ 0x40000000, 0 },
         };
         return cpuid(leaf, subleaf);
@@ -709,7 +709,7 @@ pub const IdtEntry = extern struct {
             .offset_low = @truncate(offset),
             .selector = cs,
             .ist = ist,
-            .type_attr = @intFromEnum(attr),
+            .type_attr = @backingInt(attr),
             .offset_mid = @truncate(offset >> 16),
             .offset_high = @truncate(offset >> 32),
             .reserved = 0,

@@ -1,11 +1,11 @@
-//! Tunable kernel parameters.
+//! TunableType kernel parameters.
 //! These are variables set in the cmdline at boot and never changed.
 const std = @import("std");
 const rtl = @import("rtl");
 const r = @import("root");
 const pl = r.pl;
 
-const set = rtl.LinkerSet("tunables", *const Entry);
+const set = rtl.LinkerSetType("tunables", *const Entry);
 
 const Entry = struct {
     name: []const u8,
@@ -16,7 +16,7 @@ const Entry = struct {
     },
 };
 
-pub fn Tunable(
+pub fn TunableType(
     comptime T: type,
     comptime default: T,
     comptime name: []const u8,

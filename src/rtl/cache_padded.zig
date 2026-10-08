@@ -1,7 +1,7 @@
 const std = @import("std");
 
 /// Type padded to a cache line.
-pub fn CachePadded(comptime T: type) type {
+pub fn CachePaddedType(comptime T: type) type {
     return struct {
         const cache_line = std.atomic.cache_line;
         const value_size = @sizeOf(T);

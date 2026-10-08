@@ -19,9 +19,9 @@ extern var __percpu_end: u8;
 
 pub export var cpu_id_to_apic_id: [config.ncpus]u32 = undefined;
 
-const start_stack = ke.ExportedCpuLocal(usize, 0, "ap_start_stack");
+const start_stack = ke.ExportedCpuLocalTypeType(usize, 0, "ap_start_stack");
 
-pub const start_thread = ke.CpuLocal(*ke.Thread, undefined);
+pub const start_thread = ke.CpuLocalType(*ke.Thread, undefined);
 
 var aps_booted = std.atomic.Value(usize).init(0);
 
@@ -58,6 +58,23 @@ fn make_thread(
     return td;
 }
 
+fn delay_for_cpu() struct { rtl.Duration, rtl.Duration } {
+    // From Linux, on modern CPUs we can skip the long delay after INIT.
+    const skip_delay = switch (amd64.cpu_features.vendor) {
+        .Intel => amd64.cpu_features.family >= 0x06,
+        .Amd => amd64.cpu_features.family >= 0x0f,
+        .Hygon => amd64.cpu_features.family >= 0x18,
+        .Unknown => false,
+    };
+
+    const init_delay = rtl.Duration.ms(if (skip_delay) 0 else 10);
+    const sipi_delay = rtl.Duration.us(if (skip_delay) 10 else 300);
+
+    return .{ init_delay, sipi_delay };
+}
+
+const ap_stack_size = r.kib(16);
+
 pub fn init() linksection(r.init) void {
     const trampoline_start = @intFromPtr(&AP_TRAMPOLINE_START);
     const trampoline_size = @intFromPtr(&AP_TRAMPOLINE_END) - trampoline_start;
@@ -69,22 +86,10 @@ pub fn init() linksection(r.init) void {
         .execute = true,
     });
 
-    // From Linux, on modern CPUs we can skip the long delay after INIT.
-    const skip_delay = switch (amd64.cpu_features.vendor) {
-        .Intel => amd64.cpu_features.family >= 0x06,
-        .Amd => amd64.cpu_features.family >= 0x0f,
-        .Hygon => amd64.cpu_features.family >= 0x18,
-        .Unknown => false,
-    };
-
-    const init_delay = r.Nanoseconds.init(
-        if (skip_delay) 0 else std.time.ns_per_ms * 10,
-    );
-    const sipi_delay = r.Nanoseconds.init(
-        if (skip_delay) std.time.ns_per_us * 10 else std.time.ns_per_us * 300,
-    );
-
+    const init_delay, const sipi_delay = delay_for_cpu();
     const page: [*]u8 = @ptrFromInt(mm.p2v(0x8000));
+    const pcpu_start = @intFromPtr(&__percpu_start);
+
     @memcpy(
         page[0..trampoline_size],
         @as([*]u8, @ptrFromInt(trampoline_start)),
@@ -94,19 +99,16 @@ pub fn init() linksection(r.init) void {
     const data_phys: *ApData = @ptrFromInt(mm.p2v(0x8000 + data_offset));
 
     const idtr = amd64.sidtr();
-
     const offsets = mm.zone.gpa.alloc(usize, apic.apics.items.len + 1) catch
         @panic("Failed to allocate AP local data offsets");
 
-    // Allocate per-cpu offsets for CPU-local data.
-    kep.impl.cpu_offsets = @ptrCast(offsets);
-    const percpu_size = @intFromPtr(&__percpu_end) -
-        @intFromPtr(&__percpu_start);
+    const percpu_size = @intFromPtr(&__percpu_end) - pcpu_start;
 
     log.info("per-CPU data size: {} bytes", .{percpu_size});
 
+    // Allocate per-cpu offsets for CPU-local data.
+    kep.impl.cpu_offsets = @ptrCast(offsets);
     kep.impl.cpu_offsets[0] = 0;
-
     cpu_id_to_apic_id[0] = apic.get_id();
 
     // Set up the AP data block.
@@ -117,7 +119,7 @@ pub fn init() linksection(r.init) void {
     data_phys.xapic_virt_base = mm.p2v(apic.xapic_base_physical);
 
     for (0..apic.apics.items.len, apic.apics.items) |i, apic_id| {
-        const cpu_id = i + 1;
+        const cpu_id: u32 = @as(u32, @intCast(i)) + 1;
         cpu_id_to_apic_id[cpu_id] = apic_id;
 
         // Allocate per-cpu data.
@@ -126,39 +128,32 @@ pub fn init() linksection(r.init) void {
 
         @memcpy(
             cpu_data,
-            @as([*]u8, @ptrCast(&__percpu_start))[0..percpu_size],
+            @as([*]u8, @ptrFromInt(pcpu_start))[0..percpu_size],
         );
 
         const self_offset_offset = @intFromPtr(&kep.impl.cpu_self_offset) -
-            @intFromPtr(&__percpu_start);
+            pcpu_start;
 
-        kep.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -%
-            @intFromPtr(&__percpu_start);
+        kep.impl.cpu_offsets[cpu_id] = @intFromPtr(cpu_data.ptr) -% pcpu_start;
 
         const off: *usize = @ptrCast(@alignCast(&cpu_data[self_offset_offset]));
 
         // copy the offset into the AP's self_offset variable
         off.* = kep.impl.cpu_offsets[cpu_id];
 
-        const stack_size = r.kib(16);
-
         const stack_top = @intFromPtr(mm.heap.alloc(
-            stack_size,
+            ap_stack_size,
             .DontWaitForMemory,
         ) catch
-            @panic("Failed to allocate AP stack")) + stack_size;
+            @panic("Failed to allocate AP stack")) + ap_stack_size;
 
-        start_stack.remote(@intCast(cpu_id)).* = stack_top & ~@as(usize, 15);
-        start_thread.remote(@intCast(cpu_id)).* = make_thread(
-            stack_top,
-            @intCast(cpu_id),
-        );
+        start_stack.remote(cpu_id).* = stack_top & ~@as(usize, 15);
+        start_thread.remote(cpu_id).* = make_thread(stack_top, cpu_id);
 
         rtl.barrier.fence(.release);
 
         // Send the INIT-SIPI-SIPI sequence to start the AP.
         apic.send_init(apic_id);
-
         ke.time.sleep(init_delay);
         apic.send_sipi(apic_id, 0x08);
         ke.time.sleep(sipi_delay);

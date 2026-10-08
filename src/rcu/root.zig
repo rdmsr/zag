@@ -4,7 +4,7 @@
 
 const std = @import("std");
 
-pub const HashTable = @import("hashtable.zig").Table;
+pub const HashTableType = @import("hashtable.zig").TableType;
 
 /// Singly-linked list
 pub const SList = struct {

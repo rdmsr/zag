@@ -39,7 +39,7 @@ const Msr = enum(u32) {
 };
 
 fn write_msr(msr: Msr, value: u64) void {
-    amd64.wrmsr(@intFromEnum(msr), value);
+    amd64.wrmsr(@backingInt(msr), value);
 }
 
 const PVClock = extern struct {

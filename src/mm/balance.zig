@@ -5,6 +5,7 @@
 //! 2. Zone trimming
 //! 3. Working-set trimming (eventually...)
 
+const rtl = @import("rtl");
 const r = @import("root");
 const std = @import("std");
 const ps = r.ps;
@@ -12,7 +13,7 @@ const ke = r.ke;
 const mm = r.mm;
 const mmp = mm.private;
 
-const balance_interval = ke.Tunable(u32, 1000, "mm.balance.interval_ms");
+const balance_interval = ke.TunableType(u32, 1000, "mm.balance.interval_ms");
 
 const stack_reap_interval = 5;
 const zone_update_interval = mm.zone.update_interval_s;
@@ -60,7 +61,7 @@ fn balance_manager(_: ?*anyopaque) void {
         if (which == timeout) {
             ke.timer.set(
                 &timer,
-                .from(r.Milliseconds.init(balance_interval.load())),
+                rtl.Duration.ms(balance_interval.load()),
                 .{},
             );
         }

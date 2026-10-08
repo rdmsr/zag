@@ -29,7 +29,7 @@ const PerCpu = struct {
     state: std.atomic.Value(State),
 };
 
-const percpu = ke.CpuLocal(PerCpu, undefined);
+const percpu = ke.CpuLocalType(PerCpu, undefined);
 
 var frozen_cpus = std.atomic.Value(u32).init(0);
 

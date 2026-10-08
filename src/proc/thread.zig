@@ -12,7 +12,7 @@ pub const kernel_thread_stack_size = r.kib(16);
 
 var reaper_item: ex.WorkItem = undefined;
 var stack_item: ex.WorkItem = undefined;
-var thread_zone: mm.zone.TypedZone(Thread) = undefined;
+var thread_zone: mm.zone.ZoneType(Thread) = undefined;
 
 /// Higher-level wrapper over a thread.
 pub const Thread = struct {

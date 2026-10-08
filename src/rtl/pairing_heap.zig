@@ -8,7 +8,7 @@ pub const Node = struct {
     prev: ?*Node = null,
 };
 
-pub fn PairingHeap(
+pub fn PairingHeapType(
     comptime order: enum { Min, Max },
     comptime cmp: fn (*Node, *Node) std.math.Order,
 ) type {
@@ -178,8 +178,8 @@ fn my_cmp(a: *Node, b: *Node) std.math.Order {
     return std.math.order(ta.value, tb.value);
 }
 
-const MinHeap = PairingHeap(.Min, my_cmp);
-const MaxHeap = PairingHeap(.Max, my_cmp);
+const MinHeap = PairingHeapType(.Min, my_cmp);
+const MaxHeap = PairingHeapType(.Max, my_cmp);
 
 test "empty heap" {
     var heap = MinHeap.init();

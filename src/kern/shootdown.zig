@@ -47,7 +47,7 @@ const PerCpu = struct {
 
 const slot_free: u16 = std.math.maxInt(u16);
 const slot_reserved: u16 = std.math.maxInt(u16) - 1;
-const percpu = ke.CpuLocal(PerCpu, undefined);
+const percpu = ke.CpuLocalType(PerCpu, undefined);
 
 pub var shootdowns: rtl.HandoffList = undefined;
 

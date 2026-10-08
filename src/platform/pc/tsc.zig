@@ -1,6 +1,7 @@
 // Not sure if this should be in platform/pc or in kern/
 const std = @import("std");
 const amd64 = @import("arch");
+const rtl = @import("rtl");
 const r = @import("root");
 const ke = r.ke;
 
@@ -54,7 +55,7 @@ pub fn init() linksection(r.init) void {
     // Calculate how many ticks it costs to call tc_sleep.
     for (0..calib_cost_runs) |_| {
         const start = amd64.rdtsc();
-        ke.time.sleep(.init(0));
+        ke.time.sleep(rtl.Duration.ns(0));
         const end = amd64.rdtsc();
         calib_cost += (end - start);
     }
@@ -62,7 +63,7 @@ pub fn init() linksection(r.init) void {
     calib_cost /= calib_cost_runs;
 
     const runs = 5;
-    const calib_time = 10 * std.time.ns_per_ms;
+    const calib_time = rtl.Duration.ms(10);
 
     // Sleep for 10ms `runs` times and measure the TSC frequency,
     // then average the middle values to get a stable estimate.
@@ -70,9 +71,10 @@ pub fn init() linksection(r.init) void {
 
     for (0..runs) |i| {
         const start = amd64.rdtsc();
-        ke.time.sleep(.init(calib_time));
+        ke.time.sleep(calib_time);
         const end = amd64.rdtsc();
-        freqs[i] = (end - start - calib_cost) * (std.time.ns_per_s / calib_time);
+        freqs[i] = (end - start - calib_cost) *
+            (std.time.ns_per_s / calib_time.value);
     }
 
     // Sort and average middle values, discarding min and max.

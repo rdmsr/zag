@@ -68,14 +68,14 @@ pub const HolderData = if (config.warden) HeldLocks else struct {};
 const num_classes = 128;
 const num_buckets = 128;
 
-const cpu_held_spinlocks = ke.CpuLocal(HeldLocks, .{});
+const cpu_held_spinlocks = ke.CpuLocalType(HeldLocks, .{});
 
 /// Matrix of reachability between classes
 var reachable: [num_classes]Relation = @splat(.{});
 var graph_lock: ke.SpinLock = undefined;
 
 var classes: [num_classes]Class = @splat(undefined);
-var class_buckets: [num_classes]rtl.AVLTree(nodes_cmp) = @splat(.init());
+var class_buckets: [num_classes]rtl.AvlTreeType(nodes_cmp) = @splat(.init());
 var started = false;
 var num_active_classes: u32 = 0;
 
@@ -89,7 +89,7 @@ fn nodes_cmp(a: *const rtl.bst.Node, b: *const rtl.bst.Node) std.math.Order {
 /// Find a lock class by its name.
 fn find_lock_class(name: []const u8) struct {
     ?*Class,
-    ?*rtl.AVLTree(nodes_cmp),
+    ?*rtl.AvlTreeType(nodes_cmp),
 } {
     if (name.len == 0) {
         // This lock shouldn't be checked.

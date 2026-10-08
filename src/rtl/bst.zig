@@ -1,10 +1,10 @@
-const TaggedPtr = @import("tagged_ptr.zig").TaggedPtr;
+const TaggedPtrType = @import("tagged_ptr.zig").TaggedPtrType;
 const std = @import("std");
 
 pub const Node = struct {
     left: *Node,
     right: *Node,
-    parent: TaggedPtr(Node),
+    parent: TaggedPtrType(Node),
 };
 
 pub var nil: Node = .{
@@ -16,7 +16,9 @@ pub var nil: Node = .{
 /// Base struct for binary search trees.
 /// This should be used as a field in other types that are based on
 /// binary search trees, such as red-black trees or AVL trees.
-pub fn BST(comptime cmp: fn (*const Node, *const Node) std.math.Order) type {
+pub fn BstType(
+    comptime cmp: fn (*const Node, *const Node) std.math.Order,
+) type {
     return struct {
         const Tree = @This();
 
@@ -166,8 +168,8 @@ fn node_cmp(a: *const Node, b: *const Node) std.math.Order {
     return .eq;
 }
 
-test BST {
-    var tree = BST(node_cmp).init();
+test BstType {
+    var tree = BstType(node_cmp).init();
 
     var nodes = [_]MyNode{
         .{ .value = 5, .node = undefined },

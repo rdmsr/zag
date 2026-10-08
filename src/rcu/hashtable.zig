@@ -443,7 +443,7 @@ const Core = struct {
 };
 
 /// Scalable, lock-free hashtable backed by SMR.
-pub fn Table(
+pub fn TableType(
     comptime T: type,
     comptime link_field: []const u8,
     comptime Context: type,

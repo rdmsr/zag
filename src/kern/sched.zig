@@ -109,7 +109,7 @@ const interactivity_threshold = 30;
 const scaling_factor = 50;
 const preempt_threshold = @backingInt(ke.Priority.LowRealtime);
 const balance_interval = @as(u64, config.sched_balance_interval);
-const sched_migration_cost = ke.Tunable(
+const sched_migration_cost = ke.TunableType(
     u64,
     500,
     "sched_migration_cost_us",
@@ -226,8 +226,8 @@ pub const Average = struct {
     est: usize = pelt_load_avg_max,
     // Amount of the period that has been accounted for
     period_contrib: usize = 0,
-    /// Timestamp (us) up to which history has been accounted.
-    last_update: r.Microseconds = r.Microseconds.init(0),
+    /// Timestamp up to which history has been accounted.
+    last_update: rtl.Timestamp = .{ .value = 0 },
 };
 
 pub const Accounting = struct {
@@ -241,7 +241,7 @@ pub const Accounting = struct {
     pct_window_start: u64 = 0,
 };
 
-pub const percpu = ke.CpuLocal(PerCpu, undefined);
+pub const percpu = ke.CpuLocalType(PerCpu, undefined);
 
 var balance_timer: ke.Timer = undefined;
 var balance_dpc = ke.Dpc.init(balance);
@@ -303,7 +303,7 @@ pub fn late_init() linksection(r.init) void {
     balance_timer.init();
     ke.timer.set(
         &balance_timer,
-        .from(r.Milliseconds.init(balance_interval)),
+        rtl.Duration.ms(balance_interval),
         .{ .dpc = &balance_dpc },
     );
 }
@@ -331,8 +331,8 @@ fn pelt_do_decay(val: u64, n: u64) u64 {
 }
 
 fn pelt_update(avg: *Average, runnable: bool) void {
-    const now = ke.time.read_time().to(r.Microseconds);
-    const new_delta = now.value - avg.last_update.value;
+    const now = ke.time.read_time();
+    const new_delta = now.to_us() - avg.last_update.to_us();
 
     if (new_delta == 0) return;
 
@@ -411,7 +411,7 @@ fn attach_load_avg(cpu: *PerCpu, td: *ke.Thread) void {
     if (!tracks_load_avg(td)) return;
 
     if (td.avg.last_update.value == 0) {
-        td.avg.last_update = ke.time.read_time().to(r.Microseconds);
+        td.avg.last_update = ke.time.read_time();
     } else {
         pelt_update_td(td, null, false);
     }
@@ -1093,7 +1093,7 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
     next.last_cpu = ke.cpu.current();
 
     const time = ke.time.read_time();
-    const now_us = time.to(r.Microseconds).value;
+    const now_us = time.to_us();
 
     if (tracks_load_avg(cur)) {
         account(cur, now_us, .Running);
@@ -1233,7 +1233,7 @@ pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
     const curtd = cpu.current_thread orelse return;
 
     const now = ke.time.read_time();
-    const now_us = now.to(r.Microseconds).value;
+    const now_us = now.to_us();
 
     curtd.lock.acquire_no_ipl();
     defer curtd.lock.release_no_ipl();
@@ -1448,7 +1448,7 @@ pub fn unblock_locked(td: *ke.Thread) void {
 
     const now = ke.time.read_time();
 
-    const now_us = now.to(r.Microseconds).value;
+    const now_us = now.to_us();
     const delta = (now_us - td.acct.stamp);
 
     if (tracks_load_avg(td)) {
@@ -1765,7 +1765,7 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
 
     ke.timer.set(
         &balance_timer,
-        .from(r.Milliseconds.init(ms)),
+        rtl.Duration.ms(ms),
         .{
             .dpc = &balance_dpc,
         },

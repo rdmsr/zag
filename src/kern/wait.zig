@@ -101,7 +101,7 @@ pub const Status = enum(u8) {
 };
 
 const Options = struct {
-    timeout: ?r.Nanoseconds = null,
+    timeout: ?rtl.Duration = null,
     waitblocks: ?[]WaitBlock = null,
     continuation: ?ke.Continuation = null,
 };

@@ -1,5 +1,6 @@
 const std = @import("std");
 const amd64 = @import("arch");
+const rtl = @import("rtl");
 const r = @import("root");
 const tsc = @import("tsc.zig");
 const acpi = r.pl.acpi;
@@ -74,31 +75,31 @@ pub const ApicRegisters = enum(u32) {
 pub var apics: std.ArrayList(u32) = .empty;
 var xapic_address: ?usize = null;
 pub var xapic_base_physical: usize = 0;
-const in_x2apic_mode = ke.CpuLocal(bool, false);
-const timer_ticks_per_us = ke.CpuLocal(u64, 0);
+const in_x2apic_mode = ke.CpuLocalType(bool, false);
+const timer_ticks_per_us = ke.CpuLocalType(u64, 0);
 
 const log = std.log.scoped(.apic);
 
 fn xapic_write(register: ApicRegisters, value: u32) void {
     const lapic_base = xapic_address orelse return;
-    r.mmio_write(u32, lapic_base + @intFromEnum(register), value);
+    r.mmio_write(u32, lapic_base + @backingInt(register), value);
 }
 
 fn xapic_read(register: ApicRegisters) u32 {
     const lapic_base = xapic_address orelse return 0;
-    return r.mmio_read(u32, lapic_base + @intFromEnum(register));
+    return r.mmio_read(u32, lapic_base + @backingInt(register));
 }
 
 fn x2apic_write(register: ApicRegisters, value: u64) void {
     amd64.wrmsr(
-        @intFromEnum(amd64.Msr.X2ApicBase) + (@intFromEnum(register) >> 4),
+        @backingInt(amd64.Msr.X2ApicBase) + (@backingInt(register) >> 4),
         value,
     );
 }
 
 fn x2apic_read(register: ApicRegisters) u64 {
     return amd64.rdmsr(
-        @intFromEnum(amd64.Msr.X2ApicBase) + (@intFromEnum(register) >> 4),
+        @backingInt(amd64.Msr.X2ApicBase) + (@backingInt(register) >> 4),
     );
 }
 
@@ -170,7 +171,7 @@ fn lapic_calibrate(ms: u64) u64 {
     write(.LvtTimer, (1 << 16));
     write(.TimerInitialCount, std.math.maxInt(u32));
 
-    ke.time.sleep(.from(r.Milliseconds.init(ms)));
+    ke.time.sleep(rtl.Duration.ms(ms));
 
     const ticks = std.math.maxInt(u32) - read(.TimerCurrentCount);
 
@@ -205,7 +206,7 @@ fn timer_init() linksection(r.init) void {
     timer_ticks_per_us.local().* = (avg_ticks / calib_us);
 }
 
-pub fn arm_timer(ns: r.Nanoseconds) void {
+pub fn arm_timer(ns: rtl.Duration) void {
     if (amd64.cpu_features.tsc_deadline) {
         const now = amd64.rdtsc();
 
@@ -222,7 +223,7 @@ pub fn arm_timer(ns: r.Nanoseconds) void {
     write(.LvtTimer, 1 << 16);
     write(.TimerInitialCount, 0);
 
-    const us = ns.to(r.Microseconds).value;
+    const us = ns.to_us();
     const ticks: u32 = @truncate(@max(us * timer_ticks_per_us.local().*, 1));
 
     // Setup IRQ.

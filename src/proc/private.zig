@@ -5,7 +5,7 @@ const mm = r.mm;
 
 pub const thread = @import("thread.zig");
 
-pub var turnstile_zone: mm.zone.TypedZone(kep.turnstile.Turnstile) = undefined;
+pub var turnstile_zone: mm.zone.ZoneType(kep.turnstile.Turnstile) = undefined;
 
 fn turnstile_ctor(ts: *kep.turnstile.Turnstile) void {
     ts.* = .{

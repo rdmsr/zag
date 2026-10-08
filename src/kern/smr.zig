@@ -132,59 +132,7 @@ fn scan(
     }
 
     if (dom.preempt) {
-        rtl.barrier.fence(.seq_cst);
-
-        // Preemption is enabled, check stalled readers.
-        for (0..ke.ncpus) |i| {
-            const cpu = &dom.cpus[i];
-
-            var seq = cpu.stall_seq.load(.monotonic);
-
-            while (seq != seq_invalid) {
-                if (seq < clk_read) {
-                    seq = clk_read;
-                }
-
-                if (goal <= seq) {
-                    // The goal has been reached.
-                    break;
-                }
-
-                if (!should_wait) break;
-
-                const ipl = ke.ipl.raise(.Dispatch);
-
-                cpu.stall_lock.acquire_no_ipl();
-                cpu.stall_goal = goal;
-                cpu.stall_lock.release_no_ipl();
-
-                const ts = kep.turnstile.lookup(cpu);
-
-                seq = cpu.stall_seq.load(.monotonic);
-
-                // Re-check under the chain lock.
-                if (seq == seq_invalid or goal <= seq) {
-                    kep.turnstile.exit(cpu, ts);
-                    ke.ipl.lower(ipl);
-                    break;
-                }
-
-                kep.turnstile.block(
-                    ts,
-                    cpu,
-                    .{ .shared = &cpu.stalled },
-                    .Exclusive,
-                );
-
-                ke.ipl.lower(ipl);
-                seq = cpu.stall_seq.load(.monotonic);
-            }
-
-            if (seq != seq_invalid) {
-                // Update the minimum read sequence.
-                read_seq = @min(read_seq, seq);
-            }
-        }
+        read_seq = scan_preempt(dom, clk_read, goal, should_wait, read_seq);
     }
 
     // The orderings here serve two purposes:
@@ -213,6 +161,71 @@ fn scan(
     }
 
     return dom_rd_seq;
+}
+
+fn scan_preempt(
+    dom: *Domain,
+    goal: Sequence,
+    clk_read: Sequence,
+    should_wait: bool,
+    last_read_seq: Sequence,
+) Sequence {
+    rtl.barrier.fence(.seq_cst);
+    var read_seq = last_read_seq;
+
+    // Preemption is enabled, check stalled readers.
+    for (0..ke.ncpus) |i| {
+        const cpu = &dom.cpus[i];
+
+        var seq = cpu.stall_seq.load(.monotonic);
+
+        while (seq != seq_invalid) {
+            if (seq < clk_read) {
+                seq = clk_read;
+            }
+
+            if (goal <= seq) {
+                // The goal has been reached.
+                break;
+            }
+
+            if (!should_wait) break;
+
+            const ipl = ke.ipl.raise(.Dispatch);
+
+            cpu.stall_lock.acquire_no_ipl();
+            cpu.stall_goal = goal;
+            cpu.stall_lock.release_no_ipl();
+
+            const ts = kep.turnstile.lookup(cpu);
+
+            seq = cpu.stall_seq.load(.monotonic);
+
+            // Re-check under the chain lock.
+            if (seq == seq_invalid or goal <= seq) {
+                kep.turnstile.exit(cpu, ts);
+                ke.ipl.lower(ipl);
+                break;
+            }
+
+            kep.turnstile.block(
+                ts,
+                cpu,
+                .{ .shared = &cpu.stalled },
+                .Exclusive,
+            );
+
+            ke.ipl.lower(ipl);
+            seq = cpu.stall_seq.load(.monotonic);
+        }
+
+        if (seq != seq_invalid) {
+            // Update the minimum read sequence.
+            read_seq = @min(read_seq, seq);
+        }
+    }
+
+    return read_seq;
 }
 
 /// Poll to determine whether all CPUs have reached `goal`.

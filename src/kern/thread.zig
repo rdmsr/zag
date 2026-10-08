@@ -348,12 +348,12 @@ const Cpu = struct {
 /// Note that this is in addition to the global minimum of `ncpus` stacks.
 /// Keep this low for minimal memory overhead, but potentially
 /// increased latency.
-const excess_stacks = ke.Tunable(u32, 1, "ke.thread.excess_stacks");
+const excess_stacks = ke.TunableType(u32, 1, "ke.thread.excess_stacks");
 
 var global_depot_lock: ke.SpinLock = undefined;
 var global_depot: Depot = .{};
 
-const percpu = ke.CpuLocal(Cpu, undefined);
+const percpu = ke.CpuLocalType(Cpu, undefined);
 const percpu_count_max = 2;
 
 const wma_unit = 256;
@@ -368,7 +368,7 @@ inline fn wma_mix(old: u32, new: u32) u32 {
 fn init_cpu() linksection(r.init) void {
     const cpu = percpu.local();
     cpu.* = .{
-        .stack_alloc_dpc = .init(stack_alloc_handler),
+        .stack_alloc_dpc = ke.Dpc.init(stack_alloc_handler),
         .depot = .{},
     };
 }
