@@ -106,6 +106,34 @@ const Options = struct {
     continuation: ?ke.Continuation = null,
 };
 
+/// Clean up waitblocks after a wait.
+fn waitblocks_cleanup(blocks: []WaitBlock, initial_satisfier: ?usize) ?usize {
+    var satisfier = initial_satisfier;
+
+    for (blocks, 0..) |*wb, i| {
+        const obj = wb.object;
+
+        obj.lock.acquire_no_ipl();
+        if (wb.status == .Active) {
+            wb.status = .Inactive;
+            wb.link.remove();
+        } else if (wb.status == .Signaled) {
+            assert(satisfier == null);
+            satisfier = i;
+        }
+
+        obj.lock.release_no_ipl();
+    }
+
+    return satisfier;
+}
+
+/// Transition from one state to the next atomically.
+/// Return if the state transition was successful.
+fn transition(td: *ke.Thread, from: Status, to: Status) bool {
+    return td.wait_status.cmpxchgStrong(from, to, .acq_rel, .monotonic) == null;
+}
+
 /// Wait for the provided object to be signaled.
 /// This will only return an error if `timeout` is provided and
 /// the wait times out.
@@ -137,29 +165,21 @@ pub fn wait_any(
     const obj_count = objects.len;
     const has_timeout = opts.timeout != null;
     const total_count = obj_count + @intFromBool(has_timeout);
-
-    const blocks = opts.waitblocks orelse blk: {
-        assert(total_count <= curtd.inner_waitblocks.len);
-        break :blk &curtd.inner_waitblocks;
-    };
-
-    const timer_i = obj_count;
     const timer = &curtd.timer;
+    const blocks = opts.waitblocks orelse &curtd.inner_waitblocks;
+    assert(total_count <= blocks.len);
 
-    var queue: ?*ke.Queue = null;
+    var is_queue = false;
     var satisfier: ?usize = null;
-
-    curtd.wait_status.store(.InProgress, .monotonic);
-
-    if (has_timeout) {
-        timer.init();
-    }
-
     var installed_count: usize = 0;
 
+    // Prepare the wait.
+    curtd.wait_status.store(.InProgress, .monotonic);
+
+    if (has_timeout) timer.init();
+
     for (0..total_count) |i| {
-        const is_timer = has_timeout and i == timer_i;
-        const obj = if (is_timer) &timer.hdr else objects[i];
+        const obj = if (i == objects.len) &timer.hdr else objects[i];
         const wb = &blocks[i];
 
         obj.lock.acquire_no_ipl();
@@ -167,23 +187,15 @@ pub fn wait_any(
 
         if (obj.can_satisfy()) {
             // Object was already signaled. Try consuming it.
-            if (curtd.wait_status.cmpxchgStrong(
-                .InProgress,
-                .Satisfied,
-                .acq_rel,
-                .monotonic,
-            ) == null) {
+            if (transition(curtd, .InProgress, .Satisfied)) {
                 obj.consume(curtd);
                 satisfier = i;
             }
-
             // We have already been satisfied in the meantime, abort.
             break;
         }
 
-        if (obj.type == .Queue) {
-            queue = @fieldParentPtr("hdr", obj);
-        }
+        is_queue = is_queue or obj.type == .Queue;
 
         wb.object = obj;
         wb.thread = curtd;
@@ -201,24 +213,8 @@ pub fn wait_any(
         }
 
         // Remove any wait block we might've installed.
-        for (0..installed_count) |i| {
-            const is_timer = has_timeout and i == timer_i;
-            const obj = if (is_timer) &timer.hdr else objects[i];
-            const wb = &blocks[i];
-
-            obj.lock.acquire_no_ipl();
-            if (wb.status == .Active) {
-                wb.status = .Inactive;
-                wb.link.remove();
-            } else if (wb.status == .Signaled) {
-                assert(satisfier == null);
-                satisfier = i;
-            }
-
-            obj.lock.release_no_ipl();
-        }
-
-        return satisfier orelse error.Timeout;
+        return waitblocks_cleanup(blocks[0..installed_count], satisfier) orelse
+            error.Timeout;
     }
 
     curtd.waitblocks = blocks;
@@ -226,23 +222,15 @@ pub fn wait_any(
     curtd.timeout_block = @intCast(obj_count);
     curtd.has_timeout = has_timeout;
 
-    if (opts.timeout) |timeout| {
-        ke.timer.set(timer, timeout, .{});
-    }
+    if (opts.timeout) |timeout| ke.timer.set(timer, timeout, .{});
 
     curtd.lock.acquire_no_ipl();
 
     // Now try committing the wait.
-    // While we're trying to commit the wait, the object locks
-    // have been released, and the state could therefore change.
+    // A signal may have satisfied the wait after we released the object locks.
     // We need to re-check the state of the wait before actually blocking.
-    if (curtd.wait_status.cmpxchgStrong(
-        .InProgress,
-        .Committed,
-        .acq_rel,
-        .monotonic,
-    ) == null) {
-        if (queue == null) {
+    if (transition(curtd, .InProgress, .Committed)) {
+        if (!is_queue) {
             if (curtd.queue) |q| {
                 kep.queue.signal_wait(q);
             }
@@ -253,8 +241,6 @@ pub fn wait_any(
         // We're good, now actually block.
         kep.sched.block_locked(curtd, opts.continuation);
     } else {
-        queue = null;
-
         // Could not commit.
         curtd.lock.release_no_ipl();
     }
@@ -286,24 +272,14 @@ pub fn satisfy_wait(obj: *DispatchHeader) void {
         // 3. The wait was already satisfied by another object (.Satisfied).
 
         // 1.
-        if (td.wait_status.cmpxchgStrong(
-            .InProgress,
-            .Satisfied,
-            .acq_rel,
-            .monotonic,
-        ) == null) {
+        if (transition(td, .InProgress, .Satisfied)) {
             // We interrupted the wait while it was being prepared.
             wb.status = .Signaled;
             obj.consume(td);
         }
 
         // 2.
-        else if (td.wait_status.cmpxchgStrong(
-            .Committed,
-            .Satisfied,
-            .acq_rel,
-            .monotonic,
-        ) == null) {
+        else if (transition(td, .Committed, .Satisfied)) {
             // We interrupted the wait while it was committed.
             // Wake the thread.
             wb.status = .Signaled;
@@ -338,7 +314,6 @@ pub fn post_wait(thread: *ke.Thread) !usize {
     const ipl = ke.ipl.raise(.Dispatch);
     defer ke.ipl.lower(ipl);
 
-    var satisfier: ?usize = null;
     const has_timeout = thread.has_timeout;
 
     // We're back!
@@ -349,6 +324,7 @@ pub fn post_wait(thread: *ke.Thread) !usize {
 
     const wait_count = thread.wait_count;
     const timeout_block = thread.timeout_block;
+    const blocks = thread.waitblocks[0..wait_count];
 
     thread.has_timeout = false;
     thread.wait_reason = null;
@@ -356,27 +332,9 @@ pub fn post_wait(thread: *ke.Thread) !usize {
     thread.timeout_block = 0;
 
     // Find the object that satisfied us.
-    for (0..wait_count) |i| {
-        const wb = &thread.waitblocks[i];
-        var obj = wb.object;
+    const final_sat = waitblocks_cleanup(blocks, null) orelse
+        return error.Timeout;
 
-        obj.lock.acquire_no_ipl();
-
-        if (wb.status == .Active) {
-            // Waitblock is still active, remove it from the list.
-            wb.link.remove();
-        }
-        if (wb.status == .Signaled) {
-            // This waitblock was signaled, it must be the one that satisfied
-            // the wait.
-            assert(satisfier == null);
-            satisfier = i;
-        }
-        // Ignore inactive waitblocks
-        obj.lock.release_no_ipl();
-    }
-
-    const final_sat = satisfier orelse return error.Timeout;
     return if (has_timeout and final_sat == timeout_block)
         error.Timeout
     else
