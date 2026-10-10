@@ -285,6 +285,11 @@ pub fn exit() void {
     curtd.lock.acquire_no_ipl();
     curtd.state.store(.Zombie, .monotonic);
 
+    if (curtd.queue) |q| {
+        curtd.queue = null;
+        kep.queue.signal_wait(q);
+    }
+
     if (config.warden) {
         // There is normally a dispatch object -> thread ordering, but here we
         // have a thread -> dispatch object ordering because we insert into a
