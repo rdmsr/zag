@@ -60,7 +60,7 @@ pub fn enqueue(dpc: *Dpc, arg: ?*anyopaque) void {
     const mycpu = ke.cpu.current();
     const dpc_cpu = pcpu.local();
 
-    if (dpc.inserted.cmpxchgStrong(false, true, .acquire, .monotonic) == null) {
+    if (!dpc.inserted.swap(true, .acq_rel)) {
         dpc.arg = arg;
 
         // Insert the DPC on this CPU's DPC queue
@@ -104,12 +104,12 @@ fn dispatch_queue(cpu: u32) void {
         first_elem.remove();
 
         dpc = @fieldParentPtr("link", first_elem);
-        dpc.inserted.store(false, .release);
 
         // An interrupt which would enqueue this DPC could occur between
         // loading the argument and calling the routine, which is why we capture
         // it here to ensure that we get the intended context.
         const arg = dpc.arg;
+        _ = dpc.inserted.swap(false, .acq_rel);
 
         dpc_cpu.lock.release(ipl);
         assert(ke.ipl.current() == .Dispatch);
