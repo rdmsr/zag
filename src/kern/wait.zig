@@ -51,7 +51,7 @@ pub const DispatchHeader = struct {
 
                 item.remove();
                 q.hdr.signaled -= 1;
-                q.active += 1;
+                _ = q.active.fetchAdd(1, .monotonic);
 
                 td.queue_item = item;
             },
@@ -65,7 +65,7 @@ pub const DispatchHeader = struct {
             .Notification, .Synchronization => true,
             .Queue => blk: {
                 const q: *ke.Queue = @fieldParentPtr("hdr", self);
-                break :blk q.active < q.max_active;
+                break :blk q.active.load(.monotonic) < q.max_active;
             },
         };
     }

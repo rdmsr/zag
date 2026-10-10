@@ -153,7 +153,7 @@ const Pool = struct {
             .monotonic,
         ) == &self.queue.items.head;
 
-        const active = @atomicLoad(usize, &self.queue.active, .monotonic);
+        const active = self.queue.active.load(.monotonic);
         const threads = self.total_threads.load(.monotonic);
 
         if (threads < max_threads_for_prio(self.prio) and !is_empty and

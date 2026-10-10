@@ -16,16 +16,18 @@ const assert = std.debug.assert;
 pub const Queue = struct {
     hdr: kep.wait.DispatchHeader,
     items: rtl.List,
-    active: usize,
+    active: std.atomic.Value(usize),
     max_active: usize,
+    dpc: ke.Dpc,
 
     /// Initialize a queue.
     pub fn init(self: *Queue, max_active: usize) void {
         self.* = .{
             .items = undefined,
-            .active = 0,
+            .active = std.atomic.Value(usize).init(0),
             .max_active = max_active,
             .hdr = undefined,
+            .dpc = ke.Dpc.init(queue_dpc),
         };
 
         self.hdr.init(.Queue);
@@ -62,10 +64,11 @@ pub const Queue = struct {
 
         if (td.queue) |q| {
             assert(q == self);
-            assert(self.active > 0);
+            assert(self.active.load(.monotonic) > 0);
 
-            self.active -= 1;
-            if (self.hdr.signaled > 0 and self.active < self.max_active) {
+            const old_active = self.active.fetchSub(1, .monotonic);
+
+            if (self.hdr.signaled > 0 and old_active <= self.max_active) {
                 kep.wait.satisfy_wait(&self.hdr);
             }
         } else {
@@ -77,9 +80,16 @@ pub const Queue = struct {
         self.hdr.lock.release(ipl);
 
         // Wait until the queue has something for us.
-        _ = try ke.wait.wait_one(&self.hdr, "queue", .{
+        _ = ke.wait.wait_one(&self.hdr, "queue", .{
             .timeout = timeout,
-        });
+        }) catch |err| {
+            if (err == error.Timeout and timeout.?.value == 0) {
+                // Polled for an item and found nothing, ensure active is
+                // restored (it was decremented earlier).
+                signal_wake(self);
+            }
+            return err;
+        };
 
         // Grab the queue item and set it to null.
         const ret = td.queue_item orelse unreachable;
@@ -88,24 +98,42 @@ pub const Queue = struct {
     }
 };
 
-/// Called when one of the threads on the queue has blocked on something other
-/// than the queue.
-pub fn signal_wait(queue: *Queue) void {
-    const ipl = queue.hdr.lock.acquire();
-    assert(queue.active > 0);
+fn queue_dpc(dpc: *ke.Dpc, _: ?*anyopaque) void {
+    const queue: *Queue = @fieldParentPtr("dpc", dpc);
+    queue.hdr.lock.acquire_no_ipl();
 
-    queue.active -= 1;
-
-    if (queue.hdr.signaled > 0 and queue.active < queue.max_active) {
+    // Wake all possible waiters.
+    while (queue.hdr.signaled > 0 and
+        !queue.hdr.waitblocks.is_empty() and
+        queue.active.load(.monotonic) < queue.max_active)
+    {
         kep.wait.satisfy_wait(&queue.hdr);
     }
 
-    queue.hdr.lock.release(ipl);
+    queue.hdr.lock.release_no_ipl();
+}
+
+/// Called when one of the threads on the queue has blocked on something other
+/// than the queue.
+pub fn signal_wait(queue: *Queue) void {
+    assert(queue.active.load(.monotonic) > 0);
+
+    const old_active = queue.active.fetchSub(1, .monotonic);
+
+    if (old_active <= queue.max_active) {
+        // Need to enqueue a DPC here because we can't hold the queue lock.
+        // This is because this code is called in waiting code with the thread
+        // lock held (i.e when the thread has committed a wait), and this would
+        // break the dispatch object -> thread lock ordering we currently have.
+        // Enqueuing a DPC does mean that there could be some latency when
+        // before waking replacement workers, but this shouldn't be a big issue,
+        // hopefully.
+
+        ke.dpc.enqueue(&queue.dpc, null);
+    }
 }
 
 /// Called when one of the threads on the queue has woken back up.
 pub fn signal_wake(queue: *Queue) void {
-    const ipl = queue.hdr.lock.acquire();
-    queue.active += 1;
-    queue.hdr.lock.release(ipl);
+    _ = queue.active.fetchAdd(1, .monotonic);
 }
