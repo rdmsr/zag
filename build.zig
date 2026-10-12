@@ -32,7 +32,7 @@ pub fn build(b: *std.Build) void {
     const config_module = zonfig.createConfigModule(b, zonfig_dep, "config.zig.zon", ".config.zig.zon");
 
     const ksyms_module = b.createModule(.{
-        .root_source_file = b.path("src/ksyms.zig"),
+        .root_source_file = b.path("build/ksyms_mod.zig"),
         .optimize = optimize,
     });
 
@@ -70,9 +70,18 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const boot_info_module = b.createModule(.{
+        .root_source_file = b.path("src/loader/info.zig"),
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "arch", .module = arch_module },
+        },
+    });
+
     const kernel_nosym = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
 
     kernel_nosym.root_module.addAssemblyFile(empty_ksyms_s);
+    kernel_nosym.root_module.addImport("boot_info", boot_info_module);
 
     b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
 
@@ -88,11 +97,14 @@ pub fn build(b: *std.Build) void {
 
     const loader = addLoader(b, plat, optimize, config_module, rtl_module, arch_module);
 
+    kernel.root_module.addImport("boot_info", boot_info_module);
+    loader.root_module.addImport("boot_info", boot_info_module);
+
     b.default_step.dependOn(&b.addInstallArtifact(loader, .{}).step);
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
 
     const docs_module = b.createModule(.{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/sys/root.zig"),
         .target = b.graph.host,
         .imports = &.{
             .{ .name = "config", .module = config_module },
@@ -171,7 +183,7 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
     const kernel = b.addExecutable(.{
         .name = name,
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/root.zig"),
+            .root_source_file = b.path("src/sys/root.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -220,11 +232,11 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     switch (plat.arch) {
         .x86_64 => {
-            kernel.root_module.addAssemblyFile(b.path("src/kern/amd64/locore.s"));
-            kernel.root_module.addAssemblyFile(b.path("src/platform/pc/ap.s"));
+            kernel.root_module.addAssemblyFile(b.path("src/sys/kern/amd64/locore.s"));
+            kernel.root_module.addAssemblyFile(b.path("src/sys/platform/pc/ap.s"));
         },
         .riscv64 => {
-            kernel.root_module.addAssemblyFile(b.path("src/kern/riscv64/locore.s"));
+            kernel.root_module.addAssemblyFile(b.path("src/sys/kern/riscv64/locore.s"));
         },
         else => {},
     }
