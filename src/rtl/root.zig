@@ -18,6 +18,7 @@ pub const AtomicBitmapType = @import("bitmap.zig").AtomicBitmapType;
 pub const HandoffList = @import("handoff.zig").HandoffList;
 pub const LinkerSetType = @import("linker_set.zig").LinkerSetType;
 pub const CachePaddedType = @import("cache_padded.zig").CachePaddedType;
+pub const mem = @import("mem.zig");
 
 pub fn comptime_error(comptime msg: []const u8, args: anytype) void {
     @compileError(std.fmt.comptimePrint(msg, args));
