@@ -682,11 +682,10 @@ pub const Idtr = extern struct {
 
 pub fn sidtr() Idtr {
     var idtr: Idtr = undefined;
-
-    asm volatile ("sidt %[p]"
+    asm volatile ("sidt (%[p])"
         :
-        : [p] "*p" (&idtr.limit),
-    );
+        : [p] "r" (&idtr),
+        : .{ .memory = true });
     return idtr;
 }
 
