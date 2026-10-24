@@ -10,7 +10,8 @@ const rcu = r.rcu;
 const mm = r.mm;
 
 const Entry = struct {
-    string: []const u8,
+    string: [*]const u8,
+    len: u32,
     ref: std.atomic.Value(u32),
     link: rcu.SList.Entry,
 };
@@ -28,7 +29,7 @@ const Context = struct {
     }
 
     pub fn key_of(obj: *Entry) Key {
-        return obj.string;
+        return obj.string[0..obj.len];
     }
 
     pub fn is_alive(obj: *Entry) bool {
@@ -77,7 +78,7 @@ pub const InternedString = packed struct(usize) {
         }
 
         const entry: *Entry = @ptrFromInt(self.bits);
-        return entry.string;
+        return entry.string[0..entry.len];
     }
 };
 
@@ -170,5 +171,5 @@ pub fn release(string: InternedString) void {
 }
 
 fn reclaim(entry: *Entry) void {
-    mm.zone.gpa.free(entry.string);
+    mm.zone.gpa.free(entry.string[0..entry.len]);
 }
