@@ -150,12 +150,10 @@ amd64_context_switch:
     mov (%rsi), %rsp
 
 	/* Set switching to false. */
-    xorl %eax, %eax
-    xchgb %al, (%rcx)
+	movb $0, (%rcx)
 
     /* Unlock passed lock. */
-    xorl %eax, %eax
-    xchgb %al, (%rdx)
+	movb $0, (%rdx)
 
     /* Restore callee-saved registers. */
     pop %rbp
@@ -196,12 +194,10 @@ amd64_context_switch_cont_n:
     call ki_free_old_stack
 
     /* Set switching to false. */
-    xorl %eax, %eax
-    xchgb %al, (%r13)
+    movb $0, (%r13)
 
     /* Unlock passed lock. */
-    xorl %eax, %eax
-    xchgb %al, (%r12)
+    movb $0, (%r12)
 
     /* Restore callee-saved registers. */
     pop %rbp
