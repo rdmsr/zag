@@ -406,9 +406,14 @@ pub fn owner_leave(o: *Owner) void {
 /// Returns null if no turnstile is found.
 pub fn lookup(obj: *const anyopaque) ?*Turnstile {
     const chain = chain_for(obj);
-
     chain.lock.acquire_no_ipl();
+    return lookup_locked(obj, chain);
+}
 
+/// Look up the turnstile for the specified object.
+/// Chain lock is already acquired with IPL raised.
+/// Returns null if no turnstile is found.
+pub fn lookup_locked(obj: *const anyopaque, chain: *const Chain) ?*Turnstile {
     var it = chain.list.iterator();
     while (it.next()) : (it.advance()) {
         const turnstile: *Turnstile = @fieldParentPtr("link", it.get());
@@ -419,6 +424,20 @@ pub fn lookup(obj: *const anyopaque) ?*Turnstile {
     }
 
     return null;
+}
+
+/// Lock the chain associated with a given object.
+/// IPL must be raised.
+pub fn lock_chain(obj: *const anyopaque) *Chain {
+    const chain = chain_for(obj);
+    chain.lock.acquire_no_ipl();
+    return chain;
+}
+
+/// Lock the chain associated with a given object.
+/// IPL must be raised.
+pub fn unlock_chain(chain: *Chain) void {
+    chain.lock.release_no_ipl();
 }
 
 /// Drop the locks held by a corresponding `lookup`.
@@ -435,7 +454,7 @@ pub fn exit(obj: *const anyopaque, turnstile: ?*Turnstile) void {
 ///
 /// This must be called with the appropriate turnstile chain lock held, and
 /// returns with the chain lock released.
-/// IPL is kept as before on return.
+/// IPL is lowered to passive.
 pub fn block(
     turnstile: ?*Turnstile,
     obj: *anyopaque,
@@ -444,11 +463,11 @@ pub fn block(
 ) void {
     const chain = chain_for(obj);
     const curtd = ke.thread.current();
-    const ipl = ke.ipl.current();
 
     var ts = turnstile;
     const queue_idx = @backingInt(queue);
 
+    assert(ke.ipl.current() == .Dispatch);
     assert(chain.lock.is_locked());
 
     if (ts) |turn| {
@@ -501,7 +520,6 @@ pub fn block(
     _ = ke.ipl.lower(.Passive);
     _ = ke.wait.wait_one(&waiter.event.hdr, "turnstile:waiter", .{}) catch
         unreachable;
-    _ = ke.ipl.raise(ipl);
 }
 
 /// Signal the end of a turnstile-backed wait and return a list of waiters

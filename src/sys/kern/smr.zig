@@ -215,7 +215,6 @@ fn scan_preempt(
                 .Exclusive,
             );
 
-            ke.ipl.lower(ipl);
             seq = cpu.stall_seq.load(.monotonic);
         }
 
