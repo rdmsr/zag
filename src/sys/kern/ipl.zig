@@ -33,7 +33,7 @@ const PerCpu = struct {
 };
 
 /// Current IPL on this CPU.
-pub const cpu_ipl = ke.ExportedCpuLocalTypeType(
+pub const cpu_ipl = ke.ExportedCpuLocalType(
     Ipl,
     .Passive,
     "cpu_ipl",

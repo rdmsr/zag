@@ -19,7 +19,7 @@ extern var __percpu_end: u8;
 
 pub export var cpu_id_to_apic_id: [config.ncpus]u32 = undefined;
 
-const start_stack = ke.ExportedCpuLocalTypeType(usize, 0, "ap_start_stack");
+const start_stack = ke.ExportedCpuLocalType(usize, 0, "ap_start_stack");
 
 pub const start_thread = ke.CpuLocalType(*ke.Thread, undefined);
 

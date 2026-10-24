@@ -42,7 +42,7 @@ pub fn CpuLocalType(comptime T: type, comptime init: T) type {
 }
 
 /// Wraps around CPU-local data with a designated symbol name.
-pub fn ExportedCpuLocalTypeType(
+pub fn ExportedCpuLocalType(
     comptime T: type,
     comptime init: T,
     comptime name: []const u8,
