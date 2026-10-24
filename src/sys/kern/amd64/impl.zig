@@ -246,3 +246,10 @@ pub inline fn lower_software_ipl(new: ke.Ipl, old: *ke.Ipl) bool {
           [old_ptr] "r" (old),
         : .{ .rcx = true, .memory = true });
 }
+
+pub inline fn current_thread() ?*ke.Thread {
+    return @ptrFromInt(asm volatile (
+        \\mov %%gs:current_thread, %[ret]
+        : [ret] "=r" (-> u64),
+    ));
+}

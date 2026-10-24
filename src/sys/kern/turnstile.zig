@@ -443,7 +443,7 @@ pub fn block(
     queue: Queue,
 ) void {
     const chain = chain_for(obj);
-    const curtd = kep.sched.percpu.local().current_thread.?;
+    const curtd = ke.thread.current();
     const ipl = ke.ipl.current();
 
     var ts = turnstile;

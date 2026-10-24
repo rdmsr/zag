@@ -95,8 +95,8 @@ pub fn ap_entry(cpu_id: u32, booted: *std.atomic.Value(usize)) noreturn {
 
     const sched = kep.sched.percpu.local();
 
-    sched.current_thread = pl.impl.smp.start_thread.local().*;
-    sched.idle_thread = sched.current_thread;
+    kep.sched.current_thread.local().* = pl.impl.smp.start_thread.local().*;
+    sched.idle_thread = kep.thread.current();
 
     amd64.sti();
 

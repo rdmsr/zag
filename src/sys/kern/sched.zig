@@ -208,8 +208,6 @@ pub const PerCpu = struct {
     start_timer: bool,
     /// The reason why the current thread was preempted.
     preemption_reason: PreemptionReason,
-    /// Currently running thread.
-    current_thread: ?*ke.Thread,
     /// Per-CPU idle thread.
     idle_thread: ?*ke.Thread,
     /// Thread selected for preemption.
@@ -242,6 +240,11 @@ pub const Accounting = struct {
 };
 
 pub const percpu = ke.CpuLocalType(PerCpu, undefined);
+pub const current_thread = ke.ExportedCpuLocalType(
+    ?*ke.Thread,
+    null,
+    "current_thread",
+);
 
 var balance_timer: ke.Timer = undefined;
 var balance_dpc = ke.Dpc.init(balance);
@@ -276,7 +279,6 @@ fn init_cpu() linksection(r.init) void {
         .resched_timer = undefined,
         .start_timer = false,
         .preemption_reason = .None,
-        .current_thread = null,
         .idle_thread = null,
         .next_thread = null,
         .pick_offset = 0,
@@ -1022,7 +1024,7 @@ fn enqueue_on_cpu(c: u32, td: *ke.Thread) void {
 
     attach_load_avg(cpu, td);
 
-    if (cpu.current_thread != null and
+    if (current_thread.local().* != null and
         should_preempt_cpu(td, cpu, c != ke.cpu.current()))
     {
         // We can preempt the current thread, first check whether or not there
@@ -1088,8 +1090,8 @@ fn allocate_stack(td: *ke.Thread) ?usize {
 }
 
 // Execute a context switch on `cpu`.
-fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
-    cpu.current_thread = next;
+fn do_switch(cur: *ke.Thread, next: *ke.Thread) void {
+    current_thread.local().* = next;
     next.last_cpu = ke.cpu.current();
 
     const time = ke.time.read_time();
@@ -1153,7 +1155,7 @@ fn do_switch(cpu: *PerCpu, cur: *ke.Thread, next: *ke.Thread) void {
 /// Handle preemption.
 /// This is called in DPC dispatch when it notices `next_thread` is set.
 pub fn handle_preemption(cpu: *PerCpu) void {
-    const cur = cpu.current_thread orelse unreachable;
+    const cur = ke.thread.current();
     var next: *ke.Thread = undefined;
 
     while (true) {
@@ -1220,7 +1222,7 @@ pub fn handle_preemption(cpu: *PerCpu) void {
         std.atomic.spinLoopHint();
     }
 
-    do_switch(cpu, cur, next);
+    do_switch(cur, next);
 
     // cur.lock dropped
 }
@@ -1230,7 +1232,7 @@ pub fn clock(_: *ke.Dpc, _: ?*anyopaque) void {
     const cpu = percpu.local();
     assert(kep.ipl.current() == .Dispatch);
 
-    const curtd = cpu.current_thread orelse return;
+    const curtd = current_thread.local().* orelse return;
 
     const now = ke.time.read_time();
     const now_us = now.to_us();
@@ -1292,7 +1294,7 @@ pub fn enqueue(td: *ke.Thread) void {
 /// Yield on the current CPU.
 pub fn yield(continuation: ?ke.Continuation) void {
     const ipl = ke.ipl.raise(.Dispatch);
-    const td = percpu.local().current_thread orelse unreachable;
+    const td = ke.thread.current();
 
     td.lock.acquire_no_ipl();
     td.switching.store(true, .monotonic);
@@ -1317,7 +1319,7 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
 
     sched_cpu.queues_lock.acquire_no_ipl();
 
-    const cur = sched_cpu.current_thread orelse unreachable;
+    const cur = ke.thread.current();
     var next = sched_cpu.next_thread;
 
     cur.continuation = continuation;
@@ -1386,7 +1388,7 @@ pub fn yield_locked(continuation: ?ke.Continuation) void {
         while (n.switching.load(.monotonic) == true) {
             std.atomic.spinLoopHint();
         }
-        do_switch(sched_cpu, cur, n);
+        do_switch(cur, n);
     } else {
         // Same thread.
         cur.state.store(.Running, .monotonic);

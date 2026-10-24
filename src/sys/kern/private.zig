@@ -74,6 +74,13 @@ const ImplSchema = struct {
         _ = old;
         unreachable;
     }
+
+    /// Return a pointer to the current thread.
+    /// This must be atomic with regards to migration (i.e this should be a
+    /// consistent pointer no matter what).
+    pub fn current_thread() ?*ke.Thread {
+        unreachable;
+    }
 };
 
 comptime {

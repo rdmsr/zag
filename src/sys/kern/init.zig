@@ -54,7 +54,7 @@ fn init() linksection(r.init) void {
     kep.cpu.init_cpu(0);
     kep.turnstile.init_turnstiles();
 
-    kep.sched.percpu.local().current_thread = &thread0;
+    kep.sched.current_thread.local().* = &thread0;
     kep.sched.percpu.local().idle_thread = &thread0;
 
     std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{

@@ -316,7 +316,7 @@ pub fn exit() void {
 
 /// Return the currently running thread.
 pub fn current() *ke.Thread {
-    return kep.sched.percpu.local().current_thread orelse unreachable;
+    return kep.impl.current_thread() orelse unreachable;
 }
 
 // -- Stack allocation and continuations ---------------------------------------

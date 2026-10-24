@@ -60,7 +60,7 @@ pub const Queue = struct {
     /// This blocks until an item is actually popped.
     pub fn remove(self: *Queue, timeout: ?rtl.Duration) !*rtl.List.Entry {
         const ipl = self.hdr.lock.acquire();
-        const td = kep.sched.percpu.local().current_thread orelse unreachable;
+        const td = ke.thread.current();
 
         if (td.queue) |q| {
             assert(q == self);

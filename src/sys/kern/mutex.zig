@@ -32,9 +32,7 @@ pub const Mutex = struct {
     }
 
     pub fn acquire(m: *Mutex) void {
-        const ipl = ke.ipl.raise(.Dispatch);
-        const curtd = kep.sched.percpu.local().current_thread orelse
-            unreachable;
+        const curtd = ke.thread.current();
 
         if (config.warden) {
             kep.warden.check(m.wd, .Lock);
@@ -54,7 +52,6 @@ pub const Mutex = struct {
         );
 
         if (cur_owner == null) {
-            ke.ipl.lower(ipl);
             return;
         }
 
@@ -74,9 +71,10 @@ pub const Mutex = struct {
                 continue;
             }
 
-            ke.ipl.lower(ipl);
             return;
         }
+
+        const ipl = ke.ipl.raise(.Dispatch);
 
         // Slow path: contended, block on a turnstile.
         while (true) {

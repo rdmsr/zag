@@ -141,7 +141,7 @@ fn dispatch_queue(cpu: u32) void {
     kep.shootdown.process_shootdowns();
 
     if (sched_cpu.next_thread != null) {
-        const curtd = sched_cpu.current_thread orelse unreachable;
+        const curtd = ke.thread.current();
 
         if (!curtd.smr_sections.is_empty()) {
             kep.smr.mark_thread_stalled(curtd);
