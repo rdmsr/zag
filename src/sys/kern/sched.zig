@@ -758,8 +758,6 @@ fn insert_in_list(list: *rtl.List, link: *rtl.List.Entry, head: bool) void {
 fn insert_in_queue(cpu: *PerCpu, td: *ke.Thread, preempted: bool) void {
     assert(cpu.queues_lock.is_locked());
 
-    td.cpu = null;
-
     const prio = to_sched_prio(td.priority);
 
     if (td.priority_class() == .Realtime or td.is_interactive()) {
