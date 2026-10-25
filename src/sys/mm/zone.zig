@@ -424,7 +424,7 @@ const Depot = struct {
 
 /// Per-CPU state for a zone.
 const Cpu = struct {
-    lock: ke.SpinLock,
+    lock: ke.Mutex,
     /// Magazine used for allocations.
     alloc: ?*Magazine,
     /// Magazine used for frees.
@@ -519,7 +519,7 @@ pub const Zone = struct {
     free_slabs: rtl.List,
     /// Linkage into the global zone list.
     next: ?*Zone,
-    depot_lock: ke.QSpinLock,
+    depot_lock: ke.Mutex,
     depot: Depot,
     /// Current contention rate, in contentions/second scaled by `wma_unit`.
     depot_contention_wma: usize,
@@ -611,7 +611,7 @@ pub const Zone = struct {
         self.ctor = options.ctor;
         self.dtor = options.dtor;
         self.lock = ke.Mutex.init("zone");
-        self.depot_lock = ke.QSpinLock.init("zone_depot");
+        self.depot_lock = ke.Mutex.init("zone_depot");
         self.use_magazines = options.magazines;
 
         self.depot = std.mem.zeroes(Depot);
@@ -659,7 +659,7 @@ pub const Zone = struct {
         self.cpus = cpus_alloc();
 
         for (0..ke.ncpus) |i| {
-            self.cpus[i].value.lock = ke.SpinLock.init("Depot");
+            self.cpus[i].value.lock = ke.Mutex.init("Depot");
             self.cpus[i].value.alloc = null;
             self.cpus[i].value.free = null;
             self.cpus[i].value.alloc_rounds = 0;
@@ -675,9 +675,8 @@ pub const Zone = struct {
             @branchHint(.likely);
 
             var buf: *anyopaque = undefined;
-            var ipl = ke.ipl.raise(.Dispatch);
             var cpu = &self.cpus[ke.cpu.current()].value;
-            cpu.lock.acquire_no_ipl();
+            cpu.lock.acquire();
 
             while (true) {
                 if (cpu.alloc_rounds > 0) {
@@ -698,7 +697,7 @@ pub const Zone = struct {
                         }
                     }
 
-                    cpu.lock.release(ipl);
+                    cpu.lock.release();
                     return buf;
                 }
 
@@ -771,7 +770,7 @@ pub const Zone = struct {
                 // and insert it into the depot instead,
                 // since there is a higher chance the  impostor magazine
                 // contains objects that are hotter in cache.
-                cpu.lock.release(ipl);
+                cpu.lock.release();
 
                 const raw_mag = try magazine_zone.alloc(
                     .{ .policy = opts.policy },
@@ -787,11 +786,10 @@ pub const Zone = struct {
                         opts.policy,
                     );
 
-                    // We dropped the lock and IPL, so we might've been
-                    // migrated.
-                    ipl = ke.ipl.raise(.Dispatch);
+                    // We dropped the lock, now is a good time to reload the CPU
+                    // in case we got migrated.
                     cpu = &self.cpus[ke.cpu.current()].value;
-                    cpu.lock.acquire_no_ipl();
+                    cpu.lock.acquire();
 
                     if (cpu.alloc == null) {
                         cpu.alloc = nm;
@@ -822,7 +820,7 @@ pub const Zone = struct {
                         // many rounds a magazine has in the `Magazine` struct.
                         // This should be fine for now though.
 
-                        cpu.lock.release(ipl);
+                        cpu.lock.release();
 
                         self.release(
                             self.arg,
@@ -857,10 +855,10 @@ pub const Zone = struct {
         if (magazines_initialized and self.use_magazines) {
             @branchHint(.likely);
 
-            var ipl = ke.ipl.raise(.Dispatch);
             var cpu = &self.cpus[ke.cpu.current()].value;
 
-            cpu.lock.acquire_no_ipl();
+            cpu.lock.acquire();
+
             const freed = while (true) {
                 if (cpu.free != null and
                     cpu.free_rounds < magazine_size.load())
@@ -947,9 +945,9 @@ pub const Zone = struct {
                 }
 
                 // No empty magazine in the depot, try to allocate a new one.
-                // We need to drop IPL and the CPU lock here because we need to
-                // acquire the magazine's allocator's blocking lock.
-                cpu.lock.release(ipl);
+                // Drop the CPU lock across the allocation so as to not make
+                // hold times too lengthy.
+                cpu.lock.release();
 
                 const raw_mag = magazine_zone.alloc(
                     .{ .policy = .DontWaitForMemory },
@@ -958,9 +956,8 @@ pub const Zone = struct {
                 const new_mag: ?*Magazine = @ptrCast(@alignCast(raw_mag));
 
                 // Re-grab our current context.
-                ipl = ke.ipl.raise(.Dispatch);
                 cpu = &self.cpus[ke.cpu.current()].value;
-                cpu.lock.acquire_no_ipl();
+                cpu.lock.acquire();
 
                 if (new_mag) |m| {
                     m.seq = ke.smr.seq_invalid;
@@ -974,7 +971,7 @@ pub const Zone = struct {
                 break false;
             };
 
-            cpu.lock.release(ipl);
+            cpu.lock.release();
             if (freed) return;
         }
 
@@ -1139,7 +1136,7 @@ pub const Zone = struct {
     /// Periodic updates on the zone.
     /// Updates the magazine working set and trims or grows them if needed.
     fn update(self: *Zone) void {
-        const ipl = self.depot_lock.acquire();
+        self.depot_lock.acquire();
 
         // Update the working set size.
         // This tracks the minimum number of magazines required,
@@ -1205,7 +1202,7 @@ pub const Zone = struct {
 
         self.trim_depot = false;
 
-        self.depot_lock.release(ipl);
+        self.depot_lock.release();
 
         if (should_trim) {
             self.trim(trim_depot);
@@ -1295,13 +1292,13 @@ pub const Zone = struct {
         // Detach magazines before invoking release callbacks.
         self.lock.acquire();
 
-        const ipl = self.depot_lock.acquire();
+        self.depot_lock.acquire();
 
         // Take all elements from the zone depot.
         var depot = self.depot;
         self.depot = std.mem.zeroes(Depot);
 
-        self.depot_lock.release(ipl);
+        self.depot_lock.release();
 
         // Trim all CPU depots to 0.
         for (0..ke.ncpus) |i| {
@@ -1332,7 +1329,7 @@ pub const Zone = struct {
 
     /// Detach excess magazines for destruction.
     fn trim_maglist(self: *Zone, maglist: *MagazineList) ?*Magazine {
-        const ipl = self.depot_lock.acquire();
+        self.depot_lock.acquire();
 
         // Grab the magazines and WSS under the depot lock.
         const target = @min(
@@ -1366,14 +1363,14 @@ pub const Zone = struct {
         maglist.num -= removed;
         maglist.wma -= removed * wma_unit;
 
-        self.depot_lock.release(ipl);
+        self.depot_lock.release();
 
         return removed_head;
     }
 
     /// Trim a CPU's depot to `target`.
     fn trim_cpu(self: *Zone, cpu: *Cpu, depot: *Depot, target: usize) void {
-        const ipl = cpu.lock.acquire();
+        cpu.lock.acquire();
 
         // Split the target (cpu_depot_size) in 2 for each magazine type.
         // Bias towards full magazines because they are usually more useful
@@ -1409,7 +1406,7 @@ pub const Zone = struct {
             }
         }
 
-        cpu.lock.release(ipl);
+        cpu.lock.release();
     }
 
     fn maglist_destroy(self: *Zone, head: ?*Magazine, n: usize) void {
@@ -1623,9 +1620,9 @@ pub const Zone = struct {
     /// zone depot, and tries to get full magazines from the zone depot up to
     /// `target`. CPU lock is held.
     fn alloc_depot_rebalance(self: *Zone, target: usize, cpu: *Cpu) void {
-        if (!self.depot_lock.try_acquire_no_ipl()) {
+        if (!self.depot_lock.try_acquire()) {
             // Register the contention.
-            self.depot_lock.acquire_no_ipl();
+            self.depot_lock.acquire();
             self.depot_contention_cur += 1;
         }
 
@@ -1668,7 +1665,7 @@ pub const Zone = struct {
             }
         }
 
-        self.depot_lock.release_no_ipl();
+        self.depot_lock.release();
     }
 
     /// Try to rebalance the zone and cpu depots w.r.t to each other
@@ -1676,9 +1673,9 @@ pub const Zone = struct {
     /// zone depot, and tries to get empty magazines from the zone depot up to
     /// `target`. CPU lock is held.
     fn free_depot_rebalance(self: *Zone, target: usize, cpu: *Cpu) void {
-        if (!self.depot_lock.try_acquire_no_ipl()) {
+        if (!self.depot_lock.try_acquire()) {
             // Register the contention.
-            self.depot_lock.acquire_no_ipl();
+            self.depot_lock.acquire();
             self.depot_contention_cur += 1;
         }
 
@@ -1728,7 +1725,7 @@ pub const Zone = struct {
             );
         }
 
-        self.depot_lock.release_no_ipl();
+        self.depot_lock.release();
     }
 };
 
@@ -1823,7 +1820,7 @@ pub fn late_init() linksection(r.init) void {
 
             for (0..ke.ncpus) |i| {
                 z.cpus[i] = rtl.CachePaddedType(Cpu).init(.{
-                    .lock = ke.SpinLock.init("Magazine"),
+                    .lock = ke.Mutex.init("Magazine"),
                     .alloc = null,
                     .free = null,
                     .alloc_rounds = 0,
