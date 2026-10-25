@@ -30,3 +30,8 @@ pub fn read_struct(
 
     return result;
 }
+
+/// Racily read a pointer on purpose.
+pub fn racy_read(comptime T: type, ptr: *T) T {
+    return @atomicLoad(T, ptr, .unordered);
+}

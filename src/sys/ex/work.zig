@@ -144,13 +144,12 @@ const Pool = struct {
 
     /// Return whether or not a new worker thread should be added to this pool.
     fn should_grow(self: *Pool) bool {
-        // NOTE: lockless racy check whether or not the queue is empty
+        // Lockless racy check whether or not the queue is empty
         // and its active count.
         // This is fine as this is best effort anyway and is a heuristic.
-        const is_empty = @atomicLoad(
+        const is_empty = rtl.mem.racy_read(
             *rtl.List.Entry,
             &self.queue.items.head.next,
-            .monotonic,
         ) == &self.queue.items.head;
 
         const active = self.queue.active.load(.monotonic);

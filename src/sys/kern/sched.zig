@@ -1779,11 +1779,7 @@ pub fn idle(_: ?*anyopaque) noreturn {
 
     while (true) {
         // Racy but only a hint anyway
-        const next = @atomicLoad(
-            ?*ke.Thread,
-            &cpu.next_thread,
-            .monotonic,
-        );
+        const next = rtl.mem.racy_read(?*ke.Thread, &cpu.next_thread);
 
         if (cpu.load.load(.monotonic) != 0 or next != null) {
             std.atomic.spinLoopHint();

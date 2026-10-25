@@ -293,11 +293,7 @@ pub fn RingBufferType(data_size_bits: usize, avg_msg_bits: usize) type {
                 // Loading the ID here is purposely racey because
                 // we check if the descriptor is valid anyway.
                 const id: Id = @truncate(
-                    @atomicLoad(
-                        usize,
-                        @as(*usize, @ptrCast(&blk.id)),
-                        .monotonic,
-                    ),
+                    rtl.mem.racy_read(usize, @ptrCast(&blk.id)),
                 );
                 const res = self.read_desc(id);
                 desc = res.desc;

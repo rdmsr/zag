@@ -736,7 +736,7 @@ pub const Zone = struct {
                 // Local depot is empty, rebalance with the zone depot.
                 // Purposefully race against cpu_depot_size because locking is
                 // tricky here, we may get a stale value but it is harmless.
-                const n = @atomicLoad(usize, &self.cpu_depot_size, .monotonic);
+                const n = rtl.mem.racy_read(usize, &self.cpu_depot_size);
 
                 self.alloc_depot_rebalance(n, cpu);
 
@@ -924,7 +924,7 @@ pub const Zone = struct {
 
                 // Local depot is empty, rebalance with the zone depot.
                 // Race explained in alloc.
-                const n = @atomicLoad(usize, &self.cpu_depot_size, .monotonic);
+                const n = rtl.mem.racy_read(usize, &self.cpu_depot_size);
 
                 self.free_depot_rebalance(n, cpu);
 

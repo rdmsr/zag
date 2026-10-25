@@ -175,10 +175,9 @@ pub const Mutex = struct {
 
                 var gas: usize = 0;
 
-                while (@atomicLoad(
+                while (rtl.mem.racy_read(
                     ?*ke.Thread,
                     cpu_curtd,
-                    .unordered,
                 ) == owner and gas < optimistic_spins) : (gas += 1) {
                     if (m.state.load(.monotonic) == State.uncontended) {
                         // Got released, retry acquiring it.
