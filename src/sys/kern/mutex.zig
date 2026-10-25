@@ -58,10 +58,24 @@ pub const Mutex = struct {
         return .{ .state = std.atomic.Value(State).init(.{}) };
     }
 
+    /// Return whether the lock is currently held.
     pub fn is_locked(self: *Mutex) bool {
         return self.state.load(.monotonic) != State.uncontended;
     }
 
+    /// Try to acquire the lock.
+    /// Returns true on success.
+    pub fn try_acquire(self: *Mutex) bool {
+        const curtd = ke.thread.current();
+        return self.state.cmpxchgStrong(
+            State.uncontended,
+            State.from(curtd),
+            .acquire,
+            .monotonic,
+        ) == null;
+    }
+
+    /// Acquire the lock.
     pub inline fn acquire(m: *Mutex) void {
         const curtd = ke.thread.current();
 
@@ -207,6 +221,7 @@ pub const Mutex = struct {
         }
     }
 
+    /// Release the lock.
     pub inline fn release(m: *Mutex) void {
         const old = m.state.swap(State.uncontended, .release);
 
