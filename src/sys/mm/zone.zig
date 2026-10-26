@@ -430,17 +430,17 @@ pub const Page = extern struct {
     slab: *Slab,
 };
 
-inline fn fill_with_poison(ptr: *anyopaque, len: usize, pattern: u32) void {
+fn fill_with_poison(ptr: *anyopaque, len: usize, pattern: u32) void {
     const bytes: [*]u8 = @ptrCast(ptr);
     var i: usize = 0;
 
     while (i + 4 <= len) : (i += 4) {
-        std.mem.writeInt(u32, bytes[i..][0..4], pattern, .little);
+        std.mem.writeInt(u32, bytes[i..][0..4], pattern, .native);
     }
 
     if (i < len) {
         var tail: [4]u8 = undefined;
-        std.mem.writeInt(u32, &tail, pattern, .little);
+        std.mem.writeInt(u32, &tail, pattern, .native);
         var j: usize = 0;
         while (i < len) : ({
             i += 1;
@@ -449,20 +449,21 @@ inline fn fill_with_poison(ptr: *anyopaque, len: usize, pattern: u32) void {
     }
 }
 
-inline fn check_poison(ptr: *anyopaque, len: usize, pattern: u32) bool {
+fn check_poison(ptr: *anyopaque, len: usize, pattern: u32) bool {
     if (!should_check_poison) return true;
 
     const bytes: [*]const u8 = @ptrCast(ptr);
     var i: usize = 0;
 
     while (i + 4 <= len) : (i += 4) {
-        if (std.mem.readInt(u32, bytes[i..][0..4], .little) != pattern)
+        if (std.mem.readInt(u32, bytes[i..][0..4], .native) != pattern) {
             return false;
+        }
     }
 
     if (i < len) {
         var tail: [4]u8 = undefined;
-        std.mem.writeInt(u32, &tail, pattern, .little);
+        std.mem.writeInt(u32, &tail, pattern, .native);
         var j: usize = 0;
         while (i < len) : ({
             i += 1;
@@ -684,7 +685,10 @@ pub const Zone = struct {
 
                     if (is_poison_enabled and !self.flags.dont_touch) {
                         if (!check_poison(buf, self.obj_size, free_poison)) {
-                            @panic("poison mismatch: possible use-after-free");
+                            std.debug.panic(
+                                "poison mismatch: possible UaF on {*}",
+                                .{buf},
+                            );
                         }
 
                         fill_with_poison(buf, self.obj_size, alloc_poison);
@@ -983,7 +987,6 @@ pub const Zone = struct {
     }
 
     fn slab_free(self: *Zone, obj: *anyopaque, poison: bool) void {
-        if (!is_poison_enabled or poison and !self.flags.dont_touch) {
         if (!is_poison_enabled or (poison and !self.flags.dont_touch)) {
             if (self.dtor) |dtor| {
                 dtor(obj);
@@ -1081,16 +1084,10 @@ pub const Zone = struct {
                     slab.link.remove();
                 }
 
-                if (is_poison_enabled) {
-                    if (!check_poison(buf, self.obj_size, free_poison)) {
-                        @panic("poison mismatch: possible use-after-free");
+                if (!is_poison_enabled) {
+                    if (self.ctor) |ctor| {
+                        ctor(buf);
                     }
-
-                    fill_with_poison(buf, self.obj_size, alloc_poison);
-                }
-
-                if (self.ctor) |ctor| {
-                    ctor(buf);
                 }
 
                 elems[i] = buf;
@@ -1860,7 +1857,6 @@ pub fn smr_domain_create(preempt: bool) !*ke.smr.Domain {
     var dom: *ke.smr.Domain = try smr_zone.create();
     dom.cpus = @ptrCast(@alignCast(try smr_cpu_zone.alloc(.{})));
     dom.init(preempt);
-
     return dom;
 }
 
