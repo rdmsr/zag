@@ -67,12 +67,20 @@ pub const Mutex = struct {
     /// Returns true on success.
     pub fn try_acquire(self: *Mutex) bool {
         const curtd = ke.thread.current();
-        return self.state.cmpxchgStrong(
+        if (self.state.cmpxchgStrong(
             State.uncontended,
             State.from(curtd),
             .acquire,
             .monotonic,
-        ) == null;
+        ) == null) {
+            if (config.warden) {
+                kep.warden.acquired(self, self.wd, .Lock);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /// Acquire the lock.
