@@ -292,8 +292,8 @@ pub fn init() void {
     // Figure out the memory layout.
     // NOTE: This assumes 64-bit (fix this when we port to 32-bit).
     // Higher half starts here, we give 1/2 to the kernel for its direct map.
-    const higher_half_start: usize = @bitCast(-@as(isize, 1) << vbits - 1);
-    const kernel_heap = higher_half_start + (@as(usize, 1) << vbits - 2);
+    const higher_half_start: usize = @bitCast(-@as(isize, 1) << (vbits - 1));
+    const kernel_heap = higher_half_start + (@as(usize, 1) << (vbits - 2));
 
     // Then, we give 16 TiB to the kernel heap.
     const pfndb = kernel_heap + 0x100000000000;

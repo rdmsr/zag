@@ -69,7 +69,7 @@ pub const PVClockSource = struct {
             else
                 tsc_delta >> @intCast(-tsc_shift);
             const ns = self.page.system_time +
-                (shifted * @as(u128, self.page.tsc_to_system_mul) >> 32);
+                ((shifted * @as(u128, self.page.tsc_to_system_mul)) >> 32);
 
             if (@atomicLoad(u32, &self.page.version, .acquire) == ver)
                 return @as(u64, @truncate(ns)) - self.time_at_boot;

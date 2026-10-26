@@ -232,7 +232,7 @@ fn update_prio(td: *ke.Thread) void {
 /// `to.lock` and the owning turnstile's lock.
 fn donate_to(boost: *Boost, to: *ke.Thread, pri: u8) void {
     // A lend only ever raises.
-    if (boost.donated != null and pri <= boost.donated orelse unreachable)
+    if (boost.donated != null and pri <= boost.donated.?)
         return;
 
     if (boost.donated == null) to.turnstiles_owned.insert_head(&boost.link);

@@ -125,7 +125,7 @@ pub inline fn rdmsr(msr: u32) u64 {
           [high] "={edx}" (high),
         : [msr] "{ecx}" (msr),
     );
-    return @as(u64, high) << 32 | low;
+    return (@as(u64, high) << 32) | low;
 }
 
 pub inline fn wrmsr(msr: u32, value: u64) void {
@@ -234,7 +234,7 @@ pub inline fn rdtsc() u64 {
         : [low] "={eax}" (low),
           [high] "={edx}" (high),
     );
-    return @as(u64, high) << 32 | low;
+    return (@as(u64, high) << 32) | low;
 }
 
 pub const Cr0 = packed struct(u64) {

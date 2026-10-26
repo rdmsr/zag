@@ -984,6 +984,7 @@ pub const Zone = struct {
 
     fn slab_free(self: *Zone, obj: *anyopaque, poison: bool) void {
         if (!is_poison_enabled or poison and !self.flags.dont_touch) {
+        if (!is_poison_enabled or (poison and !self.flags.dont_touch)) {
             if (self.dtor) |dtor| {
                 dtor(obj);
             }
