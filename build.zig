@@ -12,12 +12,16 @@ pub fn build(b: *std.Build) void {
 
     // Parse the config or fail if file is not present
     const cfg = config.parseConfig(b) catch |err| {
+        // Ensure this logic runs again the next time.
+        b.graph.poisonCache();
         b.default_step.dependOn(
             &b.addFail(b.fmt("Failed to parse config, have you run `zig build config`? (Error: {any})", .{err})).step,
         );
 
         return;
     };
+
+    b.dependOnFileContents(b.path(".config.zig.zon"));
 
     // Get the target platform
     const plat = config.getPlatform(cfg) catch {
