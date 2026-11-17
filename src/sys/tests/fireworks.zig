@@ -162,6 +162,9 @@ fn particle_continuation(param: ?*anyopaque) void {
 
 fn particle(param: ?*anyopaque) void {
     const parent_data: *FireworkData = @ptrCast(@alignCast(param));
+    const parent_data_copy = parent_data.*;
+
+    mm.zone.gpa.destroy(parent_data);
 
     const data = mm.zone.gpa.create(FireworkData) catch
         {
@@ -173,13 +176,11 @@ fn particle(param: ?*anyopaque) void {
 
     _ = particle_count.fetchAdd(1, .monotonic);
 
-    data.x = parent_data.x;
-    data.y = parent_data.y;
-    data.act_x = parent_data.act_x;
-    data.act_y = parent_data.act_y;
-    const explosion_range = parent_data.explosion_range;
-
-    mm.zone.gpa.destroy(parent_data);
+    data.x = parent_data_copy.x;
+    data.y = parent_data_copy.y;
+    data.act_x = parent_data_copy.act_x;
+    data.act_y = parent_data_copy.act_y;
+    const explosion_range = parent_data_copy.explosion_range;
 
     const angle = rand();
     const speed = @max(rand_fp(), rand_fp());
@@ -288,7 +289,8 @@ fn spawning_loop(_: ?*anyopaque) void {
         spawn_explodeable();
     }
 
-    std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for {} particles {}us worst delay", .{
+    std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for" ++
+        "{} particles {}us worst delay", .{
         mm.private.tlb.async_shootdowns.load(.monotonic),
         mm.private.tlb.sync_shootdowns.load(.monotonic),
         mm.private.phys.usable_memory.load(.monotonic) / 1024,
@@ -306,6 +308,8 @@ pub fn start(param: ?*anyopaque) void {
     rand_gen ^= rand_tsc_based();
 
     bv.disable();
+
+    std.log.info("{*}", .{ke.thread.current()});
 
     if (boot_info.framebuffer) |fb| {
         fb_bpp = fb.bpp / 8;
