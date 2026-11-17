@@ -1,3 +1,4 @@
+//! Memory manipulation helpers.
 const std = @import("std");
 
 /// Read an extern or packed struct's fields with a given endianness from a byte

@@ -1,3 +1,4 @@
+//! riscv64-specific memory management code.
 pub const private = @import("private.zig");
 
 const std = @import("std");

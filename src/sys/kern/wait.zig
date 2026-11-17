@@ -142,8 +142,7 @@ pub fn wait_one(
     reason: []const u8,
     opts: Options,
 ) !usize {
-    var objects = [_]*DispatchHeader{object};
-    return wait_any(&objects, reason, opts);
+    return wait_any(&.{object}, reason, opts);
 }
 
 /// Wait for any of the provided objects to be signaled.

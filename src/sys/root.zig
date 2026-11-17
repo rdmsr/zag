@@ -1,3 +1,4 @@
+//! Root of the kernel. Contains common helpers and all imports.
 const std = @import("std");
 pub const ke = @import("kern/root.zig");
 pub const ex = @import("ex/root.zig");

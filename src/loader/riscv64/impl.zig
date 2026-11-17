@@ -1,3 +1,5 @@
+//! RV64 paging.
+
 const riscv64 = @import("arch");
 const r = @import("root");
 const pmap = @import("../pmap.zig");

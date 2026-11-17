@@ -1,3 +1,4 @@
+//! TSC driver.
 // Not sure if this should be in platform/pc or in kern/
 const std = @import("std");
 const amd64 = @import("arch");

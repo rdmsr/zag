@@ -1,3 +1,5 @@
+//! Loader boot protocol information.
+
 const arch = @import("arch");
 
 /// Represents the system memory map.

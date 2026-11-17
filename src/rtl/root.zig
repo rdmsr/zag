@@ -1,3 +1,5 @@
+//! Run-Time Library (RTL) root, implements common algorithms, data structures
+//! and helpers for use within the kernel and other related components.
 const std = @import("std");
 
 pub const Duration = @import("units.zig").Duration;
@@ -67,26 +69,24 @@ fn interface_error(comptime err: InterfaceError, args: anytype) void {
 /// This includes public methods and fields.
 pub fn assert_interface(T: type, I: type) void {
     const tinfo = @typeInfo(I);
-
     const info = tinfo.@"struct";
+    const T_name = @typeName(T);
+    const I_name = @typeName(I);
 
     inline for (info.field_names, info.field_types) |name, t| {
+        const t_name = @typeName(t);
         if (!@hasField(T, name)) {
             interface_error(
                 .MissingField,
-                .{ name, @typeName(t), @typeName(T), @typeName(I) },
+                .{ name, @typeName(t), T_name, I_name },
             );
         } else {
-            if (@FieldType(T, name) != t) {
+            const FieldType = @FieldType(T, name);
+
+            if (FieldType != t) {
                 interface_error(
                     .FieldType,
-                    .{
-                        name,
-                        @typeName(t),
-                        @typeName(T),
-                        @typeName(I),
-                        @typeName(@FieldType(T, name)),
-                    },
+                    .{ name, t_name, T_name, I_name, @typeName(FieldType) },
                 );
             }
         }
@@ -94,88 +94,60 @@ pub fn assert_interface(T: type, I: type) void {
 
     inline for (tinfo.@"struct".decl_names) |decl| {
         const member = @field(I, decl);
+        const MemberType = @TypeOf(member);
+        const member_type_name = @typeName(MemberType);
+
+        const impl_member = @field(T, decl);
+        const ImplType = @TypeOf(impl_member);
+        const impl_type_name = @typeName(ImplType);
 
         if (@typeInfo(@TypeOf(member)) == .@"fn") {
             if (!@hasDecl(T, decl)) {
-                interface_error(
-                    .MissingMethod,
-                    .{
-                        decl,
-                        @typeName(T),
-                        @typeName(I),
-                    },
-                );
+                interface_error(.MissingMethod, .{ decl, T_name, I_name });
             }
 
-            const impl_member = @field(T, decl);
             const IfaceFnType = @TypeOf(member);
-            const ImplFnType = @TypeOf(impl_member);
 
-            if (IfaceFnType != ImplFnType) {
+            if (IfaceFnType != ImplType) {
                 const iface_fn = @typeInfo(IfaceFnType).@"fn";
-                const impl_fn = @typeInfo(ImplFnType).@"fn";
+                const impl_fn = @typeInfo(ImplType).@"fn";
 
                 if (iface_fn.param_types.len != impl_fn.param_types.len) {
-                    interface_error(
-                        .ParameterCount,
-                        .{ decl, @typeName(T), @typeName(I) },
-                    );
+                    interface_error(.ParameterCount, .{ decl, T_name, I_name });
                 }
                 if (iface_fn.return_type != impl_fn.return_type) {
-                    interface_error(
-                        .ReturnType,
-                        .{ decl, @typeName(T), @typeName(I) },
-                    );
+                    interface_error(.ReturnType, .{ decl, T_name, I_name });
                 }
 
                 for (iface_fn.param_types, impl_fn.param_types) |a, b| {
                     if (a != b) {
                         interface_error(
                             .ParameterType,
-                            .{ decl, @typeName(T), @typeName(I) },
+                            .{ decl, T_name, I_name },
                         );
                     }
                 }
             }
-        } else if (@TypeOf(member) == type) {
+        } else if (MemberType == type) {
             if (!@hasDecl(T, decl)) {
-                interface_error(
-                    .MissingType,
-                    .{ decl, @typeName(T), @typeName(I) },
-                );
+                interface_error(.MissingType, .{ decl, T_name, I_name });
             }
 
-            const impl_member = @field(T, decl);
-            if (@TypeOf(impl_member) != type) {
+            if (ImplType != type) {
                 interface_error(
                     .TypeDeclaration,
-                    .{
-                        decl,
-                        @typeName(T),
-                        @typeName(I),
-                        @typeName(@TypeOf(impl_member)),
-                    },
+                    .{ decl, T_name, I_name, impl_type_name },
                 );
             }
         } else {
             if (!@hasDecl(T, decl)) {
-                interface_error(
-                    .MissingVariable,
-                    .{ decl, @typeName(T), @typeName(I) },
-                );
+                interface_error(.MissingVariable, .{ decl, T_name, I_name });
             }
 
-            const impl_member = @field(T, decl);
-            if (@TypeOf(impl_member) != @TypeOf(member)) {
+            if (ImplType != MemberType) {
                 interface_error(
                     .VariableType,
-                    .{
-                        decl,
-                        @typeName(T),
-                        @typeName(@TypeOf(member)),
-                        @typeName(I),
-                        @typeName(@TypeOf(impl_member)),
-                    },
+                    .{ decl, T_name, member_type_name, I_name, impl_type_name },
                 );
             }
         }

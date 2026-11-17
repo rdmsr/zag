@@ -1,3 +1,4 @@
+//! PM timer driver.
 const r = @import("root");
 const std = @import("std");
 

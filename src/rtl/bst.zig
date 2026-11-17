@@ -1,3 +1,4 @@
+//! Type definitions for working on binary search trees (BST).
 const TaggedPtrType = @import("tagged_ptr.zig").TaggedPtrType;
 const std = @import("std");
 

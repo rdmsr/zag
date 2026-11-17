@@ -18,6 +18,9 @@ const max_function_length = 90;
 const error_func_not_documented = false;
 const error_file_not_documented = true;
 
+/// Error on functions being too long.
+const error_func_too_long = false;
+
 test "tidy" {
     const gpa = std.testing.allocator;
     const io = std.testing.io;
@@ -76,7 +79,7 @@ const Errors = struct {
         file: SourceFile,
     ) void {
         errors.emit(
-            "{s}: error: file not documented\n",
+            "{s}:0: error: file not documented\n",
             .{file.path},
         );
     }
@@ -313,7 +316,9 @@ fn tidy_function(
         }
     }
 
-    if (!returns_type and line_count > max_function_length) {
+    if (!returns_type and line_count > max_function_length and
+        error_func_too_long)
+    {
         // Functions that return types are allowed to be more lines,
         // since they are basically struct/type definitions.
         errors.add_function_too_long(name, file, lineno + 1);

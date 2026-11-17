@@ -1,3 +1,4 @@
+//! Kernel time-keeping management, keeps track of hardware clock sources.
 const std = @import("std");
 const rtl = @import("rtl");
 const r = @import("root");

@@ -1,4 +1,4 @@
-/// Type-safe measurement units.
+//! Type-safe measurement units.
 const std = @import("std");
 
 pub const Duration = struct {

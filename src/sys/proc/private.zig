@@ -1,3 +1,4 @@
+//! Private PS definitions.
 const r = @import("root");
 const ke = r.ke;
 const kep = ke.private;

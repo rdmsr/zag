@@ -1,3 +1,4 @@
+//! Dummy ksyms module used for the first step of compilation.
 pub const KSym = extern struct {
     addr: u64,
     name_ptr: [*]const u8,

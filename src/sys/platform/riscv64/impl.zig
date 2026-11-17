@@ -1,3 +1,4 @@
+//! Platform implementation for the QEMU virt riscv64 machine.
 const rtl = @import("rtl");
 const r = @import("root");
 const rv64 = r.arch;

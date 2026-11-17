@@ -1,3 +1,4 @@
+//! Physical page management.
 const r = @import("root");
 const rtl = @import("rtl");
 const pl = r.pl;

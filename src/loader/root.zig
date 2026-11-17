@@ -1,3 +1,4 @@
+//! Loader root.
 const rtl = @import("rtl");
 const config = @import("config");
 const std = @import("std");

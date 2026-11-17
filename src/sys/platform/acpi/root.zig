@@ -1,3 +1,4 @@
+//! ACPI definitions and initialization.
 const r = @import("root");
 const mm = r.mm;
 const pl = r.pl;

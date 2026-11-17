@@ -1,3 +1,4 @@
+//! Simple helper to pad a type to a cache line.
 const std = @import("std");
 
 /// Type padded to a cache line.

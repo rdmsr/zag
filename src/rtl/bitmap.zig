@@ -1,3 +1,4 @@
+//! Type definitions for working on fixed-size bitmaps.
 const std = @import("std");
 const AtomicOrder = std.builtin.AtomicOrder;
 const assert = std.debug.assert;

@@ -1,3 +1,4 @@
+//! Platform implementation for a generic amd64 PC.
 const rtl = @import("rtl");
 const r = @import("root");
 const pl = r.pl;
@@ -13,16 +14,17 @@ const kep = r.ke.private;
 pub const name: []const u8 = "PC";
 
 const com1 = 0x3F8;
+const com2 = 0x2F8;
 
 const log = std.log.scoped(.@"amd64/pc");
 
-fn com1_init() linksection(r.init) void {
-    amd64.outb(com1 + 0x3, 0x80);
-    amd64.outb(com1 + 0x0, 0x0c);
-    amd64.outb(com1 + 0x1, 0x00);
-    amd64.outb(com1 + 0x3, 0x03);
-    amd64.outb(com1 + 0x2, 0xc7);
-    amd64.outb(com1 + 0x4, 0x00);
+fn com_init(addr: u16) linksection(r.init) void {
+    amd64.outb(addr + 0x3, 0x80);
+    amd64.outb(addr + 0x0, 0x0c);
+    amd64.outb(addr + 0x1, 0x00);
+    amd64.outb(addr + 0x3, 0x03);
+    amd64.outb(addr + 0x2, 0xc7);
+    amd64.outb(addr + 0x4, 0x00);
 }
 
 fn com1_write(c: u8) void {
@@ -33,8 +35,14 @@ fn com1_write(c: u8) void {
     amd64.outb(com1, c);
 }
 
+fn com2_write(c: u8) void {
+    while ((amd64.inb(com2 + 0x5) & 0x20) == 0) {}
+    amd64.outb(com2, c);
+}
+
 pub fn early_init() linksection(r.init) void {
-    com1_init();
+    com_init(com1);
+    com_init(com2);
 
     const f = amd64.cpu_features;
 
@@ -104,10 +112,14 @@ pub fn debug_write(c: u8) void {
 }
 
 pub fn debug_read() u8 {
-    while ((amd64.inb(com1 + 0x5) & 0x01) == 0) {
+    while ((amd64.inb(com2 + 0x5) & 0x01) == 0) {
         std.atomic.spinLoopHint();
     }
-    return amd64.inb(com1);
+    return amd64.inb(com2);
+}
+
+pub fn dbg_write_raw(c: u8) void {
+    com2_write(c);
 }
 
 pub fn arm_timer(duration: rtl.Duration) void {

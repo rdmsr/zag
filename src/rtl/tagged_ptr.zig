@@ -1,3 +1,4 @@
+//! Implements `TaggedPtrType`.
 /// Struct used to wrap a pointer with a 2-bit tag in the lower bits.
 /// This assumes that the pointer is at least 4-byte aligned.
 pub fn TaggedPtrType(comptime T: type) type {

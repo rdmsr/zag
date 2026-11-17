@@ -1,3 +1,4 @@
+//! HPET driver.
 const r = @import("root");
 const std = @import("std");
 const acpi = r.pl.acpi;

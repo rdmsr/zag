@@ -1,3 +1,4 @@
+//! AMD64 architecture specific MM code.
 const amd64 = @import("arch");
 const r = @import("root");
 const mm = r.mm;

@@ -1,3 +1,4 @@
+//! Loader memory management.
 const r = @import("root");
 const config = @import("config");
 const pmap = @import("pmap.zig");

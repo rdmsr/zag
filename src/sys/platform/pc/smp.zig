@@ -1,3 +1,4 @@
+//! PC SMP startup.
 const apic = @import("apic.zig");
 const r = @import("root");
 const std = @import("std");

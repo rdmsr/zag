@@ -1,3 +1,5 @@
+//! Main entry point for the loader.
+
 const r = @import("root");
 const std = @import("std");
 

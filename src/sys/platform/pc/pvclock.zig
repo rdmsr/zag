@@ -1,3 +1,4 @@
+//! Paravirtualized clock (PVClock) driver.
 const amd64 = @import("arch");
 const kvm = amd64.hypervisor.kvm;
 const r = @import("root");

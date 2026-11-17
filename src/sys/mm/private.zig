@@ -1,3 +1,4 @@
+//! Private memory management code.
 const config = @import("config");
 pub const phys = @import("phys.zig");
 pub const pmap = @import("pmap.zig");

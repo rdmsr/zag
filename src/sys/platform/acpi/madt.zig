@@ -1,3 +1,4 @@
+//! Code for iterating the MADT.
 const r = @import("root");
 
 const acpi = r.pl.acpi;

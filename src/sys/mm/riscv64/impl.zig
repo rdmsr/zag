@@ -1,3 +1,4 @@
+//! riscv64-specific memory management code.
 const rv64 = @import("arch");
 const r = @import("root");
 const mm = r.mm;

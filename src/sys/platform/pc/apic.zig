@@ -1,3 +1,4 @@
+//! x(2)APIC management.
 const std = @import("std");
 const amd64 = @import("arch");
 const rtl = @import("rtl");
