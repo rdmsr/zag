@@ -121,22 +121,11 @@ fn sleep(ms: usize, continuation: ?ke.Continuation) void {
 
 const particle_delay = 16;
 
-var worst_delay = std.atomic.Value(u64).init(0);
-
 fn particle_continuation(param: ?*anyopaque) void {
     const data: *FireworkData = @ptrCast(@alignCast(param));
-    const sleep_start = data.sleep_start;
     data.sleep_start = ke.time.read_time().value;
 
-    const delay = ((data.sleep_start - sleep_start) / std.time.ns_per_us);
-    const p_delay_us = std.time.us_per_ms * particle_delay;
-
     plot_pixel(@intCast(data.x), @intCast(data.y), background_color);
-
-    if (delay > p_delay_us and delay > worst_delay.load(.monotonic)) {
-        worst_delay.store(delay - p_delay_us, .monotonic);
-    }
-
     data.i += particle_delay;
 
     if (data.i >= data.expire_in) {
@@ -290,13 +279,12 @@ fn spawning_loop(_: ?*anyopaque) void {
     }
 
     std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for" ++
-        "{} particles {}us worst delay", .{
+        " {} particles", .{
         mm.private.tlb.async_shootdowns.load(.monotonic),
         mm.private.tlb.sync_shootdowns.load(.monotonic),
         mm.private.phys.usable_memory.load(.monotonic) / 1024,
         ke.private.thread.stacks_count(),
         particle_count.load(.monotonic),
-        worst_delay.load(.monotonic),
     });
 
     sleep(2000, .{ .func = spawning_loop, .arg = null });
