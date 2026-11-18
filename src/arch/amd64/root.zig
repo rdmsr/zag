@@ -29,7 +29,7 @@ pub const Msr = enum(u32) {
     _,
 };
 
-pub const Efer = packed struct(u64) {
+pub const Efer = bitpack struct(u64) {
     sce: bool,
     reserved0: u7,
     lme: bool,
@@ -194,7 +194,7 @@ pub fn pio_write(comptime T: type, port: u16, value: T) void {
     }
 }
 
-pub const RFlags = packed struct(u64) {
+pub const RFlags = bitpack struct(u64) {
     carry: bool,
     reserved0: u1,
     parity: bool,
@@ -237,7 +237,7 @@ pub inline fn rdtsc() u64 {
     return (@as(u64, high) << 32) | low;
 }
 
-pub const Cr0 = packed struct(u64) {
+pub const Cr0 = bitpack struct(u64) {
     pe: bool,
     mp: bool,
     em: bool,
@@ -260,7 +260,7 @@ comptime {
     _ = Cr4;
 }
 
-pub const Cr4 = packed struct(u64) {
+pub const Cr4 = bitpack struct(u64) {
     vme: bool,
     pvi: bool,
     tsd: bool,
@@ -356,7 +356,7 @@ pub const CpuidRequest = union(enum) {
     }
 };
 
-const FeatureInfoEcx = packed struct(u32) {
+const FeatureInfoEcx = bitpack struct(u32) {
     sse3: bool,
     pclmul: bool,
     dtes64: bool,
@@ -391,7 +391,7 @@ const FeatureInfoEcx = packed struct(u32) {
     hypervisor: bool,
 };
 
-const FeatureInfoEdx = packed struct(u32) {
+const FeatureInfoEdx = bitpack struct(u32) {
     fpu: bool,
     vme: bool,
     de: bool,
@@ -422,7 +422,7 @@ const FeatureInfoEdx = packed struct(u32) {
     reserved2: u5,
 };
 
-const ExtendedFeaturesEcx = packed struct(u32) {
+const ExtendedFeaturesEcx = bitpack struct(u32) {
     reserved0: u2,
     umip: bool,
     reserved1: u13,
@@ -432,7 +432,7 @@ const ExtendedFeaturesEcx = packed struct(u32) {
     reserved3: u9,
 };
 
-const ExtendedFeaturesEbx = packed struct(u32) {
+const ExtendedFeaturesEbx = bitpack struct(u32) {
     reserved0: u7,
     smep: bool,
     reserved1: u12,
@@ -440,7 +440,7 @@ const ExtendedFeaturesEbx = packed struct(u32) {
     reserved2: u11,
 };
 
-const ExtendedProcessorInfoEdx = packed struct(u32) {
+const ExtendedProcessorInfoEdx = bitpack struct(u32) {
     fpu: bool,
     vme: bool,
     de: bool,
@@ -471,7 +471,7 @@ const ExtendedProcessorInfoEdx = packed struct(u32) {
     _3dnow: bool,
 };
 
-const PowerManagementInfoEdx = packed struct(u32) {
+const PowerManagementInfoEdx = bitpack struct(u32) {
     reserved0: u8,
     invtsc: bool,
     reserved1: u23,

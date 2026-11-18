@@ -1,7 +1,7 @@
 //! KVM paravirtualization support.
 const amd64 = @import("../root.zig");
 
-pub const Features = packed struct(u32) {
+pub const Features = bitpack struct(u32) {
     clocksource: bool,
     nop_io_delay: bool,
     mmu_op: bool,

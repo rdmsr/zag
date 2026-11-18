@@ -14,7 +14,7 @@ const kep = ke.private;
 const optimistic_spins = 4000;
 
 /// owner | waiters (bit 0)
-const State = packed struct(usize) {
+const State = bitpack struct(usize) {
     value: usize = 0,
 
     const waiters: usize = 1;

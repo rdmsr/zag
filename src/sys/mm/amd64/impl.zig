@@ -25,7 +25,7 @@ pub const levels = [_]mmp.PMapLevel{
     .{ .shift = 39, .mask = 0x1ff, .leaf = false }, // root
 };
 
-pub const Pte = packed struct(u64) {
+pub const Pte = bitpack struct(u64) {
     present: bool,
     writable: bool,
     user: bool,

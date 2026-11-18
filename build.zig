@@ -165,8 +165,8 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
     switch (plat.arch) {
         .x86_64 => {
             const f = std.Target.Cpu.Feature.FeatureSetFns(std.Target.x86.Feature);
-            q.cpu_features_add = f.featureSet(&.{.soft_float});
-            q.cpu_features_sub = f.featureSet(&.{ .x87, .mmx, .sse, .sse2 });
+            q.abi = .sf;
+            q.cpu_features_sub = f.featureSet(&.{ .mmx, .sse, .sse2 });
         },
         .aarch64 => {
             const f = std.Target.Cpu.Feature.FeatureSetFns(std.Target.aarch64.Feature);

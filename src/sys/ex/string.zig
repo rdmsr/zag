@@ -42,7 +42,7 @@ const Context = struct {
 /// depending on the length (and depending on the platform).
 /// Inline Layout:
 /// |tag (bit 0)|len (bits 1-7)|string
-pub const InternedString = packed struct(usize) {
+pub const InternedString = bitpack struct(usize) {
     bits: usize,
 
     fn from_ptr(e: *Entry) InternedString {

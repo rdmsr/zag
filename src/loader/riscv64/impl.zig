@@ -13,7 +13,7 @@ pub const levels = [_]pmap.PMapLevel{
 
 pub const virtual_bits: usize = 48;
 
-pub const Pte = packed struct(u64) {
+pub const Pte = bitpack struct(u64) {
     present: bool,
     read: bool,
     write: bool,

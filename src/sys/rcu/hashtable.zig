@@ -15,7 +15,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 /// Atomic state for the table
-const State = packed struct(u32) {
+const State = bitpack struct(u32) {
     /// The current index.
     current_index: u1,
     _pad0: u7 = 0,

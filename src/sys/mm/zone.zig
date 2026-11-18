@@ -572,7 +572,7 @@ pub const Zone = struct {
         arg: ?*anyopaque = null,
     };
 
-    const Flags = packed struct {
+    const Flags = bitpack struct {
         /// Don't assume that the memory we're managing is actually memory.
         dont_touch: bool,
         /// Whether magazines are enabled for this zone.

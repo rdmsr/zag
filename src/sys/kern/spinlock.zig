@@ -183,7 +183,7 @@ comptime {
 /// Queued spin lock implementation.
 /// See https://rdmsr.github.io/writing/qspinlocks
 pub const QSpinLock = LockType(struct {
-    const Tail = packed struct(u16) {
+    const Tail = bitpack struct(u16) {
         idx: u2,
         cpu: u14,
     };

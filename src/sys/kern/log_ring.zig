@@ -90,7 +90,7 @@ const usize_bits = @bitSizeOf(usize);
 const Id = @Int(.unsigned, usize_bits - 2);
 const IdSigned = @Int(.signed, usize_bits - 2);
 
-const State = packed struct(usize) {
+const State = bitpack struct(usize) {
     id: Id,
     state: DescState,
 };

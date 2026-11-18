@@ -43,7 +43,7 @@ comptime {
     }
 }
 
-pub const MapFlags = packed struct {
+pub const MapFlags = bitpack struct {
     read: bool = true,
     write: bool = false,
     user: bool = false,

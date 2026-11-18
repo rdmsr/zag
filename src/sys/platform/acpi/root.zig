@@ -249,7 +249,7 @@ pub const Fadt = extern struct {
 pub const HpetTable = extern struct {
     hdr: SdtHeader,
     hardware_rev_id: u8 align(1),
-    bits: packed struct(u8) {
+    bits: bitpack struct(u8) {
         comparator_count: u5,
         counter_size_capability: u1,
         reserved: u1,
