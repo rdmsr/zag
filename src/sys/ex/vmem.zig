@@ -663,6 +663,7 @@ fn vmem_zone_import(
     _ = policy;
 
     self.lock.acquire();
+    defer self.lock.release();
 
     for (0..elems.len) |i| {
         elems[i] = @ptrFromInt(self.alloc_impl(
