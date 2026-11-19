@@ -203,7 +203,7 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
 
     cpu.states[slot] = state;
     cpu.states[slot].state.store(
-        @truncate(target_mask.count()),
+        @truncate(target_mask.count() - 1),
         .release,
     );
 
