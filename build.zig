@@ -80,10 +80,23 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const firmware_module = b.createModule(.{
+        .root_source_file = b.path(b.fmt("src/firmware/root.zig", .{})),
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "rtl", .module = rtl_module },
+        },
+    });
+
     const kernel_nosym = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
 
     kernel_nosym.root_module.addAssemblyFile(empty_ksyms_s);
     kernel_nosym.root_module.addImport("boot_info", boot_info_module);
+    kernel_nosym.root_module.addImport("firmware", firmware_module);
+
+    if (cfg.dst) {
+        kernel_nosym.root_module.addImport("dst", dst_module);
+    }
 
     b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
 
@@ -102,6 +115,12 @@ pub fn build(b: *std.Build) void {
     kernel.root_module.addImport("boot_info", boot_info_module);
     loader.root_module.addImport("boot_info", boot_info_module);
 
+    kernel.root_module.addImport("firmware", firmware_module);
+
+    if (cfg.dst) {
+        kernel.root_module.addImport("dst", dst_module);
+    }
+
     b.default_step.dependOn(&b.addInstallArtifact(loader, .{}).step);
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
 
@@ -113,6 +132,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ksyms", .module = ksyms_module },
             .{ .name = "rtl", .module = rtl_module },
             .{ .name = "arch", .module = arch_module },
+            .{ .name = "firmware", .module = firmware_module },
         },
     });
 
