@@ -203,7 +203,9 @@ fn spawn_particle(arg: ?*anyopaque) void {
         .Default,
         .{ .func = &particle, .arg = arg },
         false,
-    ) catch @panic("OOM");
+    ) catch {
+        return;
+    };
 
     ke.sched.enqueue(&t.kern);
 }
@@ -213,7 +215,9 @@ fn spawn_explodeable() void {
         .Default,
         .{ .func = &explodeable, .arg = null },
         false,
-    ) catch @panic("OOM");
+    ) catch {
+        return;
+    };
     ke.sched.enqueue(&t.kern);
 }
 
