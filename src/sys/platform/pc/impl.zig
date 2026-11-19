@@ -89,18 +89,6 @@ fn dst_init() void {
     dst.init(seed);
 
     dst.log.info("Initialized with seed {x}", .{seed});
-
-    for (0..20) |_| {
-        if (dst.buggify(@src())) {
-            std.log.info("Here!", .{});
-        }
-    }
-
-    for (0..20) |_| {
-        if (dst.buggify(@src())) {
-            std.log.info("Here too!", .{});
-        }
-    }
 }
 
 pub fn early_init() linksection(r.init) void {
