@@ -66,6 +66,7 @@ pub fn create_kernel(
     start_with_stack: bool,
 ) !*Thread {
     var td = try thread_zone.create();
+    errdefer thread_zone.destroy(td);
 
     const stack = if (start_with_stack)
         @intFromPtr(
@@ -75,7 +76,13 @@ pub fn create_kernel(
     else
         0;
 
+    errdefer mm.heap.free(
+        stack - kernel_thread_stack_size,
+        kernel_thread_stack_size,
+    );
+
     const turnstile = try psp.turnstile_zone.create();
+    errdefer psp.turnstile_zone.destroy(turnstile);
 
     td.kern.init(.{
         .stack = stack,
