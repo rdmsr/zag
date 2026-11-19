@@ -9,6 +9,8 @@ const ex = r.ex;
 const ps = r.ps;
 const exp = ex.private;
 const rtl = @import("rtl");
+const dst = @import("dst");
+const config = @import("config");
 
 pub fn init() void {
     exp.vmem.init();
@@ -21,6 +23,10 @@ pub fn init() void {
 
     exp.work.init() catch @panic("e");
     exp.string.init();
+
+    if (config.dst) {
+        dst.enable();
+    }
 
     if (r.boot_info.cmdline) |cline| {
         if (rtl.cmdline.get_string(cline, "test")) |tst| {

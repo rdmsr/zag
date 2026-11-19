@@ -81,7 +81,10 @@ pub fn init(init_seed: u64) void {
         .seed = init_seed,
         .prng = .from_seed(init_seed),
     };
+}
 
+/// Start sprinkling chaos everywhere.
+pub fn enable() void {
     const points = buggifies.elems();
 
     for (points) |point| {
