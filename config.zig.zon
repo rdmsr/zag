@@ -22,6 +22,12 @@
             },
         },
         .{
+            .kind = .bool,
+            .key = "dst",
+            .label = "Build the kernel for deterministic simulation testing",
+            .default = .{ .bool = false },
+        },
+        .{
             .kind = .menu,
             .label = "Kernel Options",
             .entries = .{

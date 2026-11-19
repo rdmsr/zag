@@ -25,6 +25,7 @@ const BootloaderEnum = enum {
 pub const Config = struct {
     arch: ArchEnum,
     bootloader: BootloaderEnum,
+    dst: bool,
 };
 
 pub fn parseConfig(b: *std.Build) !Config {

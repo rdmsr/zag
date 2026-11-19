@@ -7,6 +7,9 @@ const mm = r.mm;
 const ps = r.ps;
 const bv = r.bv;
 
+const config = @import("config");
+const dst = @import("dst");
+
 var pixel_buffer: [*]u8 = undefined;
 var fb_width: usize = 0;
 var fb_height: usize = 0;
@@ -271,6 +274,8 @@ fn explodeable(_: ?*anyopaque) void {
     ps.thread.exit();
 }
 
+var iter: usize = 0;
+
 fn spawning_loop(_: ?*anyopaque) void {
     const spawn_count: usize = @intCast(@rem(rand(), 20) + 1);
 
@@ -278,26 +283,40 @@ fn spawning_loop(_: ?*anyopaque) void {
         spawn_explodeable();
     }
 
-    std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for" ++
-        " {} particles", .{
-        mm.private.tlb.async_shootdowns.load(.monotonic),
-        mm.private.tlb.sync_shootdowns.load(.monotonic),
-        mm.private.phys.usable_memory.load(.monotonic) / 1024,
-        ke.private.thread.stacks_count(),
-        particle_count.load(.monotonic),
-    });
+    if (!config.dst) {
+        std.log.info("async: {}, sync: {}, usable memory: {} KiB, {} stacks for" ++
+            " {} particles", .{
+            mm.private.tlb.async_shootdowns.load(.monotonic),
+            mm.private.tlb.sync_shootdowns.load(.monotonic),
+            mm.private.phys.usable_memory.load(.monotonic) / 1024,
+            ke.private.thread.stacks_count(),
+            particle_count.load(.monotonic),
+        });
+    }
 
-    sleep(2000, .{ .func = spawning_loop, .arg = null });
+    if (!config.dst) {
+        sleep(2000, .{ .func = spawning_loop, .arg = null });
+    } else {
+        if (iter < 15) {
+            iter += 1;
+            sleep(2000, .{ .func = spawning_loop, .arg = null });
+        } else {
+            dst.log.info("DONE", .{});
+            ps.thread.exit();
+        }
+    }
 }
 
 pub fn start(param: ?*anyopaque) void {
     const boot_info: *r.BootInfo = @ptrCast(@alignCast(param));
 
-    rand_gen ^= rand_tsc_based();
+    if (config.dst) {
+        rand_gen ^= @truncate(dst.seed());
+    } else {
+        rand_gen ^= rand_tsc_based();
+    }
 
     bv.disable();
-
-    std.log.info("{*}", .{ke.thread.current()});
 
     if (boot_info.framebuffer) |fb| {
         fb_bpp = fb.bpp / 8;
@@ -310,6 +329,10 @@ pub fn start(param: ?*anyopaque) void {
     }
 
     fill_screen(0x09090F);
+
+    if (config.dst) {
+        dst.log.info("START", .{});
+    }
 
     spawning_loop(null);
 }

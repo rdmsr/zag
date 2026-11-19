@@ -80,6 +80,15 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    const dst_module = b.createModule(.{
+        .root_source_file = b.path("src/dst/root.zig"),
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "rtl", .module = rtl_module },
+            .{ .name = "config", .module = config_module },
+        },
+    });
+
     const firmware_module = b.createModule(.{
         .root_source_file = b.path(b.fmt("src/firmware/root.zig", .{})),
         .optimize = optimize,
@@ -93,10 +102,7 @@ pub fn build(b: *std.Build) void {
     kernel_nosym.root_module.addAssemblyFile(empty_ksyms_s);
     kernel_nosym.root_module.addImport("boot_info", boot_info_module);
     kernel_nosym.root_module.addImport("firmware", firmware_module);
-
-    if (cfg.dst) {
-        kernel_nosym.root_module.addImport("dst", dst_module);
-    }
+    kernel_nosym.root_module.addImport("dst", dst_module);
 
     b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
 
@@ -116,10 +122,7 @@ pub fn build(b: *std.Build) void {
     loader.root_module.addImport("boot_info", boot_info_module);
 
     kernel.root_module.addImport("firmware", firmware_module);
-
-    if (cfg.dst) {
-        kernel.root_module.addImport("dst", dst_module);
-    }
+    kernel.root_module.addImport("dst", dst_module);
 
     b.default_step.dependOn(&b.addInstallArtifact(loader, .{}).step);
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
@@ -154,7 +157,7 @@ pub fn build(b: *std.Build) void {
     const result = image.addIso(b, plat.arch, "myos", kernel, loader, b.dependency("limine", .{}));
     iso_step.dependOn(result.step);
 
-    run.addRun(b, kernel, loader, plat);
+    run.addRun(b, kernel, loader, cfg, plat);
 
     const rtl_tests = b.addTest(.{
         .root_module = b.createModule(.{
