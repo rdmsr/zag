@@ -1,10 +1,11 @@
 //! Physical page management.
 const r = @import("root");
-const rtl = @import("rtl");
 const pl = r.pl;
 const mm = r.mm;
 const mmp = mm.private;
 const ke = r.ke;
+
+const rtl = @import("rtl");
 
 const std = @import("std");
 const assert = std.debug.assert;
