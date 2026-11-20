@@ -12,6 +12,8 @@ const ke = r.ke;
 const std = @import("std");
 const assert = std.debug.assert;
 
+const dst = @import("dst");
+
 pub const Policy = enum {
     /// Use the smallest free segment that can satisfy the request.
     /// This tends to minimize fragmentation.
@@ -274,7 +276,7 @@ pub const Arena = struct {
                 .NextFit => self.next_fit(size, options),
             };
 
-            if (ret != null) break :blk ret orelse unreachable;
+            if (ret) |val| break :blk val;
 
             if (ret == null) {
                 try self.import(size, options);
@@ -660,10 +662,11 @@ fn vmem_zone_import(
 ) mm.Error!usize {
     const self: *Arena = @ptrCast(@alignCast(arg));
 
-    _ = policy;
-
     self.lock.acquire();
     defer self.lock.release();
+
+    if (policy == .DontWaitForMemory and dst.buggify(@src()))
+        return error.OutOfMemory;
 
     for (0..elems.len) |i| {
         elems[i] = @ptrFromInt(self.alloc_impl(
@@ -674,8 +677,6 @@ fn vmem_zone_import(
             return err;
         });
     }
-
-    self.lock.release();
 
     return elems.len;
 }
