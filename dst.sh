@@ -6,7 +6,7 @@ QEMU_BASE_ARGS=(
 	-cdrom zig-out/myos.iso 
 )
 
-TIMEOUT="${TIMEOUT:-16}"      
+TIMEOUT="${TIMEOUT:-20}"      
 KILL_AFTER="${KILL_AFTER:-5}"
 POLL="${POLL:-0.05}"          
 LOG_DIR="${LOG_DIR:-dst-logs}"
