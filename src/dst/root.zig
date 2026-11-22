@@ -42,10 +42,6 @@ const BuggifyPoint = struct {
 var sim: Simulation = undefined;
 const buggifies = rtl.LinkerSetType("buggify", *BuggifyPoint);
 
-fn oom() noreturn {
-    @panic("OOM");
-}
-
 pub const log = std.log.scoped(.dst);
 
 /// Returns true randomly to inject faults.

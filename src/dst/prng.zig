@@ -61,7 +61,8 @@ fn next(prng: *Prng) u64 {
     return r;
 }
 
-/// Generate an unbiased, uniformly distributed integer r such that 0 ≤ r ≤ max.
+/// Generate an unbiased, uniformly distributed integer r such that
+/// 0 <= r <= max.
 pub fn int_inclusive(prng: *Prng, Int: anytype, max: Int) Int {
     comptime assert(@typeInfo(Int).int.signedness == .unsigned);
     if (max == std.math.maxInt(Int)) {
