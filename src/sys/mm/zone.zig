@@ -4,8 +4,8 @@
 //! Object-Caching Kernel Memory Allocator" and "Magazines and Vmem: Extending
 //! the Slab Allocator to Many CPUs and Arbitrary Resources", both from Solaris.
 //!
-//! ## Structure
-//! ------------
+//! Structure
+//! ---------
 //! The allocator is split in three layers:
 //! 1. Per-CPU layer
 //! 2. Zone depot layer
@@ -15,8 +15,8 @@
 //! of magazines. Each depot maintains full and empty magazine lists used to
 //! satisfy magazine allocation requests.
 //!
-//! ## Per-CPU layer
-//! ----------------
+//! Per-CPU layer
+//! -------------
 //! Each CPU has an `alloc` and `free` magazine, where objects are allocated
 //! from and freed to, respectively. This separation avoids hysteresis and is
 //! useful for safe memory reclamation (see below).
@@ -31,8 +31,8 @@
 //! lock; if contention is determined to be too high, the CPU's depot is grown
 //! as to avoid falling back onto the zone depot too much.
 //!
-//! ## Zone depot layer
-//! -------------------
+//! Zone depot layer
+//! ----------------
 //! The zone depot layer serves as a fallback when no magazines are available in
 //! the per-CPU depot, its size is managed through a working-set size algorithm
 //! that uses the WMA of the minimum required magazines in an update window.
@@ -40,24 +40,24 @@
 //! as to avoid overly holding the zone depot lock and satisfy the desired
 //! per-CPU depot size.
 //!
-//! ## Import layer
-//! ---------------
+//! Import layer
+//! ------------
 //! The import layer is used as a fallback when all previous layers failed.
 //! This layer can be replaced by clients via the `import` and `release`
 //! callbacks, which "import" magazines and release to/from a backing store.
 //! This is used by e.g, vmem's quantum caches.
 //! By default, the slab layer is used as the import layer.
 //!
-//! ## Slab layer
-//! -------------
+//! Slab layer
+//! ----------
 //! A slab represents a contiguous chunk of memory holding a fixed number of
 //! constructed objects, and is allocated via the kernel's virtual memory
 //! allocator. Allocation in the slab is managed by a bitmap and slab metadata
 //! is retrieved through the `mm.Page` structure representing the page
 //! of allocated memory.
 //!
-//! ## Hardening features
-//! ---------------------
+//! Hardening features
+//! ------------------
 //! Some basic hardening features are implemented in the allocator. Firstly,
 //! all allocations are done in a FIFO manner as to annoy attackers which might
 //! try exploiting double-free or use-after-free bugs (which shouldn't happen
@@ -84,8 +84,8 @@
 //! that the poison data is still intact inside an object, detecting
 //! use-after-free bugs.
 //!
-//! ## SMR zones
-//! ------------
+//! SMR zones
+//! ---------
 //! A zone may be tied to a SMR domain, in which case freed objects may not
 //! be reused until a given sequence has been observed by all CPUs. The magazine
 //! layer is used to amortize and batch this operation; instead of tracking a
@@ -107,8 +107,8 @@
 //! growing the per-CPU depots widens the window between a stamp and its poll
 //! until the fast path (which is a single load) is all that runs.
 //!
-//! ## Extra notes
-//! --------------
+//! Extra notes
+//! -----------
 //! With poisoning enabled, constructors run when an object is allocated and
 //! destructors run when it is freed. Without poisoning, constructors run when
 //! an object leaves the slab layer and destructors run when it returns to it,

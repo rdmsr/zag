@@ -1,7 +1,7 @@
-//! Kernel scheduler inspired by FreeBSD's ULE scheduler.
+//! Kernel scheduler.
 //!
-//! ## Overview
-//! -----------
+//! Overview
+//! --------
 //! Threads are divided into three priority classes:
 //!
 //! - `Realtime`: Always scheduled before batch and idle threads.
@@ -12,8 +12,8 @@
 //!   to their priority.
 //! - `Idle`: Only scheduled when both realtime and batch queues are empty.
 //!
-//! ## Interactivity Scoring
-//! ------------------------
+//! Interactivity Scoring
+//! ---------------------
 //!
 //! Each batch thread is assigned an interactivity score based on the
 //! ratio of its recent sleep time to its recent CPU time:
@@ -38,8 +38,8 @@
 //! - Values are reduced by 20% when the sum exceeds 5 seconds.
 //! - Values are reset to (max, 1) when the sum exceeds 10 seconds.
 //!
-//! ## Calendar Queue
-//! -----------------
+//! Calendar Queue
+//! --------------
 //!
 //! The calendar queue is a circular array of `runqueues_n` (64) lists.
 //! It comprises of two indices:
@@ -57,8 +57,8 @@
 //! On every tick (10ms), `insidx` advances by one, giving all threads
 //! the chance to run over time regardless of priority.
 //!
-//! ## Preemption
-//! -------------
+//! Preemption
+//! ----------
 //!
 //! Timeshared (batch) threads do not preempt each other by default.
 //! Interactive threads may still preempt non-interactive batch threads.
@@ -67,8 +67,8 @@
 //! Remote preemption is done lock-free by reading atomically a
 //! `current_thread_prio` field that stores the running thread's priority.
 //!
-//! ## Load Balancing
-//! -----------------
+//! Load Balancing
+//! --------------
 //!
 //! Three mechanisms keep load distributed across CPUs:
 //!
@@ -79,13 +79,15 @@
 //!   avoid phase-locking with periodic threads), CPU0 moves
 //!   threads from the most loaded CPU to the least loaded one.
 //!
-//! ## CPU Selection
-//! ----------------
+//! CPU Selection
+//! -------------
 //!
-//! CPU selection is done on various metrics, but mostly relies on the CPU load
-//! and its load average. The load represents the number of threads currently
-//! sitting in its runqueue, while the load average uses per-entity load
-//! tracking (PELT) to broadly measure CPU utilization, see comment below.
+//! CPU selection is done  based on various metrics, but mostly relies
+//! on the CPU load and its load average.
+//! The load represents the number of threads currently sitting in its
+//! runqueue, while the load average uses per-entity load tracking (PELT) to
+//! broadly measure CPU utilization, see comment below.
+//!
 //! The load average is the only metric relied upon by periodic load balancing,
 //! since it represents the broader history of a CPU. For other forms of
 //! balancing, the load is preferred as to prioritize latency

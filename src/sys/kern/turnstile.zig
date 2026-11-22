@@ -1,11 +1,11 @@
-//! # Turnstiles
-//! --------------
+//! Turnstiles
+//! ----------
 //! Turnstiles are a mechanism that originated in Solaris
 //! that tracks a contended lock's state and its associated priority inheritance
 //! state.
 //!
-//! ## Basic mechanism
-//! ------------------
+//! Basic mechanism
+//! ---------------
 //! The basic idea is that there is one turnstile allocated per thread
 //! - in case it may ever contend on a lock - and when a it contends on a lock,
 //! its turnstile is inserted into global hash table (indexed by the hash of the
@@ -15,8 +15,8 @@
 //! threads are woken up, they all steal a turnstile from the free list (a
 //! turnstile does not stay associated with a thread for its entire lifetime).
 //!
-//! ## Priority inheritance
-//! -----------------------
+//! Priority inheritance
+//! --------------------
 //! Priority inheritance is done to avoid *priority inversion*, a case where a
 //! high-priority thread is blocked waiting for a low-priority thread to release
 //! a lock, which might get preempted by another medium-priority thread.
@@ -27,8 +27,8 @@
 //! turnstile.owner.turnstile.owner...  until the end of the chain,
 //! inheriting the waiter's priority along the way.
 //!
-//! ## Locking
-//! ----------
+//! Locking
+//! -------
 //! There is one spinlock per turnstile hash chain and one per turnstile,
 //! which should hopefully be fine-grained enough such that there are no
 //! scalability issues.
@@ -40,8 +40,8 @@
 //! subsequently, as to avoid a thread changing its state under us without us
 //! knowing about it.
 //!
-//! ## Resources
-//! ------------
+//! Resources
+//! ---------
 //! See the original Illumos implementation, the Solaris book or FreeBSD book
 //! for a more in-depth description.
 //! I have also written more about turnstiles here:
