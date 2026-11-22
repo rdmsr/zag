@@ -1,4 +1,5 @@
-//! Kernel-side mechanism for asynchronous TLB shootdowns and deferred
+//! Kernel-side address space management.
+//! Contains the mechanism for asynchronous TLB shootdowns and deferred
 //! memory reclamation.
 
 const std = @import("std");
@@ -9,6 +10,14 @@ const ke = r.ke;
 const kep = ke.private;
 const mm = r.mm;
 const pl = r.pl;
+
+pub const AddressSpace = struct {
+    root: r.PAddr,
+
+    pub fn activate(self: *const AddressSpace) void {
+        kep.impl.activate_aspace(self.root);
+    }
+};
 
 /// Structure representing a single shootdown request.
 pub const ShootdownState = struct {
@@ -203,7 +212,7 @@ pub fn submit(state: ShootdownState, target_mask: ke.CpuMask) !void {
 
     cpu.states[slot] = state;
     cpu.states[slot].state.store(
-        @truncate(target_mask.count() - 1),
+        @truncate(target_mask.count()),
         .release,
     );
 

@@ -23,11 +23,12 @@ pub const Queue = p.queue.Queue;
 pub const Mutex = p.mutex.Mutex;
 pub const RwLock = p.rwlock.RwLock;
 pub const ReadToken = p.rwlock.ReadToken;
-pub const ShootdownState = p.shootdown.ShootdownState;
+pub const ShootdownState = p.address_space.ShootdownState;
 pub const TunableType = p.tunable.TunableType;
 pub const Priority = p.thread.Priority;
 pub const Stack = p.thread.Stack;
 pub const Continuation = p.thread.Continuation;
+pub const AddressSpace = p.address_space.AddressSpace;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
@@ -93,8 +94,8 @@ pub const cpu = struct {
 };
 
 pub const shootdown = struct {
-    pub const submit = p.shootdown.submit;
-    pub const shootdowns = &p.shootdown.shootdowns;
+    pub const submit = p.address_space.submit;
+    pub const shootdowns = &p.address_space.shootdowns;
 };
 
 pub const smr = struct {

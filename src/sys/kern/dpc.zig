@@ -138,7 +138,7 @@ fn dispatch_queue(cpu: u32) void {
     sched_cpu.start_timer = false;
     sched_cpu.preemption_reason = .None;
 
-    kep.shootdown.process_shootdowns();
+    kep.address_space.process_shootdowns();
 
     if (sched_cpu.next_thread != null) {
         const curtd = ke.thread.current();

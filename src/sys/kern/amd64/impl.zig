@@ -253,3 +253,7 @@ pub inline fn current_thread() ?*ke.Thread {
         : [ret] "=r" (-> u64),
     ));
 }
+
+pub inline fn activate_aspace(root: r.PAddr) void {
+    amd64.write_cr(3, root);
+}

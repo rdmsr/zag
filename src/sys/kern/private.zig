@@ -40,6 +40,11 @@ const ImplSchema = struct {
         _ = va;
     }
 
+    /// Load the address space rooted at `root`.
+    pub fn activate_aspace(pa: r.PAddr) void {
+        _ = pa;
+    }
+
     /// Enable interrupts.
     pub fn enable_interrupts() void {}
 
@@ -106,7 +111,7 @@ pub const event = @import("event.zig");
 pub const turnstile = @import("turnstile.zig");
 pub const mutex = @import("mutex.zig");
 pub const queue = @import("queue.zig");
-pub const shootdown = @import("shootdown.zig");
+pub const address_space = @import("address_space.zig");
 pub const tunable = @import("tunable.zig");
 pub const smr = @import("smr.zig");
 pub const ipi = @import("ipi.zig");
