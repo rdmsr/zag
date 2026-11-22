@@ -76,7 +76,7 @@ pub fn create_kernel(
     else
         0;
 
-    errdefer mm.heap.free(
+    errdefer if (stack != 0) mm.heap.free(
         stack - kernel_thread_stack_size,
         kernel_thread_stack_size,
     );
