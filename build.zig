@@ -33,24 +33,6 @@ pub fn build(b: *std.Build) void {
 
     const config_module = zonfig.createConfigModule(b, zonfig_dep, "config.zig.zon", ".config.zig.zon");
 
-    const ksyms_module = b.createModule(.{
-        .root_source_file = b.path("build/ksyms_mod.zig"),
-        .optimize = optimize,
-    });
-
-    const ksyms_exe = b.addExecutable(.{
-        .name = "ksyms",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("build/ksyms.zig"),
-            .target = b.graph.host,
-        }),
-    });
-
-    const empty_cmd = b.addRunArtifact(ksyms_exe);
-    const empty_ksyms_s = empty_cmd.addOutputFileArg("ksyms_empty.s");
-
-    empty_cmd.stdio = .inherit;
-
     const rtl_module = b.createModule(.{
         .root_source_file = b.path("src/rtl/root.zig"),
         .optimize = optimize,
@@ -97,24 +79,7 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const kernel_nosym = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
-
-    kernel_nosym.root_module.addAssemblyFile(empty_ksyms_s);
-    kernel_nosym.root_module.addImport("boot_info", boot_info_module);
-    kernel_nosym.root_module.addImport("firmware", firmware_module);
-    kernel_nosym.root_module.addImport("dst", dst_module);
-
-    b.step("kernel-nosym", "Build nosym kernel").dependOn(&kernel_nosym.step);
-
-    // generate symbols
-    const ksyms = b.addRunArtifact(ksyms_exe);
-    ksyms.step.dependOn(&kernel_nosym.step);
-    const ksyms_s = ksyms.addOutputFileArg("ksyms.s");
-    ksyms.addFileArg(kernel_nosym.getEmittedBin());
-
-    // second pass
-    const kernel = addKernel(b, plat, optimize, config_module, ksyms_module, rtl_module, arch_module);
-    kernel.root_module.addAssemblyFile(ksyms_s);
+    const kernel = addKernel(b, plat, optimize, config_module, rtl_module, arch_module);
 
     const loader = addLoader(b, plat, optimize, config_module, rtl_module, arch_module);
 
@@ -132,7 +97,6 @@ pub fn build(b: *std.Build) void {
         .target = b.graph.host,
         .imports = &.{
             .{ .name = "config", .module = config_module },
-            .{ .name = "ksyms", .module = ksyms_module },
             .{ .name = "rtl", .module = rtl_module },
             .{ .name = "arch", .module = arch_module },
             .{ .name = "firmware", .module = firmware_module },
@@ -200,7 +164,7 @@ fn targetQueryForPlatform(plat: config.Platform) std.Target.Query {
     return q;
 }
 
-fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, ksyms_module: *std.Build.Module, rtl: *std.Build.Module, arch: *std.Build.Module) *std.Build.Step.Compile {
+fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, rtl: *std.Build.Module, arch: *std.Build.Module) *std.Build.Step.Compile {
     const target = b.resolveTargetQuery(targetQueryForPlatform(plat));
 
     const name = b.fmt("kernel-{s}", .{@tagName(plat.arch)});
@@ -216,7 +180,6 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     kernel.root_module.addImport("arch", arch);
     kernel.root_module.addImport("config", config_module);
-    kernel.root_module.addImport("ksyms", ksyms_module);
     kernel.root_module.addImport("rtl", rtl);
 
     kernel.link_gc_sections = false;
@@ -226,7 +189,7 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 
     kernel.root_module.omit_frame_pointer = false;
 
-    const modules: []const *std.Build.Module = &.{ config_module, ksyms_module, rtl, arch, kernel.root_module };
+    const modules: []const *std.Build.Module = &.{ config_module, rtl, arch, kernel.root_module };
 
     kernel.linkage = .static;
     kernel.pie = false;
