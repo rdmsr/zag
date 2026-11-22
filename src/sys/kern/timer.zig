@@ -219,7 +219,7 @@ fn handle_expiry(_: *ke.Dpc, _: ?*anyopaque) void {
         timer.cpu = null;
 
         // Wake whomever was waiting on the timer.
-        kep.wait.satisfy_wait(&timer.hdr);
+        timer.hdr.satisfy_wait();
         if (maybe_dpc) |dpc| ke.dpc.enqueue(dpc, null);
 
         timer.state.store(.Stopped, .release);

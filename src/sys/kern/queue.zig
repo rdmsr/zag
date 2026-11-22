@@ -53,7 +53,7 @@ pub const Queue = struct {
             },
         }
 
-        kep.wait.satisfy_wait(&self.hdr);
+        self.hdr.satisfy_wait();
     }
 
     /// Remove the item at the head.
@@ -69,7 +69,7 @@ pub const Queue = struct {
             const old_active = self.active.fetchSub(1, .monotonic);
 
             if (self.hdr.signaled > 0 and old_active <= self.max_active) {
-                kep.wait.satisfy_wait(&self.hdr);
+                self.hdr.satisfy_wait();
             }
         } else {
             td.queue = self;
@@ -111,7 +111,7 @@ fn queue_dpc(dpc: *ke.Dpc, _: ?*anyopaque) void {
         !queue.hdr.waitblocks.is_empty() and
         queue.active.load(.monotonic) < queue.max_active)
     {
-        kep.wait.satisfy_wait(&queue.hdr);
+        queue.hdr.satisfy_wait();
     }
 
     queue.hdr.lock.release_no_ipl();

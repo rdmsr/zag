@@ -69,6 +69,71 @@ pub const DispatchHeader = struct {
             },
         };
     }
+
+    /// Satisfy waits on this object.
+    pub fn satisfy_wait(obj: *DispatchHeader) void {
+        assert(obj.lock.is_locked());
+
+        const all = obj.type == .Notification;
+
+        // Go through (potentially) all wait blocks and try to satisfy them.
+        while (!obj.waitblocks.is_empty() and obj.can_satisfy()) {
+            // Get the first waitblock from the list.
+            var wb: *WaitBlock = @fieldParentPtr(
+                "link",
+                obj.waitblocks.first(),
+            );
+            var td = wb.thread;
+
+            assert(wb.status == .Active);
+            assert(wb.object == obj);
+
+            // Remove it.
+            wb.link.remove();
+
+            // Three cases may occur here:
+            // 1. The wait was still preparing and we interrupted it.
+            // 2. The wait was already committed and we satisfied it.
+            // 3. The wait was already satisfied by another object.
+
+            // 1.
+            if (transition(td, .InProgress, .Satisfied)) {
+                // We interrupted the wait while it was being prepared.
+                wb.status = .Signaled;
+                obj.consume(td);
+            }
+
+            // 2.
+            else if (transition(td, .Committed, .Satisfied)) {
+                // We interrupted the wait while it was committed.
+                // Wake the thread.
+                wb.status = .Signaled;
+                obj.consume(td);
+
+                const ipl = td.lock.acquire();
+
+                if (obj.type != .Queue) {
+                    if (td.queue) |q| {
+                        kep.queue.signal_wake(q);
+                    }
+                }
+
+                kep.sched.unblock_locked(td);
+                td.lock.release(ipl);
+            }
+
+            // 3.
+            else if (td.wait_status.load(.acquire) == .Satisfied) {
+                // Someone else satisfied the wait, deactivate the wait block.
+                wb.status = .Inactive;
+                continue;
+            }
+
+            if (!all) {
+                break;
+            }
+        }
+    }
 };
 
 pub const WaitBlock = struct {
@@ -245,68 +310,6 @@ pub fn wait_any(
     }
 
     return post_wait(curtd);
-}
-
-/// Satisfy a wait on an object.
-pub fn satisfy_wait(obj: *DispatchHeader) void {
-    assert(obj.lock.is_locked());
-
-    const all = obj.type == .Notification;
-
-    // Go through (potentially) all wait blocks and try to satisfy them.
-    while (!obj.waitblocks.is_empty() and obj.can_satisfy()) {
-        // Get the first waitblock from the list.
-        var wb: *WaitBlock = @fieldParentPtr("link", obj.waitblocks.first());
-        var td = wb.thread;
-
-        assert(wb.status == .Active);
-        assert(wb.object == obj);
-
-        // Remove it.
-        wb.link.remove();
-
-        // Three cases may occur here:
-        // 1. The wait was still preparing (.InProgress) and we interrupted it.
-        // 2. The wait was already committed (.Committed) and we satisfied it.
-        // 3. The wait was already satisfied by another object (.Satisfied).
-
-        // 1.
-        if (transition(td, .InProgress, .Satisfied)) {
-            // We interrupted the wait while it was being prepared.
-            wb.status = .Signaled;
-            obj.consume(td);
-        }
-
-        // 2.
-        else if (transition(td, .Committed, .Satisfied)) {
-            // We interrupted the wait while it was committed.
-            // Wake the thread.
-            wb.status = .Signaled;
-            obj.consume(td);
-
-            const ipl = td.lock.acquire();
-
-            if (obj.type != .Queue) {
-                if (td.queue) |q| {
-                    kep.queue.signal_wake(q);
-                }
-            }
-
-            kep.sched.unblock_locked(td);
-            td.lock.release(ipl);
-        }
-
-        // 3.
-        else if (td.wait_status.load(.acquire) == .Satisfied) {
-            // Someone else satisfied the wait, deactivate the wait block.
-            wb.status = .Inactive;
-            continue;
-        }
-
-        if (!all) {
-            break;
-        }
-    }
 }
 
 pub fn post_wait(thread: *ke.Thread) !usize {

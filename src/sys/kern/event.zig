@@ -26,7 +26,7 @@ pub const Event = struct {
     pub fn signal(self: *Event) void {
         const ipl = self.hdr.lock.acquire();
         self.hdr.signaled = 1;
-        kep.wait.satisfy_wait(&self.hdr);
+        self.hdr.satisfy_wait();
         self.hdr.lock.release(ipl);
     }
 
