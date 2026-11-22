@@ -305,8 +305,7 @@ comptime {
 /// Called on CPU 0 to initialize load balancing mechanisms.
 pub fn late_init() linksection(r.init) void {
     balance_timer.init();
-    ke.timer.set(
-        &balance_timer,
+    balance_timer.set(
         rtl.Duration.ms(balance_interval),
         .{ .dpc = &balance_dpc },
     );
@@ -1765,13 +1764,7 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
     const offset = lcg.next() % balance_interval;
     const ms = (balance_interval) + offset;
 
-    ke.timer.set(
-        &balance_timer,
-        rtl.Duration.ms(ms),
-        .{
-            .dpc = &balance_dpc,
-        },
-    );
+    balance_timer.set(rtl.Duration.ms(ms), .{ .dpc = &balance_dpc });
 }
 
 /// Idle loop for a CPU. Must be set up in the idle thread.

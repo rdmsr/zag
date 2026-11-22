@@ -72,11 +72,6 @@ pub const sched = struct {
     pub const pin_on = p.sched.pin_on;
 };
 
-pub const timer = struct {
-    pub const set = p.timer.set;
-    pub const cancel = p.timer.cancel;
-};
-
 pub const wait = struct {
     pub const wait_one = p.wait.wait_one;
     pub const wait_any = p.wait.wait_any;

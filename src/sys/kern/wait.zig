@@ -286,7 +286,7 @@ pub fn wait_any(
     curtd.timeout_block = @intCast(obj_count);
     curtd.has_timeout = has_timeout;
 
-    if (opts.timeout) |timeout| ke.timer.set(timer, timeout, .{});
+    if (opts.timeout) |timeout| timer.set(timeout, .{});
 
     curtd.lock.acquire_no_ipl();
 
@@ -321,7 +321,7 @@ pub fn post_wait(thread: *ke.Thread) !usize {
     // We're back!
     // Stop the timer if it was set.
     if (has_timeout) {
-        ke.timer.cancel(&thread.timer);
+        thread.timer.cancel();
     }
 
     const wait_count = thread.wait_count;

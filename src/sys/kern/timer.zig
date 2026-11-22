@@ -10,7 +10,12 @@ const pl = r.pl;
 const std = @import("std");
 const assert = std.debug.assert;
 
-const TimerHeap = rtl.PairingHeapType(.Min, kep.timer.cmp_timer);
+const TimerHeap = rtl.PairingHeapType(.Min, cmp_timer);
+const percpu = ke.CpuLocalType(PerCpu, .{
+    .timers = TimerHeap.init(),
+    .lock = undefined,
+    .dpc = ke.Dpc.init(handle_expiry),
+});
 
 const PerCpu = struct {
     /// Heap of pending timers on this CPU.
@@ -19,6 +24,14 @@ const PerCpu = struct {
     lock: ke.SpinLock,
     dpc: ke.Dpc,
 };
+
+fn pcpu_init() linksection(r.init) void {
+    percpu.local().lock = ke.SpinLock.init("timers");
+}
+
+comptime {
+    _ = r.percpu_init_set.insert(&pcpu_init);
+}
 
 pub const Timer = struct {
     pub const State = enum(u8) {
@@ -43,6 +56,10 @@ pub const Timer = struct {
     /// CPU this timer is enqueued on.
     cpu: ?*PerCpu,
 
+    const Options = struct {
+        dpc: ?*ke.Dpc = null,
+    };
+
     pub fn init(self: *Timer) void {
         self.* = .{
             .hdr = undefined,
@@ -55,103 +72,85 @@ pub const Timer = struct {
 
         self.hdr.init(.Notification);
     }
-};
 
-const percpu = ke.CpuLocalType(PerCpu, .{
-    .timers = TimerHeap.init(),
-    .lock = undefined,
-    .dpc = ke.Dpc.init(handle_expiry),
-});
+    /// Start a timer with an expiration time.
+    /// A DPC that will be enqueued upon expiration can be passed.
+    pub fn set(timer: *Timer, duration: rtl.Duration, opts: Options) void {
+        const ipl = timer.hdr.lock.acquire();
+        defer timer.hdr.lock.release(ipl);
 
-fn pcpu_init() linksection(r.init) void {
-    percpu.local().lock = ke.SpinLock.init("timers");
-}
+        const cpu = percpu.local();
 
-comptime {
-    _ = r.percpu_init_set.insert(&pcpu_init);
-}
+        if (timer.state.load(.monotonic) != .Stopped) {
+            return;
+        }
+        timer.state.store(.Pending, .monotonic);
 
-const Options = struct {
-    dpc: ?*ke.Dpc = null,
-};
+        cpu.lock.acquire_no_ipl();
+        defer cpu.lock.release_no_ipl();
 
-/// Start a timer with an expiration time.
-/// A DPC that will be enqueued upon expiration can be passed.
-pub fn set(timer: *Timer, duration: rtl.Duration, opts: Options) void {
-    const ipl = timer.hdr.lock.acquire();
-    defer timer.hdr.lock.release(ipl);
+        // Initialize the timer.
+        timer.deadline = ke.time.read_time().add(duration);
 
-    const cpu = percpu.local();
+        timer.cpu = cpu;
+        timer.dpc = opts.dpc;
+        timer.hdr.signaled = 0;
 
-    if (timer.state.load(.monotonic) != .Stopped) {
-        return;
-    }
-    timer.state.store(.Pending, .monotonic);
+        cpu.timers.insert(&timer.node);
 
-    cpu.lock.acquire_no_ipl();
-    defer cpu.lock.release_no_ipl();
+        if (cpu.timers.root == &timer.node) {
+            // This is the earliest timer to expire, arm the hardware timer.
+            pl.arm_timer(duration);
+        }
 
-    // Initialize the timer.
-    timer.deadline = ke.time.read_time().add(duration);
-
-    timer.cpu = cpu;
-    timer.dpc = opts.dpc;
-    timer.hdr.signaled = 0;
-
-    cpu.timers.insert(&timer.node);
-
-    if (cpu.timers.root == &timer.node) {
-        // This is the earliest timer to expire, arm the hardware timer.
-        pl.arm_timer(duration);
+        // Locks dropped
     }
 
-    // Locks dropped
-}
+    /// Cancel a timer.
+    pub fn cancel(timer: *Timer) void {
+        const ipl = ke.ipl.raise(.Dispatch);
+        defer ke.ipl.lower(ipl);
 
-/// Cancel a timer.
-pub fn cancel(timer: *Timer) void {
-    const ipl = ke.ipl.raise(.Dispatch);
-    defer ke.ipl.lower(ipl);
+        while (true) {
+            timer.hdr.lock.acquire_no_ipl();
 
-    while (true) {
-        timer.hdr.lock.acquire_no_ipl();
+            switch (timer.state.load(.acquire)) {
+                .Stopped => {
+                    timer.hdr.lock.release_no_ipl();
+                    return;
+                },
+                .Running => {
+                    // Wait until the timer finishes running.
+                    timer.hdr.lock.release_no_ipl();
+                    while (timer.state.load(.acquire) == .Running) {
+                        std.atomic.spinLoopHint();
+                    }
+                },
+                .Pending => {
+                    const cpu = timer.cpu orelse unreachable;
+                    cpu.lock.acquire_no_ipl();
 
-        switch (timer.state.load(.acquire)) {
-            .Stopped => {
-                timer.hdr.lock.release_no_ipl();
-                return;
-            },
-            .Running => {
-                // Wait until the timer finishes running.
-                timer.hdr.lock.release_no_ipl();
-                while (timer.state.load(.acquire) == .Running) {
-                    std.atomic.spinLoopHint();
-                }
-            },
-            .Pending => {
-                const cpu = timer.cpu orelse unreachable;
-                cpu.lock.acquire_no_ipl();
+                    // Re-check under the lock.
+                    if (timer.state.load(.acquire) == .Pending) {
+                        cpu.timers.remove(&timer.node);
+                        timer.cpu = null;
+                        timer.state.store(.Stopped, .release);
 
-                // Re-check under the lock.
-                if (timer.state.load(.acquire) == .Pending) {
-                    cpu.timers.remove(&timer.node);
-                    timer.cpu = null;
-                    timer.state.store(.Stopped, .release);
+                        cpu.lock.release_no_ipl();
+                        timer.hdr.lock.release_no_ipl();
+                        return;
+                    }
 
                     cpu.lock.release_no_ipl();
                     timer.hdr.lock.release_no_ipl();
-                    return;
-                }
-
-                cpu.lock.release_no_ipl();
-                timer.hdr.lock.release_no_ipl();
-            },
+                },
+            }
         }
     }
-}
+};
 
 /// Compare two timers.
-pub fn cmp_timer(
+fn cmp_timer(
     a: *rtl.pairing_heap.Node,
     b_: *rtl.pairing_heap.Node,
 ) std.math.Order {

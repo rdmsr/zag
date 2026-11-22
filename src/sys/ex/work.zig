@@ -240,7 +240,7 @@ fn work_dpc(dpc: *ke.Dpc, _: ?*anyopaque) void {
 
 /// Enqueue a work item after `duration`.
 pub fn enqueue_in(item: *DelayedWorkItem, duration: rtl.Duration) void {
-    ke.timer.set(&item.timer, duration, .{ .dpc = &item.dpc });
+    item.timer.set(duration, .{ .dpc = &item.dpc });
 }
 
 /// Enqueue a work item to be executed eventually.

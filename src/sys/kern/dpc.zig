@@ -118,8 +118,7 @@ fn dispatch_queue(cpu: u32) void {
     }
 
     if (sched_cpu.start_timer) {
-        ke.timer.set(
-            &sched_cpu.resched_timer,
+        sched_cpu.resched_timer.set(
             rtl.Duration.ms(config.sched_timeslice),
             .{ .dpc = &sched_cpu.resched_dpc },
         );
@@ -127,9 +126,8 @@ fn dispatch_queue(cpu: u32) void {
 
     if (sched_cpu.preemption_reason == .HigherPriority) {
         // Reload the quantum for the new thread.
-        ke.timer.cancel(&sched_cpu.resched_timer);
-        ke.timer.set(
-            &sched_cpu.resched_timer,
+        sched_cpu.resched_timer.cancel();
+        sched_cpu.resched_timer.set(
             rtl.Duration.ms(config.sched_timeslice),
             .{ .dpc = &sched_cpu.resched_dpc },
         );

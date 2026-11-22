@@ -59,11 +59,7 @@ fn balance_manager(_: ?*anyopaque) void {
 
     while (true) {
         if (which == timeout) {
-            ke.timer.set(
-                &timer,
-                rtl.Duration.ms(balance_interval.load()),
-                .{},
-            );
+            timer.set(rtl.Duration.ms(balance_interval.load()), .{});
         }
 
         which = ke.wait.wait_any(&.{
