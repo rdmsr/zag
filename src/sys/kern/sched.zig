@@ -1704,17 +1704,19 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
     var low_mask: ke.CpuMask = undefined;
 
     while (true) {
-        const high = find_most_loaded(&high_mask, false);
-
-        if (high == null or
-            percpu.remote(high.?).migratable.load(.monotonic) == 0)
-        {
+        const high = find_most_loaded(&high_mask, false) orelse {
             // No highest loaded CPU.
             break;
+        };
+
+        if (percpu.remote(high).migratable.load(.monotonic) == 0) {
+            // CPU has no migratable threads, try another one.
+            high_mask.set(high);
+            continue;
         }
 
         // Don't steal from this CPU again.
-        high_mask.set(high.?);
+        high_mask.set(high);
         low_mask = high_mask;
 
         if (high_mask.is_all(true)) {
@@ -1722,15 +1724,13 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
             break;
         }
 
-        const low = find_least_loaded(&low_mask);
-
-        if (low == null) {
+        const low = find_least_loaded(&low_mask) orelse {
             // No lowest loaded CPU.
             break;
-        }
+        };
 
-        const high_cpu = percpu.remote(high.?);
-        const low_cpu = percpu.remote(low.?);
+        const high_cpu = percpu.remote(high);
+        const low_cpu = percpu.remote(low);
 
         const high_avg = @max(
             high_cpu.load_avg.load(.monotonic),
@@ -1747,17 +1747,17 @@ fn balance(_: *ke.Dpc, _: ?*anyopaque) void {
         }
 
         // Steal a thread from the high CPU and put it on the low CPU.
-        const sched_high = percpu.remote(high.?);
-        const td = steal_thread_from_cpu(sched_high, null, low.?);
+        const sched_high = percpu.remote(high);
+        const td = steal_thread_from_cpu(sched_high, null, low);
 
         if (td) |thread| {
             thread.lock.acquire_no_ipl();
-            enqueue_on_cpu(low.?, thread);
+            enqueue_on_cpu(low, thread);
             thread.lock.release_no_ipl();
         }
 
         // Don't shuffle threads around.
-        high_mask.set(low.?);
+        high_mask.set(low);
     }
 
     const offset = lcg.next() % balance_interval;

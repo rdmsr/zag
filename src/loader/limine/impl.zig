@@ -68,7 +68,7 @@ pub fn p2v(pa: usize) usize {
 }
 
 pub fn get_image_layout() r.ImageLayout {
-    const resp = kernel_request.response.?;
+    const resp = kernel_request.response orelse unreachable;
 
     return .{
         .physical_base = resp.physical_base,
@@ -201,5 +201,5 @@ export fn loader_entry() callconv(.c) void {
         }
     }
 
-    r.main(kernel.?);
+    r.main(kernel orelse unreachable);
 }

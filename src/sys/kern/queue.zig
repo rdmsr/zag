@@ -83,10 +83,14 @@ pub const Queue = struct {
         _ = ke.wait.wait_one(&self.hdr, "queue", .{
             .timeout = timeout,
         }) catch |err| {
-            if (err == error.Timeout and timeout.?.value == 0) {
-                // Polled for an item and found nothing, ensure active is
-                // restored (it was decremented earlier).
-                signal_wake(self);
+            if (err == error.Timeout) {
+                const to = timeout orelse unreachable;
+
+                if (to.value == 0) {
+                    // Polled for an item and found nothing, ensure active is
+                    // restored (it was decremented earlier).
+                    signal_wake(self);
+                }
             }
             return err;
         };

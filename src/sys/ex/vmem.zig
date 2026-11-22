@@ -551,7 +551,12 @@ pub const Arena = struct {
             while (it.next()) : (it.advance()) {
                 const seg = Segment.from_free_link(it.get());
                 if (self.try_to_fit(seg, size, options)) |addr| {
-                    if (best_seg == null or seg.size < best_seg.?.size) {
+                    const better = if (best_seg) |b|
+                        seg.size < b.size
+                    else
+                        true;
+
+                    if (better) {
                         best_seg = seg;
                         best_start = addr;
                     }

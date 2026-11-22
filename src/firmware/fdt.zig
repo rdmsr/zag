@@ -198,14 +198,16 @@ fn IteratorType(comptime mode: IterMode) type {
 
                     .EndNode => {
                         if (depth == 0) return null;
+                        assert(node != null);
 
                         depth -= 1;
+                        const n = node orelse unreachable;
 
                         if (mode != .Properties) {
                             if (mode == .Values) {
-                                if (depth == 0) return .{ .Node = node.? };
+                                if (depth == 0) return .{ .Node = n };
                             } else {
-                                if (depth == 0) return node.?;
+                                if (depth == 0) return n;
                             }
                         }
                     },

@@ -102,12 +102,12 @@ pub fn PairingHeapType(
 
             self.size += 1;
 
-            if (self.root == null) {
-                self.root = node;
+            if (self.root) |root| {
+                self.root = meld(root, node);
                 return;
             }
 
-            self.root = meld(self.root.?, node);
+            self.root = node;
         }
 
         /// Return and remove the topmost element.
@@ -160,7 +160,7 @@ pub fn PairingHeapType(
             // Merge node's children back into the heap
             if (node.child) |c| {
                 c.prev = null;
-                self.root = meld(self.root.?, merge_pairs(c));
+                self.root = meld(self.root orelse unreachable, merge_pairs(c));
             }
 
             node.child = null;
