@@ -66,70 +66,106 @@ pub const Priority = enum(u8) {
 pub const Thread = struct {
     /// The thread's context.
     context: Context,
+
     /// Holding process.
     process: *ke.Process,
+
     /// Thread lock.
     lock: ke.SpinLock,
+
     /// Niceness value.
     nice: i8,
+
     /// Effective priority value of the thread: `max(base, inherited)`.
     priority: u8,
+
     /// Base priority value of the thread.
     base_priority: u8,
+
     /// Priority inherited via priority donation.
     inherited_prio: u8,
+
     /// Whether the thread is pinned to this CPU.
     /// If it is pinned, then it can't be moved across another CPU.
     pinned: bool,
+
     /// Current state of the thread.
     state: std.atomic.Value(State),
+
     /// Linkage into a scheduler run queue.
     runq_link: rtl.List.Entry,
+
     /// Linkage into the process's thread list.
     process_link: rtl.List.Entry,
+
     /// Last CPU this thread ran on.
     last_cpu: ?u32,
+
     /// CPU this thread is enqueued on.
     cpu: ?u32,
+
     /// Run queue this thread is in
     runq: ?*kep.sched.RunQueue,
+
     /// Index into the run queue this thread is currently in.
     /// Only valid when `runq` is non-null.
     runq_idx: u8,
+
     /// Current wait status.
     wait_status: std.atomic.Value(kep.wait.Status),
+
+    /// Waitblocks.
     inner_waitblocks: [4]kep.wait.WaitBlock,
     waitblocks: []kep.wait.WaitBlock,
+
     /// Reason for the wait, if any.
     wait_reason: ?[]const u8,
+
     /// The number of objects the thread is waiting on.
     wait_count: usize,
+
     /// Timer used for timeouts.
     timer: ke.Timer,
+
     /// Whether or not a timeout was set.
     has_timeout: bool,
+
     /// Timeout waitblock index.
     timeout_block: u8,
+
     /// Turnstile.
     turnstile: *kep.turnstile.Turnstile,
     turnstile_waiter: ?*kep.turnstile.Waiter,
     turnstiles_owned: rtl.List,
+
     /// Object this thread is currently blocked on, or null.
     waiting_on: ?*anyopaque,
+
     /// Queue this thread is associated with.
     queue: ?*ke.Queue,
     queue_item: ?*rtl.List.Entry,
+
     /// PELT load average,
     avg: kep.sched.Average,
+
     /// Accounting statistics.
     acct: kep.sched.Accounting,
+
     /// Set whenever the thread is switching off its stack.
     /// This is used to avoid taking thread next lock to wait for switch off
     /// to complete.
     switching: std.atomic.Value(bool),
+
+    /// The SMR sections this thread is in.
     smr_sections: rtl.List,
+
+    /// CPUs this thread can run on.
     hard_affinity: ke.CpuMask,
+
+    /// This thread's continuation.
     continuation: ?Continuation,
+
+    /// Warden-related debugging data.
     warden_data: kep.warden.HolderData,
 
     /// Thread state.
@@ -172,12 +208,16 @@ pub const Thread = struct {
     const InitOpts = struct {
         /// Entry point of the thread.
         entry: ke.Continuation,
+
         /// Top of the stack for the thread.
         stack: r.VAddr,
+
         /// Turnstile associated with the thread.
         turnstile: *kep.turnstile.Turnstile,
+
         /// Thread's priority.
         priority: Priority,
+
         process: *ke.Process = undefined, // TODO
     };
 
