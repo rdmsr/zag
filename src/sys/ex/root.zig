@@ -8,6 +8,7 @@ pub const WorkItem = p.work.WorkItem;
 pub const DelayedWorkItem = p.work.DelayedWorkItem;
 pub const InternedString = p.string.InternedString;
 pub const Arena = p.vmem.Arena;
+pub const SmrHashTableType = p.smr_hashtable.TableType;
 
 pub const init = p.init;
 

@@ -2,12 +2,15 @@
 //! Used everywhere where strings might repeat, such as the namecache or thread
 //! names.
 
-const r = @import("root");
 const std = @import("std");
 
+const rtl = @import("rtl");
+const rcu = rtl.rcu;
+
+const r = @import("root");
 const ke = r.ke;
-const rcu = r.rcu;
 const mm = r.mm;
+const ex = r.ex;
 
 const Entry = struct {
     string: [*]const u8,
@@ -82,7 +85,7 @@ pub const InternedString = bitpack struct(usize) {
     }
 };
 
-const Table = rcu.HashTableType(Entry, "link", Context);
+const Table = ex.SmrHashTableType(Entry, "link", Context);
 const EntryZone = mm.zone.ZoneType(Entry);
 
 var domain: *ke.smr.Domain = undefined;

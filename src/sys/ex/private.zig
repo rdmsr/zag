@@ -4,3 +4,4 @@ pub const work = @import("work.zig");
 pub const init = init_mod.init;
 pub const string = @import("string.zig");
 pub const vmem = @import("vmem.zig");
+pub const smr_hashtable = @import("smr_hashtable.zig");

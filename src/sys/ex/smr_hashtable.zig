@@ -4,12 +4,12 @@
 //! The general design is inspired by XNU's smr_shash.
 
 const rtl = @import("rtl");
+const rcu = rtl.rcu;
 
 const r = @import("root");
 const mm = r.mm;
 const ex = r.ex;
 const ke = r.ke;
-const rcu = r.rcu;
 
 const std = @import("std");
 const assert = std.debug.assert;
