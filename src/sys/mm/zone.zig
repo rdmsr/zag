@@ -1,4 +1,5 @@
 //! Slab allocator implementation with per-CPU object caching.
+//!
 //! Roughly based on XNU's zone allocator, which itself is based on FreeBSD's
 //! UMA. First described in Jeff Bonwick's "The Slab Allocator: An
 //! Object-Caching Kernel Memory Allocator" and "Magazines and Vmem: Extending
@@ -490,63 +491,94 @@ fn cpus_alloc() [*]rtl.CachePaddedType(Cpu) {
 pub const Zone = struct {
     /// Name used for debugging purposes.
     name: []const u8,
+
     /// Size of objects in this zone.
     obj_size: usize,
+
     /// Alignment of objects in this zone.
     alignment: u16,
+
     /// Size of a slab.
     slab_size: usize,
+
     /// Size of a chunk.
     chunk_size: usize,
+
     /// Zone lock.
     lock: ke.Mutex,
+
     /// List of partial slabs (partially allocated) in this zone.
     partial_slabs: rtl.List,
+
     /// List of free slabs (fully unallocated) in this zone.
     free_slabs: rtl.List,
+
     /// Linkage into the global zone list.
     next: ?*Zone,
-    depot_lock: ke.Mutex,
+
+    /// The zone's depot of magazines.
     depot: Depot,
+    depot_lock: ke.Mutex,
+
     /// Current contention rate, in contentions/second scaled by `wma_unit`.
     depot_contention_wma: usize,
     depot_contention_cur: usize,
+
     /// Size of the per-CPU depot.
     cpu_depot_size: u32,
+
     /// Maximum size of the per-CPU depot.
     cpu_depot_limit: u32,
+
     /// Per-CPU state.
     cpus: [*]rtl.CachePaddedType(Cpu),
+
     /// Various boolean flags (packed)
     flags: Flags,
 
     /// Weighted moving average of `depot.empty_mags.min`, scaled by `wma_unit`.
     empty_mags_wma: usize,
+
     /// Weighted moving average of `depot.full_mags.min`, scaled by `wma_unit`.
     full_mags_wma: usize,
 
+    /// Object constructor.
     ctor: ?*const fn (obj: *anyopaque) void,
+
+    /// Object destructor.
     dtor: ?*const fn (obj: *anyopaque) void,
 
+    /// Zone reuse policy.
+    /// Prefer LIFO for speed, FIFO for security.
     reuse_policy: ReusePolicy,
 
+    /// The SMR domain this zone is associated with.
     smr: ?*ke.smr.Domain,
+
+    /// Function to be called when an SMR-protected object is reclaimed.
     smr_reclaim: ?*const fn (obj: *anyopaque) void,
 
-    import: *const fn (
+    /// Function used to import memory from the backing source.
+    import: ImportFn,
+
+    /// Function used to release memory to the backing source.
+    release: ReleaseFn,
+
+    /// Argument passed to `import` and `release`.
+    arg: ?*anyopaque,
+
+    const ImportFn = *const fn (
         arg: ?*anyopaque,
         elems: []*anyopaque,
         elem_size: usize,
         policy: mm.WaitPolicy,
-    ) mm.Error!usize,
+    ) mm.Error!usize;
 
-    release: *const fn (
+    const ReleaseFn = *const fn (
         arg: ?*anyopaque,
         elems: []*anyopaque,
         elem_size: usize,
-    ) void,
-
-    arg: ?*anyopaque,
+    ) void;
 
     const InitOptions = struct {
         alignment: u16 = slab_align,
@@ -557,26 +589,20 @@ pub const Zone = struct {
         smr: ?*ke.smr.Domain = null,
         smr_reclaim: ?*const fn (obj: *anyopaque) void = null,
 
-        import: ?*const fn (
-            arg: ?*anyopaque,
-            elems: []*anyopaque,
-            elem_size: usize,
-            policy: mm.WaitPolicy,
-        ) mm.Error!usize = null,
-
-        release: ?*const fn (
-            arg: ?*anyopaque,
-            elems: []*anyopaque,
-            elem_size: usize,
-        ) void = null,
+        import: ?ImportFn = null,
+        release: ?ReleaseFn = null,
         arg: ?*anyopaque = null,
     };
 
     const Flags = bitpack struct {
         /// Don't assume that the memory we're managing is actually memory.
+        /// This is used for vmem where zones may be used to allocate any
+        /// over integer range.
         dont_touch: bool,
+
         /// Whether magazines are enabled for this zone.
         use_magazines: bool,
+
         /// Internal flag set when the depot needs to be trimmed.
         trim_depot: bool,
     };
