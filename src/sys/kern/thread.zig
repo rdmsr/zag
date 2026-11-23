@@ -64,50 +64,10 @@ pub const Priority = enum(u8) {
 
 /// Structure representing a kernel thread.
 pub const Thread = struct {
-    /// Thread state.
-    pub const State = enum(u8) {
-        /// The thread is ready to run.
-        Ready,
-        /// The thread is currently running.
-        Running,
-        /// The thread was selected to run.
-        Selected,
-        /// The thread is currently sleeping.
-        Blocked,
-        /// The thread has exited and is waiting to be reaped.
-        Zombie,
-        /// The thread has exited.
-        Terminated,
-    };
-
-    pub const Context = extern struct {
-        /// Implementation-dependent context.
-        impl: kep.impl.ThreadContext,
-
-        stack_top: usize,
-
-        pub fn init_with_stack(
-            stack: r.VAddr,
-        ) Context {
-            return .{
-                .impl = .init_with_stack(
-                    stack,
-                ),
-                .stack_top = stack,
-            };
-        }
-
-        pub fn reset(
-            self: *@This(),
-            stack_top: r.VAddr,
-            entry: *const fn (?*anyopaque) void,
-            arg: ?*anyopaque,
-        ) void {
-            self.stack_top = stack_top;
-            _ = self.impl.reset(stack_top, entry, arg);
-        }
-    };
+    /// The thread's context.
     context: Context,
+    /// Holding process.
+    process: *ke.Process,
     /// Thread lock.
     lock: ke.SpinLock,
     /// Niceness value.
@@ -125,6 +85,8 @@ pub const Thread = struct {
     state: std.atomic.Value(State),
     /// Linkage into a scheduler run queue.
     runq_link: rtl.List.Entry,
+    /// Linkage into the process's thread list.
+    process_link: rtl.List.Entry,
     /// Last CPU this thread ran on.
     last_cpu: ?u32,
     /// CPU this thread is enqueued on.
@@ -170,6 +132,43 @@ pub const Thread = struct {
     continuation: ?Continuation,
     warden_data: kep.warden.HolderData,
 
+    /// Thread state.
+    pub const State = enum(u8) {
+        /// The thread is ready to run.
+        Ready,
+        /// The thread is currently running.
+        Running,
+        /// The thread was selected to run.
+        Selected,
+        /// The thread is currently sleeping.
+        Blocked,
+        /// The thread has exited and is waiting to be reaped.
+        Zombie,
+        /// The thread has exited.
+        Terminated,
+    };
+
+    pub const Context = extern struct {
+        /// Implementation-dependent context.
+        impl: kep.impl.ThreadContext,
+
+        stack_top: usize,
+
+        pub fn init_with_stack(stack: r.VAddr) Context {
+            return .{ .impl = .init_with_stack(stack), .stack_top = stack };
+        }
+
+        pub fn reset(
+            self: *@This(),
+            stack_top: r.VAddr,
+            entry: *const fn (?*anyopaque) void,
+            arg: ?*anyopaque,
+        ) void {
+            self.stack_top = stack_top;
+            _ = self.impl.reset(stack_top, entry, arg);
+        }
+    };
+
     const InitOpts = struct {
         /// Entry point of the thread.
         entry: ke.Continuation,
@@ -179,14 +178,13 @@ pub const Thread = struct {
         turnstile: *kep.turnstile.Turnstile,
         /// Thread's priority.
         priority: Priority,
+        process: *ke.Process = undefined, // TODO
     };
 
     /// Initialize a thread.
-    pub fn init(
-        thread: *Thread,
-        opts: InitOpts,
-    ) void {
+    pub fn init(thread: *Thread, opts: InitOpts) void {
         thread.* = .{
+            .process = opts.process,
             .context = .init_with_stack(opts.stack),
             .lock = ke.SpinLock.init("thread"),
             .nice = 0,
@@ -196,6 +194,7 @@ pub const Thread = struct {
             .pinned = false,
             .state = std.atomic.Value(State).init(.Ready),
             .runq_link = .{},
+            .process_link = .{},
             .last_cpu = null,
             .cpu = null,
             .runq = null,

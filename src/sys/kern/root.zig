@@ -29,6 +29,7 @@ pub const Priority = p.thread.Priority;
 pub const Stack = p.thread.Stack;
 pub const Continuation = p.thread.Continuation;
 pub const AddressSpace = p.address_space.AddressSpace;
+pub const Process = p.process.Process;
 
 // === Exported Interfaces ===
 pub const panic = p.panic.panic;
