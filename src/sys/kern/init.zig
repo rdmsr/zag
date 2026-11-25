@@ -12,6 +12,10 @@ const bv = r.bv;
 
 var thread0: ke.Thread = undefined;
 
+// Put this in kernel memory because we are going to reclaim the loader's
+// eventually.
+var cmdline: [256]u8 = undefined;
+
 export fn kmain(boot_info: *r.BootInfo) callconv(.c) void {
     r.boot_info = boot_info;
 
@@ -56,6 +60,11 @@ fn init() linksection(r.init) void {
 
     kep.sched.current_thread.local().* = &thread0;
     kep.sched.percpu.local().idle_thread = &thread0;
+
+    if (r.boot_info.cmdline) |cline| {
+        @memcpy(cmdline[0..cline.len], cline);
+        r.boot_info.cmdline = cmdline[0..cline.len];
+    }
 
     std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{
         pl.name,

@@ -14,7 +14,7 @@ PHDRS
 SECTIONS
 {
     . = 0xffffffffe0000000;
-	kernel_start_addr = .;
+	stub_start_addr = .;
 
     .pvh.text : AT(0x200000) {
         *(.pvh.text)
@@ -60,7 +60,6 @@ SECTIONS
         *(.note.gnu.build-id)
     } :rodata
 
-
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
 	rodata_end_addr = .;
@@ -70,7 +69,6 @@ SECTIONS
         *(.data .data.*)
     } :data
 
-
     .bss : {
         *(.bss .bss.*)
         *(COMMON)
@@ -79,7 +77,7 @@ SECTIONS
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
 	data_end_addr = .;
-	kernel_end_addr = .;
+	stub_end_addr = .;
 
     /DISCARD/ : {
         *(.eh_frame*)

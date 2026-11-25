@@ -45,15 +45,15 @@ fn get_image_layout() r.ImageLayout {
     };
 }
 
-extern var kernel_start_addr: u8;
-extern var kernel_end_addr: u8;
+extern var stub_start_addr: u8;
+extern var stub_end_addr: u8;
 
 fn build_mmap(info: *StartInfo) void {
-    const kernel_size = @intFromPtr(&kernel_end_addr) -
-        @intFromPtr(&kernel_start_addr);
+    const stub_size = @intFromPtr(&stub_end_addr) -
+        @intFromPtr(&stub_start_addr);
 
-    const kernel_start = phys_base;
-    const kernel_end = phys_base + kernel_size;
+    const stub_start = phys_base;
+    const stub_end = phys_base + stub_size;
 
     const entries: [*]MemmapEntry = @ptrFromInt(p2v(info.memmap_paddr));
     const cnt = info.memmap_entries;
@@ -79,12 +79,12 @@ fn build_mmap(info: *StartInfo) void {
         const e_start: u64 = entry.addr;
         const e_end: u64 = entry.addr + entry.size;
 
-        if (e_start < kernel_end and kernel_start < e_end) {
-            // Entry overlaps the kernel. Split it.
-            if (e_start < kernel_start)
-                r.mem.add_entry(e_start, kernel_start - e_start, ty);
-            if (kernel_end < e_end)
-                r.mem.add_entry(kernel_end, e_end - kernel_end, ty);
+        if (e_start < stub_end and stub_start < e_end) {
+            // Entry overlaps the stub. Split it.
+            if (e_start < stub_start)
+                r.mem.add_entry(e_start, stub_start - e_start, ty);
+            if (stub_end < e_end)
+                r.mem.add_entry(stub_end, e_end - stub_end, ty);
         } else {
             r.mem.add_entry(e_start, entry.size, ty);
         }

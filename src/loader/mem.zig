@@ -287,6 +287,9 @@ fn map_pfndb() void {
     }
 }
 
+extern var stub_start_addr: u8;
+extern var stub_end_addr: u8;
+
 pub fn init() void {
     const vbits = r.arch.virtual_bits;
 
@@ -322,6 +325,14 @@ pub fn init() void {
     }
 
     map_self();
+
+    const layout = r.impl.get_image_layout();
+    const stub_size = @intFromPtr(&stub_end_addr) -
+        @intFromPtr(&stub_start_addr);
+
+    // Mark ourselves reclaimable.
+    add_entry(layout.physical_base, stub_size, .LoaderReclaimable);
+
     map_pfndb();
 
     map_loaded = true;
