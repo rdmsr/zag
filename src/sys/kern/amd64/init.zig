@@ -119,6 +119,10 @@ pub fn early_init() linksection(r.init) void {
     // Enable Per-CPU data for this CPU
     amd64.write_msr(.GsBase, 0);
 
+    // Mask PIC.
+    amd64.outb(0x21, 0xff);
+    amd64.outb(0xA1, 0xff);
+
     int.init();
     amd64.sti();
 }
