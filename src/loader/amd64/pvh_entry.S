@@ -4,9 +4,9 @@
 */
 
 /*
- * we're gonna load our own page tables anyway. Only map 16 MiB.
+ * we're gonna load our own page tables anyway. Only map 64 MiB.
  */
-.set N_KPAGES, 8
+.set N_KPAGES, 32
 .set KERNEL_PHYS, 0x200000
 .set KERNEL_BASE, 0xffffffffe0000000
 .set KERNEL_OFF,  KERNEL_BASE - KERNEL_PHYS
