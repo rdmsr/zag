@@ -7,6 +7,7 @@ const rtl = @import("rtl");
 const r = @import("root");
 const mm = r.mm;
 const mmp = mm.private;
+const zone = mm.zone;
 const ke = r.ke;
 
 const std = @import("std");
@@ -84,7 +85,7 @@ const Segment = struct {
 const freelist_count = @bitSizeOf(usize);
 const max_qcaches = 16;
 
-var seg_zone: mmp.zone.ZoneType(Segment) = undefined;
+var seg_zone: zone.ZoneType(Segment) = undefined;
 
 const SegmentTree = rtl.RbTreeType(Segment.cmp);
 
@@ -104,7 +105,7 @@ pub const Arena = struct {
     /// Maximum size (**in bytes**) to do quantum caching on.
     qcache_max: usize,
     /// Quantum caches.
-    qcaches: [max_qcaches]*mm.zone.Zone,
+    qcaches: [max_qcaches]*zone.Zone,
     /// Quantum size shift.
     qshift: std.math.Log2Int(usize),
 
@@ -167,8 +168,7 @@ pub const Arena = struct {
             for (0..num_qcaches) |i| {
                 const size = (i + 1) * opts.quantum;
 
-                self.qcaches[i] = mm.zone.gpa.create(mm.zone.Zone) catch
-                    unreachable;
+                self.qcaches[i] = mm.kalloc.create(zone.Zone, .WaitForMemory);
 
                 self.qcaches[i].init(name, size, .{
                     .import = vmem_zone_import,

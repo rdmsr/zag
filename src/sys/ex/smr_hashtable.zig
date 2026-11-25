@@ -164,7 +164,7 @@ const Core = struct {
         const shift: u5 = @intCast(std.math.log2_int_ceil(usize, start_size));
         const size = size_for_shift(shift);
 
-        const arr = try mm.zone.gpa.alloc(Bucket, size);
+        const arr = mm.kalloc.alloc(Bucket, size, .WaitForMemory);
 
         for (arr) |*elem| {
             elem.word = std.atomic.Value(usize).init(Bucket.stop_for(elem));
@@ -303,7 +303,7 @@ const Core = struct {
         const new_size = size_for_shift(state.new_shift);
 
         const old_array = self.buckets[state.current_index].load(.monotonic);
-        const new_array = mm.zone.gpa.alloc(Bucket, new_size) catch return;
+        const new_array = mm.kalloc.alloc(Bucket, new_size, .WaitForMemory);
 
         // FIXME: cryptographically secure seed.
         const new_seed = 0;
@@ -337,7 +337,7 @@ const Core = struct {
 
         self.buckets[old_idx].store(undefined, .monotonic);
 
-        mm.zone.gpa.free(old_array[0..old_size]);
+        mm.kalloc.free(old_array[0..old_size]);
     }
 
     /// Remove a given element from the table, SMR must be entered.

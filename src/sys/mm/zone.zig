@@ -123,6 +123,7 @@ const ke = r.ke;
 const mm = r.mm;
 const ex = r.ex;
 const mmp = mm.private;
+const kalloc = mm.kalloc;
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -173,17 +174,8 @@ const excess_memory = ke.TunableType(
     "mm.zone.excess_mem",
 );
 
-/// The number of generic zones to generate.
-const generic_zones_num = 33; // Up to 8192 bytes
-
 /// 1/8th of a page.
 const small_slab_size = 512;
-
-/// Generic zones for general-purpose allocations.
-var generic_zones: [generic_zones_num]Zone = undefined;
-const generic_sizes = generate_generic_sizes();
-const generic_names = generate_generic_names(generic_sizes);
-const generic_max_size = bucket_to_size(generic_zones_num - 1);
 
 var magazines_initialized = false;
 var all_zones: ?*Zone = null;
@@ -1536,11 +1528,20 @@ pub const Zone = struct {
         const capacity = (self.slab_size) / self.chunk_size;
         const buf = try mmp.heap.alloc(self.slab_size, policy);
 
-        var ret: *Slab = @ptrCast(
-            @alignCast(
-                try gpa.alloc(u8, @sizeOf(Slab) + Slab.bitmap_bytes(capacity)),
-            ),
-        );
+        const chunk =
+            switch (policy) {
+                inline else => |pol| blk: {
+                    const val = kalloc.alloc(
+                        u8,
+                        @sizeOf(Slab) + Slab.bitmap_bytes(capacity),
+                        pol,
+                    );
+
+                    break :blk if (pol == .DontWaitForMemory) try val else val;
+                },
+            };
+
+        var ret: *Slab = @ptrCast(@alignCast(chunk));
 
         // Mark the bitmap as all free.
         const bm = ret.bitmap();
@@ -1587,7 +1588,7 @@ pub const Zone = struct {
         if (self.obj_size > small_slab_size) {
             const base = slab.base;
             const alloc_size = @sizeOf(Slab) + Slab.bitmap_bytes(slab.capacity);
-            gpa.free(@as([*]u8, @ptrCast(slab))[0..alloc_size]);
+            kalloc.free(@as([*]u8, @ptrCast(slab))[0..alloc_size]);
 
             mm.heap.free(base, self.slab_size);
         } else {
@@ -1823,10 +1824,6 @@ pub fn ZoneType(comptime T: type) type {
 pub fn early_init() linksection(r.init) void {
     zone_list_lock = ke.Mutex.init("zone_list");
 
-    for (0..generic_zones.len, &generic_zones) |i, *zone| {
-        zone.init(generic_names[i], generic_sizes[i], .{});
-    }
-
     magazine_zone.init(
         "magazine",
         @sizeOf(Magazine) + magazine_size.load() * @sizeOf(*anyopaque),
@@ -1895,145 +1892,4 @@ pub fn drain() void {
     }
 
     zone_list_lock.release();
-}
-
-// === Global general purpose allocator ===
-pub const gpa: std.mem.Allocator = .{
-    .ptr = undefined,
-    .vtable = &.{
-        .alloc = gpa_alloc,
-        .resize = gpa_resize,
-        .free = gpa_free,
-        .remap = gpa_remap,
-    },
-};
-
-fn gpa_alloc(
-    ctx: *anyopaque,
-    len: usize,
-    ptr_align: std.mem.Alignment,
-    _: usize,
-) ?[*]u8 {
-    _ = ctx;
-
-    if (len > 2048) {
-        if (ptr_align.toByteUnits() > mm.page_size) return null;
-        const pages = std.mem.alignForward(usize, len, mm.page_size);
-        const ptr = mmp.heap.alloc(pages, .WaitForMemory) catch return null;
-        return @ptrCast(ptr);
-    }
-
-    const zone = zone_for(len) orelse return null;
-    const obj = zone.alloc(.{}) catch return null;
-    return @ptrCast(obj);
-}
-
-fn gpa_resize(
-    _: *anyopaque,
-    buf: []u8,
-    _: std.mem.Alignment,
-    new_len: usize,
-    _: usize,
-) bool {
-    if (buf.len > 2048) {
-        // Allow shrinking within the same page-rounded allocation.
-        const old_pages = std.mem.alignForward(usize, buf.len, mm.page_size);
-        const new_pages = std.mem.alignForward(usize, new_len, mm.page_size);
-        return new_pages <= old_pages;
-    }
-    // Can't resize in place. Only allow shrinking within the same zone.
-    const old_zone = zone_for(buf.len) orelse return false;
-    const new_zone = zone_for(new_len) orelse return false;
-    return old_zone == new_zone;
-}
-
-fn gpa_remap(
-    _: *anyopaque,
-    buf: []u8,
-    alignment: std.mem.Alignment,
-    new_len: usize,
-    ret_addr: usize,
-) ?[*]u8 {
-    if (gpa_resize(undefined, buf, alignment, new_len, ret_addr))
-        return buf.ptr;
-
-    const new_ptr = gpa_alloc(undefined, new_len, alignment, ret_addr) orelse
-        return null;
-    const copy_len = @min(buf.len, new_len);
-    @memcpy(new_ptr[0..copy_len], buf[0..copy_len]);
-    gpa_free(undefined, buf, alignment, ret_addr);
-    return new_ptr;
-}
-
-fn gpa_free(
-    _: *anyopaque,
-    buf: []u8,
-    _: std.mem.Alignment,
-    _: usize,
-) void {
-    if (buf.len > 2048) {
-        const pages = std.mem.alignForward(usize, buf.len, mm.page_size);
-        mm.heap.free(@intFromPtr(buf.ptr), pages);
-        return;
-    }
-
-    const zone = zone_for(buf.len) orelse return;
-    zone.free(@ptrCast(buf.ptr));
-}
-
-fn zone_for(size: usize) ?*Zone {
-    if (size > generic_max_size) return null;
-    return &generic_zones[size_to_bucket(size)];
-}
-
-/// Linear-log bucketing is used for sizing the generic buckets, see
-/// https://pvk.ca/Blog/2015/06/27/linear-log-bucketing-fast-versatile-simple.
-/// These formulas come from jemalloc.
-const N = generic_zones_num;
-
-fn bucket_to_size(index: usize) usize {
-    if (index == 0) return 8;
-
-    const i = index - 1;
-    const group = i / 4;
-    const offset = i % 4;
-
-    if (group == 0) {
-        return (offset + 1) * 16;
-    }
-
-    return (offset + 5) << (group + 3);
-}
-
-fn size_to_bucket(size: usize) usize {
-    if (size <= 8) return 0;
-    if (size <= 64) return ((size - 1) / 16) + 1;
-
-    const lg: usize = std.math.log2_int(usize, size - 1);
-    const group = lg - 5;
-    const shift: std.math.Log2Int(usize) = @intCast(lg - 2);
-    const offset = ((size - 1) >> shift) - 4;
-    return 1 + (group * 4) + offset;
-}
-
-fn generate_generic_sizes() [N]usize {
-    var arr: [N]usize = undefined;
-
-    for (0..N) |i| {
-        arr[i] = comptime bucket_to_size(i);
-    }
-
-    return arr;
-}
-
-fn generate_generic_names(
-    comptime array: [N]usize,
-) [N][]const u8 {
-    var ret: [N][]const u8 = undefined;
-
-    for (0..N) |i| {
-        ret[i] = std.fmt.comptimePrint("zone-{}", .{array[i]});
-    }
-
-    return ret;
 }

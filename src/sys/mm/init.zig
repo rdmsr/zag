@@ -9,6 +9,7 @@ const config = @import("config");
 pub fn init() linksection(r.init) void {
     mmp.phys.init();
     mmp.zone.early_init();
+    mmp.kalloc.init();
     mmp.heap.init();
 }
 

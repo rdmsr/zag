@@ -132,7 +132,7 @@ fn particle_continuation(param: ?*anyopaque) void {
     data.i += particle_delay;
 
     if (data.i >= data.expire_in) {
-        mm.zone.gpa.destroy(data);
+        mm.kalloc.destroy(data);
 
         _ = particle_count.fetchSub(1, .monotonic);
         ps.thread.exit();
@@ -156,14 +156,9 @@ fn particle(param: ?*anyopaque) void {
     const parent_data: *FireworkData = @ptrCast(@alignCast(param));
     const parent_data_copy = parent_data.*;
 
-    mm.zone.gpa.destroy(parent_data);
+    mm.kalloc.destroy(parent_data);
 
-    const data = mm.zone.gpa.create(FireworkData) catch
-        {
-            // This will wait for free memory.
-            unreachable;
-        };
-
+    const data = mm.kalloc.create(FireworkData, .WaitForMemory);
     data.* = std.mem.zeroes(FireworkData);
 
     _ = particle_count.fetchAdd(1, .monotonic);
@@ -266,11 +261,7 @@ fn explodeable(_: ?*anyopaque) void {
     const part_count: usize = @intCast(@rem(rand(), 100) + 100);
 
     for (0..part_count) |_| {
-        const param: *FireworkData = mm.zone.gpa.create(FireworkData) catch
-            {
-                // This will wait for free memory.
-                unreachable;
-            };
+        const param = mm.kalloc.create(FireworkData, .WaitForMemory);
         param.* = data;
         spawn_particle(param);
     }

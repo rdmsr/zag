@@ -8,6 +8,7 @@ pub const zone = @import("zone.zig");
 pub const PMap = pmap.PMap;
 pub const tlb = @import("tlb.zig");
 pub const balance = @import("balance.zig");
+pub const kalloc = @import("kalloc.zig");
 
 const ke = @import("root").ke;
 const ex = @import("root").ex;

@@ -42,7 +42,7 @@ fn make_thread(
     stack: usize,
     cpu: u32,
 ) *ke.Thread {
-    const td = mm.zone.gpa.create(ke.Thread) catch
+    const td = mm.kalloc.create(ke.Thread, .DontWaitForMemory) catch
         @panic("Failed to allocate thread for AP");
 
     td.init(.{
@@ -100,7 +100,11 @@ pub fn init() linksection(r.init) void {
     const data_phys: *ApData = @ptrFromInt(mm.p2v(0x8000 + data_offset));
 
     const idtr = amd64.sidtr();
-    const offsets = mm.zone.gpa.alloc(usize, apic.apics.items.len + 1) catch
+    const offsets = mm.kalloc.alloc(
+        usize,
+        apic.apics.items.len + 1,
+        .DontWaitForMemory,
+    ) catch
         @panic("Failed to allocate AP local data offsets");
 
     const percpu_size = @intFromPtr(&__percpu_end) - pcpu_start;
@@ -124,7 +128,11 @@ pub fn init() linksection(r.init) void {
         cpu_id_to_apic_id[cpu_id] = apic_id;
 
         // Allocate per-cpu data.
-        const cpu_data = mm.zone.gpa.alloc(u8, percpu_size) catch
+        const cpu_data = mm.kalloc.alloc(
+            u8,
+            percpu_size,
+            .DontWaitForMemory,
+        ) catch
             @panic("Failed to allocate per-cpu data");
 
         @memcpy(

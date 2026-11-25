@@ -174,5 +174,5 @@ pub fn release(string: InternedString) void {
 }
 
 fn reclaim(entry: *Entry) void {
-    mm.zone.gpa.free(entry.string[0..entry.len]);
+    mm.kalloc.free(entry.string[0..entry.len]);
 }

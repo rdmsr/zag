@@ -277,7 +277,7 @@ pub fn init() linksection(r.init) void {
             .LocalApic => {
                 const lapic: *const MadtLapic = @ptrCast(entry);
                 if (lapic.flags & 1 == 0 or lapic.id == cur_cpu_id) continue;
-                apics.append(mm.zone.gpa, lapic.id) catch
+                apics.append(mm.kalloc.gpa, lapic.id) catch
                     @panic("Could not append APIC ID to list");
             },
             .X2LocalApic => {
@@ -285,7 +285,7 @@ pub fn init() linksection(r.init) void {
                 if (has_lapics and x2lapic.id <= 0xFF) continue;
                 if (x2lapic.flags & 1 == 0 or x2lapic.id == cur_cpu_id)
                     continue;
-                apics.append(mm.zone.gpa, x2lapic.id) catch
+                apics.append(mm.kalloc.gpa, x2lapic.id) catch
                     @panic("Could not append APIC ID to list");
             },
             else => {},
