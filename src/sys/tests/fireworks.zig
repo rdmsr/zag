@@ -17,6 +17,7 @@ var fb_pitch: usize = 0;
 var fb_bpp: usize = 0;
 var inited = std.atomic.Value(bool).init(false);
 var particle_count = std.atomic.Value(usize).init(0);
+var fb_present = false;
 
 const background_color = 0x09090F;
 
@@ -221,10 +222,12 @@ fn explodeable(_: ?*anyopaque) void {
 
     const offset_x: i64 = @intCast(fb_width * 400 / 1024);
 
-    data.x = @intCast(fb_width / 2);
-    data.y = @intCast(fb_height - 1);
-    data.act_x = int_to_fp(data.x);
-    data.act_y = int_to_fp(data.y);
+    if (fb_present) {
+        data.x = @intCast(fb_width / 2);
+        data.y = @intCast(fb_height - 1);
+        data.act_x = int_to_fp(data.x);
+        data.act_y = int_to_fp(data.y);
+    }
     data.vel_y = -int_to_fp(400 + @rem(rand(), 400));
     data.vel_x = offset_x * rand_fp_sign();
     data.color = get_random_color();
@@ -292,9 +295,9 @@ fn spawning_loop(_: ?*anyopaque) void {
     if (!config.dst) {
         sleep(2000, .{ .func = spawning_loop, .arg = null });
     } else {
-        if (iter < 15) {
+        if (iter < 10) {
             iter += 1;
-            sleep(2000, .{ .func = spawning_loop, .arg = null });
+            sleep(500, .{ .func = spawning_loop, .arg = null });
         } else {
             dst.log.info("DONE", .{});
             ps.thread.exit();
@@ -321,6 +324,7 @@ pub fn start(param: ?*anyopaque) void {
         pixel_buffer = @ptrCast(
             @alignCast(@as(*anyopaque, @ptrFromInt(fb.address))),
         );
+        fb_present = true;
     }
 
     fill_screen(0x09090F);
