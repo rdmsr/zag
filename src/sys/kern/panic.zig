@@ -56,6 +56,7 @@ var crash_count = std.atomic.Value(u8).init(0);
 pub fn panic_with_frame(
     msg: []const u8,
     frame: usize,
+    addr: ?usize,
 ) noreturn {
     _ = kep.impl.disable_interrupts();
     bv.crash();
@@ -79,6 +80,10 @@ pub fn panic_with_frame(
         ke.cpu.current(),
     });
 
+    if (addr) |a| {
+        std.log.err("Return address is {x}", .{a});
+    }
+
     std.log.err("Stack trace:", .{});
 
     walk_stack_frame(frame);
@@ -90,7 +95,7 @@ pub fn panic_with_frame(
 
 pub fn panic(
     msg: []const u8,
-    _: ?usize,
+    addr: ?usize,
 ) noreturn {
-    panic_with_frame(msg, @frameAddress());
+    panic_with_frame(msg, @frameAddress(), addr);
 }

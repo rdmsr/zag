@@ -106,7 +106,7 @@ export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.c) void {
             .{ cr2, cr3, buf[0..writer.end] },
         );
 
-        kep.panic.panic_with_frame("Unhandled exception", frame.rbp);
+        kep.panic.panic_with_frame("Unhandled exception", frame.rbp, null);
     }
 
     if (frame.intno == 32) {
