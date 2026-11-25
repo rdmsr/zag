@@ -10,7 +10,6 @@ const fw_cfg = fw.fw_cfg;
 
 const config = @import("config");
 const std = @import("std");
-const dst = @import("dst");
 
 const tsc = @import("tsc.zig");
 const pvclock = @import("pvclock.zig");
@@ -46,58 +45,9 @@ fn com2_write(c: u8) void {
     amd64.outb(com2, c);
 }
 
-fn fw_cfg_select(sel: fw_cfg.Selector) void {
-    amd64.outw(0x510, sel.value());
-}
-
-fn fw_cfg_read(buf: []u8) void {
-    for (buf) |*c| {
-        c.* = amd64.inb(0x511);
-    }
-}
-
-const ops: fw_cfg.Ops = .{
-    .select_fn = fw_cfg_select,
-    .read_fn = fw_cfg_read,
-};
-
-fn dst_init() void {
-    const cfg = fw_cfg.FwCfg.init(ops) catch {
-        @panic("Invalid fw_cfg device");
-    };
-
-    var iter = cfg.files();
-    var seed_file: ?fw_cfg.File = null;
-
-    while (iter.next()) |file| {
-        if (std.mem.eql(u8, file.name_str(), "opt/dst-seed")) {
-            seed_file = file;
-        }
-    }
-
-    var seed_bytes: [8]u8 = undefined;
-
-    if (seed_file) |sf| {
-        sf.read(&cfg, std.mem.asBytes(&seed_bytes));
-    } else {
-        @panic("No opt/dst-seed fw_cfg file found");
-    }
-
-    const seed = std.fmt.parseInt(u64, &seed_bytes, 10) catch
-        @panic("Invalid seed");
-
-    dst.init(seed);
-
-    dst.log.info("Initialized with seed {x}", .{seed});
-}
-
 pub fn early_init() linksection(r.init) void {
     com_init(com1);
     com_init(com2);
-
-    if (config.dst) {
-        dst_init();
-    }
 
     const f = amd64.cpu_features;
 

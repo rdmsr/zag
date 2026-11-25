@@ -3,6 +3,8 @@ ENTRY(loader_entry)
 
 PHDRS
 {
+    pvh PT_LOAD;
+    note PT_NOTE;
     limine_requests PT_LOAD;
     text PT_LOAD;
     rodata PT_LOAD;
@@ -12,6 +14,23 @@ PHDRS
 SECTIONS
 {
     . = 0xffffffffe0000000;
+	kernel_start_addr = .;
+
+    .pvh.text : AT(0x200000) {
+        *(.pvh.text)
+    } :pvh
+
+    .note.Xen : {
+        KEEP(*(.note.Xen))
+    } :pvh :note
+
+    .pvh.data : {
+        . = ALIGN(4096);
+        *(.pvh.data)       
+        *(.pvh.bss)
+    } :pvh
+
+    . = ALIGN(CONSTANT(MAXPAGESIZE));
 
     .limine_requests : {
         KEEP(*(.limine_requests_start))
@@ -60,6 +79,7 @@ SECTIONS
     . = ALIGN(CONSTANT(MAXPAGESIZE));
 
 	data_end_addr = .;
+	kernel_end_addr = .;
 
     /DISCARD/ : {
         *(.eh_frame*)

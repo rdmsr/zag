@@ -6,14 +6,24 @@ const std = @import("std");
 const Entry = r.BootInfo.MemMap.Entry;
 const stack_size = 1024 * 16; // should be enough
 
+extern const kernel_image_start: u8;
+extern const kernel_image_end: u8;
+
+pub fn kernel_image() []const u8 {
+    const len = @intFromPtr(&kernel_image_end) -
+        @intFromPtr(&kernel_image_start);
+    return @as([*]const u8, @ptrCast(&kernel_image_start))[0..len];
+}
+
 extern fn jump_to_kernel(
     loader_info: usize,
     entry: usize,
     stack_top: usize,
 ) void;
 
-fn load_kernel(kernel: *anyopaque) usize {
-    const elf: *std.elf.Elf64.Ehdr = @ptrCast(@alignCast(kernel));
+fn load_kernel() usize {
+    const kernel = kernel_image().ptr;
+    const elf: *const std.elf.Elf64.Ehdr = @ptrCast(@alignCast(kernel));
     const ident = elf.ident;
 
     if (!std.mem.eql(u8, ident.magic[0..4], std.elf.MAGIC)) {
@@ -95,11 +105,11 @@ fn cmp_entries(ctx: void, a: Entry, b: Entry) bool {
     return a.base < b.base;
 }
 
-pub fn loader_main(kernel: *anyopaque) void {
+pub fn loader_main() void {
     r.arch.init();
     r.mem.init();
-    const entry = load_kernel(kernel);
 
+    const entry = load_kernel();
     const stack = r.mem.alloc(stack_size);
     const memmap = &r.loader_info.memory_map;
 
@@ -113,6 +123,10 @@ pub fn loader_main(kernel: *anyopaque) void {
         {},
         cmp_entries,
     );
+
+    if (r.loader_info.rsdp) |rsdp| {
+        r.loader_info.rsdp = r.mem.p2v(rsdp);
+    }
 
     jump_to_kernel(
         @intFromPtr(&r.loader_info),

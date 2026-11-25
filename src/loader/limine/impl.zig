@@ -63,11 +63,12 @@ pub export var module_request linksection(".limine_requests") =
     };
 
 var hhdm_offset: usize = 0;
-pub fn p2v(pa: usize) usize {
+
+fn p2v(pa: usize) usize {
     return hhdm_offset + pa;
 }
 
-pub fn get_image_layout() r.ImageLayout {
+fn get_image_layout() r.ImageLayout {
     const resp = kernel_request.response orelse unreachable;
 
     return .{
@@ -78,49 +79,12 @@ pub fn get_image_layout() r.ImageLayout {
 
 var cmdline: [256]u8 = undefined;
 
-fn build_mmap(module_start: usize, module_end: usize) void {
+fn build_mmap() void {
     const mmap = memmap_request.response orelse unreachable;
     const entries = mmap.entries orelse unreachable;
 
     for (0..mmap.entry_count) |i| {
         const entry = entries[i];
-
-        if (entry.type == .KernelAndModules) {
-            const end = entry.base + entry.length;
-            const reclaim_start = std.mem.alignForward(
-                usize,
-                @max(entry.base, module_start),
-                r.page_size,
-            );
-            const reclaim_end = std.mem.alignBackward(
-                usize,
-                @min(end, module_end),
-                r.page_size,
-            );
-
-            // Ensure the kernel is marked as reclaiamble, we load it ourselves
-            // anyway.
-            if (reclaim_start < reclaim_end) {
-                if (entry.base < reclaim_start) {
-                    r.mem.add_entry(
-                        entry.base,
-                        reclaim_start - entry.base,
-                        .Reserved,
-                    );
-                }
-
-                r.mem.add_entry(
-                    reclaim_start,
-                    reclaim_end - reclaim_start,
-                    .LoaderReclaimable,
-                );
-
-                if (reclaim_end < end) {
-                    r.mem.add_entry(reclaim_end, end - reclaim_end, .Reserved);
-                }
-                continue;
-            }
-        }
 
         r.mem.add_entry(entry.base, entry.length, switch (entry.type) {
             .AcpiNvs => .AcpiNvs,
@@ -133,43 +97,15 @@ fn build_mmap(module_start: usize, module_end: usize) void {
 }
 
 export fn loader_entry() callconv(.c) void {
-    var kernel: ?*anyopaque = null;
-    var module_start: usize = 0;
-    var module_end: usize = 0;
-
     const hhdm_resp = hhdm_request.response orelse unreachable;
     hhdm_offset = hhdm_resp.offset;
 
-    if (module_request.response) |resp| {
-        const limine_mods = resp.modules orelse unreachable;
-        const modules = limine_mods[0..resp.module_count];
+    r.impl = .{
+        .get_image_layout = get_image_layout,
+        .p2v = p2v,
+    };
 
-        for (modules) |mod| {
-            if (std.mem.eql(u8, std.mem.span(mod.string), "kernel")) {
-                kernel = mod.address;
-                const phys = @intFromPtr(mod.address) - hhdm_offset;
-                const size: usize = @intCast(mod.size);
-
-                module_start = std.mem.alignForward(
-                    usize,
-                    phys,
-                    r.page_size,
-                );
-                module_end = std.mem.alignBackward(
-                    usize,
-                    phys + size,
-                    r.page_size,
-                );
-                break;
-            }
-        }
-    }
-
-    if (kernel == null) {
-        @panic("loader: kernel not found");
-    }
-
-    build_mmap(module_start, module_end);
+    build_mmap();
 
     if (framebuffer_request.response) |resp| {
         const fb = resp.framebuffers[0];
@@ -184,7 +120,7 @@ export fn loader_entry() callconv(.c) void {
     }
 
     if (rsdp_request.response) |resp| {
-        r.loader_info.rsdp = @intFromPtr(resp.rsdp);
+        r.loader_info.rsdp = @intFromPtr(resp.rsdp) - hhdm_offset;
     }
 
     if (cmdline_request.response) |resp| {
@@ -201,5 +137,5 @@ export fn loader_entry() callconv(.c) void {
         }
     }
 
-    r.main(kernel orelse unreachable);
+    r.main();
 }

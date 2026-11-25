@@ -3,7 +3,7 @@ set -uo pipefail
 
 QEMU="${QEMU:-qemu-system-x86_64}"
 QEMU_BASE_ARGS=(
-	-cdrom zig-out/myos.iso 
+	-kernel zig-out/bin/zag-image-x86_64-*
 )
 
 TIMEOUT="${TIMEOUT:-20}"      
@@ -49,7 +49,7 @@ run_seed() {
         -m 256M \
         -display none \
         -icount shift=7,sleep=off \
-        -fw_cfg "name=opt/dst-seed,string=$seed" \
+        -append "test=fireworks seed=$seed" \
         -seed "$seed" \
         "${EXTRA_ARGS[@]}" \
         >"$current_log" 2>&1 &

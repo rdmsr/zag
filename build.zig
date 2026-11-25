@@ -80,7 +80,6 @@ pub fn build(b: *std.Build) void {
     });
 
     const kernel = addKernel(b, plat, optimize, config_module, rtl_module, arch_module);
-
     const loader = addLoader(b, plat, optimize, config_module, rtl_module, arch_module);
 
     kernel.root_module.addImport("boot_info", boot_info_module);
@@ -88,6 +87,13 @@ pub fn build(b: *std.Build) void {
 
     kernel.root_module.addImport("firmware", firmware_module);
     kernel.root_module.addImport("dst", dst_module);
+
+    // This ends up being faster than @embedFile with an anonymous import.
+    const kernel_copy = b.addWriteFiles();
+    _ = kernel_copy.addCopyFile(kernel.getEmittedBin(), "kernel.bin");
+
+    loader.root_module.addAssemblyFile(b.path("src/loader/kernel_blob.s"));
+    loader.root_module.addIncludePath(kernel_copy.getDirectory());
 
     b.default_step.dependOn(&b.addInstallArtifact(loader, .{}).step);
     b.default_step.dependOn(&b.addInstallArtifact(kernel, .{}).step);
@@ -237,7 +243,10 @@ fn addKernel(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
 fn addLoader(b: *std.Build, plat: config.Platform, optimize: std.builtin.OptimizeMode, config_module: *std.Build.Module, rtl: *std.Build.Module, arch_module: *std.Build.Module) *std.Build.Step.Compile {
     const target = b.resolveTargetQuery(targetQueryForPlatform(plat));
 
-    const name = b.fmt("loader-{s}-{s}", .{ @tagName(plat.arch), @tagName(plat.bootloader) });
+    const name = b.fmt(
+        "zag-image-{s}-{s}",
+        .{ @tagName(plat.arch), @tagName(plat.bootloader) },
+    );
 
     const loader = b.addExecutable(.{
         .name = name,
@@ -252,7 +261,10 @@ fn addLoader(b: *std.Build, plat: config.Platform, optimize: std.builtin.Optimiz
     loader.root_module.addImport("config", config_module);
     loader.root_module.addImport("rtl", rtl);
     switch (plat.arch) {
-        .x86_64 => loader.root_module.addAssemblyFile(b.path("src/loader/amd64/jump.s")),
+        .x86_64 => {
+            loader.root_module.addAssemblyFile(b.path("src/loader/amd64/jump.s"));
+            loader.root_module.addAssemblyFile(b.path("src/loader/amd64/pvh_entry.S"));
+        },
         .riscv64 => loader.root_module.addAssemblyFile(b.path("src/loader/riscv64/jump.s")),
         else => {},
     }

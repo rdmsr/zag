@@ -66,7 +66,7 @@ pub const std_options = std.Options{
 
 comptime {
     _ = @import("limine/impl.zig");
-    //_ = &limine;
+    _ = @import("pvh/impl.zig");
 }
 
 pub const page_size = 0x1000;
@@ -76,14 +76,9 @@ pub const ImageLayout = struct {
     virtual_base: usize,
 };
 
-pub const ImplSchema = struct {
-    pub fn get_image_layout() ImageLayout {
-        return undefined;
-    }
-
-    pub fn p2v(pa: usize) usize {
-        return pa;
-    }
+pub const ImplVtable = struct {
+    get_image_layout: *const fn () ImageLayout,
+    p2v: *const fn (pa: usize) usize,
 };
 
 pub const arch = switch (config.arch) {
@@ -92,14 +87,7 @@ pub const arch = switch (config.arch) {
     else => @compileError("unsupported architecture"),
 };
 
-pub const impl = switch (config.bootloader) {
-    .limine => @import("limine/impl.zig"),
-};
-
-comptime {
-    _ = rtl.assert_interface(impl, ImplSchema);
-}
-
+pub var impl: ImplVtable = undefined;
 pub const main = @import("main.zig").loader_main;
 
 pub const mem = @import("mem.zig");

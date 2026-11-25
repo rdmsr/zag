@@ -25,6 +25,13 @@ pub fn init() void {
     exp.string.init();
 
     if (config.dst) {
+        const cline = r.boot_info.cmdline orelse @panic("dst: no cmdline");
+        const seed = rtl.cmdline.get_number(u64, cline, "seed") catch {
+            @panic("dst: no seed specified");
+        };
+
+        dst.init(seed);
+        dst.log.info("initialized with seed {x}", .{seed});
         dst.enable();
     }
 
