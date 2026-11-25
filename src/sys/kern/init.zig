@@ -66,7 +66,7 @@ fn init() linksection(r.init) void {
         r.boot_info.cmdline = cmdline[0..cline.len];
     }
 
-    std.log.info("Zag for {s} ({s}), cmdline is \"{?s}\"", .{
+    std.log.info("ZNU for {s} ({s}), cmdline is \"{?s}\"", .{
         pl.name,
         arch.name,
         r.boot_info.cmdline,
