@@ -18,8 +18,34 @@ pub const kalloc = private.kalloc;
 
 // 16 TB of maximum physical memory.
 // This should be fine on consumer hardware for at least a decade :^)
-pub const Pfn = u32;
-pub const null_pfn: Pfn = std.math.maxInt(Pfn);
+pub const Pfn = enum(u32) {
+    invalid = std.math.maxInt(u32),
+    _,
+
+    pub inline fn to_paddr(pfn: Pfn) r.PAddr {
+        return pfn.as_usize() << 12;
+    }
+
+    pub inline fn from_paddr(addr: r.PAddr) Pfn {
+        return @fromBackingInt(@intCast(addr >> 12));
+    }
+
+    pub inline fn to_page(pfn: Pfn) *Page {
+        return @ptrFromInt(private.impl.pfndb_base +
+            (pfn.as_usize() * @sizeOf(Page)));
+    }
+
+    pub inline fn from_page(page: *const Page) Pfn {
+        const diff: usize = (@intFromPtr(page) - private.impl.pfndb_base) /
+            @sizeOf(Page);
+
+        return @fromBackingInt(@intCast(diff));
+    }
+
+    pub inline fn as_usize(pfn: Pfn) usize {
+        return @as(usize, @backingInt(pfn));
+    }
+};
 
 pub const PageFree = extern struct {
     link: rtl.List.Entry,
@@ -31,6 +57,18 @@ pub const Page = extern union {
     alloced: extern struct {
         slab_data: zone.Page,
     },
+
+    pub inline fn to_pfn(page: *const Page) Pfn {
+        return Pfn.from_page(page);
+    }
+
+    pub inline fn to_paddr(page: *const Page) r.PAddr {
+        return page.to_pfn().to_paddr();
+    }
+
+    pub inline fn from_paddr(paddr: r.PAddr) *Page {
+        return Pfn.from_paddr(paddr).to_page();
+    }
 };
 
 comptime {
@@ -60,24 +98,6 @@ pub const WaitPolicy = enum {
 };
 
 pub const Error = error{ OutOfMemory, InvalidAddress, InvalidSize };
-
-pub inline fn page_to_pfn(addr: usize) Pfn {
-    return @intCast(addr >> 12);
-}
-
-pub inline fn pfn_to_page(pfn: Pfn) usize {
-    return @as(usize, pfn) << 12;
-}
-
-pub inline fn struct_page_to_pfn(page: *Page) Pfn {
-    return @intCast((@intFromPtr(page) - private.impl.pfndb_base) /
-        @sizeOf(Page));
-}
-
-pub inline fn pfn_to_struct_page(pfn: Pfn) *Page {
-    return @ptrFromInt(private.impl.pfndb_base +
-        (@as(usize, pfn) * @sizeOf(Page)));
-}
 
 pub var pfndb: [*]Page = @ptrFromInt(private.impl.pfndb_base);
 

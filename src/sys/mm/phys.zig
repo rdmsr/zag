@@ -83,9 +83,7 @@ pub fn alloc() r.PAddr {
 
     const elem: *mm.PageFree = @fieldParentPtr("link", head);
     const page: *mm.Page = @ptrCast(elem);
-    const phys_addr = mm.pfn_to_page(mm.struct_page_to_pfn(page));
-
-    return phys_addr;
+    return page.to_paddr();
 }
 
 pub fn alloc_opts(opts: struct { policy: mm.WaitPolicy }) ?r.PAddr {
@@ -113,14 +111,13 @@ pub fn alloc_opts(opts: struct { policy: mm.WaitPolicy }) ?r.PAddr {
 
     const elem: *mm.PageFree = @fieldParentPtr("link", head);
     const page: *mm.Page = @ptrCast(elem);
-    const phys_addr = mm.pfn_to_page(mm.struct_page_to_pfn(page));
 
-    return phys_addr;
+    return page.to_paddr();
 }
 
 /// Free a page of physical memory.
 pub fn free(addr: r.PAddr) void {
-    const page: *mm.Page = mm.pfn_to_struct_page(mm.page_to_pfn(addr));
+    const page = mm.Page.from_paddr(addr);
 
     const ipl = list_lock.acquire();
     _ = usable_memory.fetchAdd(mm.page_size, .monotonic);
@@ -229,9 +226,7 @@ pub fn init() linksection(r.init) void {
         const npages = entry.size / mm.page_size;
 
         for (0..npages) |j| {
-            const page: *mm.Page = mm.pfn_to_struct_page(
-                mm.page_to_pfn(entry.base + (j * mm.page_size)),
-            );
+            const page = mm.Page.from_paddr(entry.base + (j * mm.page_size));
 
             free_list.insert_head(&page.free.link);
             free_pages += 1;

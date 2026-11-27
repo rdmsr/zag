@@ -10,8 +10,9 @@ pub const tlb = @import("tlb.zig");
 pub const balance = @import("balance.zig");
 pub const kalloc = @import("kalloc.zig");
 
-const ke = @import("root").ke;
-const ex = @import("root").ex;
+const r = @import("root");
+const ke = r.ke;
+const ex = r.ex;
 
 pub const Space = struct {
     pmap: PMap,
@@ -20,8 +21,8 @@ pub const Space = struct {
 };
 
 pub const PfnList = extern struct {
-    head: u32,
-    tail: u32,
+    head: r.mm.Pfn,
+    tail: r.mm.Pfn,
 };
 
 pub const PMapLevel = struct {

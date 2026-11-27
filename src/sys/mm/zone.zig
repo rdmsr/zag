@@ -1024,7 +1024,7 @@ pub const Zone = struct {
             );
             const phys = mmp.kernel_space.pmap.query(page_va) orelse
                 unreachable;
-            const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys));
+            const page = mm.Page.from_paddr(phys);
             break :blk page.alloced.slab_data.slab;
         } else blk: {
             break :blk @ptrFromInt(
@@ -1561,7 +1561,7 @@ pub const Zone = struct {
             const phys_page = mmp.kernel_space.pmap.query(
                 @intFromPtr(buf) + i * mm.page_size,
             ) orelse @panic("Could not query page");
-            const page = mm.pfn_to_struct_page(mm.page_to_pfn(phys_page));
+            const page = mm.Page.from_paddr(phys_page);
             page.alloced.slab_data.slab = ret;
         }
 

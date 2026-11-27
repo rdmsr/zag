@@ -38,8 +38,8 @@ fn reclaim_state(obj: *anyopaque, _: ?*anyopaque) void {
 
     // Free the physical pages
     mm.phys.free_batch(
-        mm.pfn_to_struct_page(pfn_list.head),
-        mm.pfn_to_struct_page(pfn_list.tail),
+        pfn_list.head.to_page(),
+        pfn_list.tail.to_page(),
         npages,
     );
 
@@ -96,8 +96,8 @@ pub fn reclaim_range(space: *mm.Space, va: r.VAddr, size: usize) void {
 
         // Free the physical pages
         mm.phys.free_batch(
-            mm.pfn_to_struct_page(list.head),
-            mm.pfn_to_struct_page(list.tail),
+            list.head.to_page(),
+            list.tail.to_page(),
             size / mm.page_size,
         );
         return;

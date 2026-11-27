@@ -154,8 +154,7 @@ pub const PMap = struct {
                 if (level == 0) {
                     // Found a present entry, add it to the list.
                     const addr = pte.address();
-                    const pfn = mm.page_to_pfn(addr);
-                    const page = mm.pfn_to_struct_page(pfn);
+                    const page = mm.Page.from_paddr(addr);
                     list.insert_tail(&page.free.link);
 
                     c.tables[level][idx] = std.mem.zeroes(mmp.impl.Pte);
@@ -177,8 +176,8 @@ pub const PMap = struct {
         const tail: *mm.Page = @ptrCast(tail_free);
 
         return .{
-            .head = mm.struct_page_to_pfn(head),
-            .tail = mm.struct_page_to_pfn(tail),
+            .head = head.to_pfn(),
+            .tail = tail.to_pfn(),
         };
     }
 
