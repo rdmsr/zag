@@ -16,7 +16,8 @@ pub fn virt_to_phys(vaddr: r.VAddr) usize {
 
 pub const hhdm_base = 0xffff800000000000;
 pub const kernel_heap_base = 0xffffc00000000000;
-pub const pfndb_base = 0xffffd00000000000;
+pub const pfndb_base = 0xffffc10200000000;
+pub const vpndb_base = 0xffffc10000000000;
 
 pub const levels = [_]mmp.PMapLevel{
     .{ .shift = 12, .mask = 0x1ff, .leaf = true }, // 4K

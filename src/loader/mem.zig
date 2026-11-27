@@ -1,4 +1,6 @@
 //! Loader memory management.
+const rtl = @import("rtl");
+
 const r = @import("root");
 const config = @import("config");
 const pmap = @import("pmap.zig");
@@ -17,6 +19,8 @@ const MemoryLayout = struct {
     kernel_heap: usize,
     /// PFNDB
     pfndb: usize,
+    /// VPNDB
+    vpndb: usize,
     /// Loader heap data (per-CPU data, stacks, etc.)
     loader_heap: usize,
 };
@@ -299,18 +303,24 @@ pub fn init() void {
     const higher_half_start: usize = @bitCast(-@as(isize, 1) << (vbits - 1));
     const kernel_heap = higher_half_start + (@as(usize, 1) << (vbits - 2));
 
-    // Then, we give 16 TiB to the kernel heap.
-    const pfndb = kernel_heap + 0x100000000000;
+    // Then, we give 1 TiB to the kernel heap.
+    const vpndb = kernel_heap + rtl.tib(1);
+
+    // Then, we give 8 GiB to the VPNDB (32 bytes per VPE max).
+    const pfndb = vpndb + rtl.gib(8);
 
     // Finally, the pfndb has 1 TiB.
-    const loader_heap = pfndb + 0x10000000000;
+    const loader_heap = pfndb + rtl.tib(1);
 
     memory_layout = .{
         .direct_map = higher_half_start,
         .kernel_heap = kernel_heap,
         .pfndb = pfndb,
+        .vpndb = vpndb,
         .loader_heap = loader_heap,
     };
+
+    std.log.info("{any}", .{memory_layout});
 
     bump_base = loader_heap;
 
