@@ -53,7 +53,7 @@ fn wait_for_pages(old_ipl: ke.Ipl) void {
 
         list_lock.release(ipl);
 
-        _ = ke.wait.wait_one(&free_page_event.hdr, "wait_for_pages", .{}) catch
+        _ = ke.wait_one(&free_page_event.hdr, "wait_for_pages", .{}) catch
             unreachable;
 
         ipl = list_lock.acquire();

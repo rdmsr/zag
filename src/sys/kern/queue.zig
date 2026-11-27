@@ -80,7 +80,7 @@ pub const Queue = struct {
         self.hdr.lock.release(ipl);
 
         // Wait until the queue has something for us.
-        _ = ke.wait.wait_one(&self.hdr, "queue", .{
+        _ = ke.wait_one(&self.hdr, "queue", .{
             .timeout = timeout,
         }) catch |err| {
             if (err == error.Timeout) {

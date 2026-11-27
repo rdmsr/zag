@@ -281,7 +281,7 @@ pub fn enqueue(item: *WorkItem) void {
 
 fn pool_manager(_: ?*anyopaque) void {
     while (true) {
-        _ = ke.wait.wait_one(
+        _ = ke.wait_one(
             &pool_manager_event.hdr,
             "work_pool_manager",
             .{},

@@ -62,10 +62,11 @@ fn balance_manager(_: ?*anyopaque) void {
             timer.set(rtl.Duration.ms(balance_interval.load()), .{});
         }
 
-        which = ke.wait.wait_any(&.{
-            &mmp.phys.low_memory_event.hdr,
-            &timer.hdr,
-        }, "balmgr", .{}) catch
+        which = ke.wait_any(
+            &.{ &mmp.phys.low_memory_event.hdr, &timer.hdr },
+            "balmgr",
+            .{},
+        ) catch
             unreachable;
 
         if (which == low_memory) {

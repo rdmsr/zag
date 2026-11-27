@@ -35,7 +35,14 @@ pub const Process = p.process.Process;
 pub const panic = p.panic.panic;
 pub const init = p.init;
 
-pub const abort = p.abort;
+// Keep these flat as they are already clear enough.
+// Them being in another file is an implementation detail.
+pub const try_read = p.abort.try_read;
+pub const try_write = p.abort.try_write;
+pub const try_copy = p.abort.try_copy;
+
+pub const wait_one = p.wait.wait_one;
+pub const wait_any = p.wait.wait_any;
 
 pub const ipl = struct {
     pub const raise = p.ipl.raise;
@@ -73,11 +80,6 @@ pub const sched = struct {
     pub const yield = p.sched.yield;
     pub const pin = p.sched.pin;
     pub const pin_on = p.sched.pin_on;
-};
-
-pub const wait = struct {
-    pub const wait_one = p.wait.wait_one;
-    pub const wait_any = p.wait.wait_any;
 };
 
 pub const log = struct {

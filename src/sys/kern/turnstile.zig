@@ -518,7 +518,7 @@ pub fn block(
 
     // Now block on the event.
     _ = ke.ipl.lower(.Passive);
-    _ = ke.wait.wait_one(&waiter.event.hdr, "turnstile:waiter", .{}) catch
+    _ = ke.wait_one(&waiter.event.hdr, "turnstile:waiter", .{}) catch
         unreachable;
 }
 

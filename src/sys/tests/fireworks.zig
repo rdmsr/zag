@@ -114,7 +114,7 @@ fn get_random_color() u32 {
 }
 
 fn sleep(ms: usize, continuation: ?ke.Continuation) void {
-    _ = ke.wait.wait_any(&.{}, "sleep", .{
+    _ = ke.wait_any(&.{}, "sleep", .{
         .timeout = rtl.Duration.ms(ms),
         .continuation = continuation,
     }) catch {
