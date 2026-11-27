@@ -8,7 +8,7 @@ const ke = r.ke;
 const kep = ke.private;
 const mm = r.mm;
 
-pub const kernel_thread_stack_size = r.kib(16);
+pub const kernel_thread_stack_size = rtl.kib(16);
 
 var reaper_item: ex.WorkItem = undefined;
 var stack_item: ex.WorkItem = undefined;

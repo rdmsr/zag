@@ -74,7 +74,7 @@ fn delay_for_cpu() struct { rtl.Duration, rtl.Duration } {
     return .{ init_delay, sipi_delay };
 }
 
-const ap_stack_size = r.kib(16);
+const ap_stack_size = rtl.kib(16);
 
 pub fn init() linksection(r.init) void {
     const trampoline_start = @intFromPtr(&AP_TRAMPOLINE_START);

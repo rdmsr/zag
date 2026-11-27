@@ -146,7 +146,7 @@ const magazine_size = ke.TunableType(u8, 8, "mm.zone.mag_size");
 /// How much extra memory CPUs are allowed to keep around.
 const max_local_memory = ke.TunableType(
     u32,
-    @intCast(r.kib(128)),
+    @intCast(rtl.kib(128)),
     "mm.zone.max_local_mem",
 );
 
@@ -170,7 +170,7 @@ const excess_magazines = ke.TunableType(u32, 8, "mm.zone.excess_mags");
 /// Excess memory in a zone before magazines are trimmed.
 const excess_memory = ke.TunableType(
     u32,
-    @intCast(r.kib(16)),
+    @intCast(rtl.kib(16)),
     "mm.zone.excess_mem",
 );
 

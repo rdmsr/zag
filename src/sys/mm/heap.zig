@@ -1,5 +1,7 @@
 //! Kernel heap.
 
+const rtl = @import("rtl");
+
 const r = @import("root");
 const ke = r.ke;
 const mm = r.mm;
@@ -11,7 +13,7 @@ pub fn init() void {
         .{
             .span = .{
                 .addr = mmp.impl.kernel_heap_base,
-                .size = r.tib(16),
+                .size = rtl.tib(1),
             },
             .quantum = mm.page_size,
             .cache_max_quanta = 8,

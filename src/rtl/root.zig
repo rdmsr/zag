@@ -175,3 +175,23 @@ pub fn assert(condition: bool, comptime msg: []const u8, args: anytype) void {
 test {
     std.testing.refAllDecls(@This());
 }
+
+/// Return N kibibytes in bytes.
+pub fn kib(comptime N: u32) usize {
+    return N * 1024;
+}
+
+/// Return N mebibytes in bytes.
+pub fn mib(comptime N: u32) usize {
+    return kib(N) * 1024;
+}
+
+/// Return N gibibytes in bytes.
+pub fn gib(comptime N: u32) usize {
+    return mib(N) * 1024;
+}
+
+/// Return N tibibytes in bytes.
+pub fn tib(comptime N: u32) usize {
+    return gib(N) * 1024;
+}

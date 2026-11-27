@@ -35,26 +35,6 @@ pub inline fn mmio_write(comptime T: type, addr: usize, value: T) void {
     @as(*volatile T, @ptrFromInt(addr)).* = value;
 }
 
-/// Return N kibibytes in bytes.
-pub fn kib(comptime N: u32) usize {
-    return N * 1024;
-}
-
-/// Return N mebibytes in bytes.
-pub fn mib(comptime N: u32) usize {
-    return kib(N) * 1024;
-}
-
-/// Return N gibibytes in bytes.
-pub fn gib(comptime N: u32) usize {
-    return mib(N) * 1024;
-}
-
-/// Return N tibibytes in bytes.
-pub fn tib(comptime N: u32) usize {
-    return gib(N) * 1024;
-}
-
 pub const std_options = std.Options{
     .logFn = ke.log.log,
 };
