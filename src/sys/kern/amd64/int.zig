@@ -49,10 +49,30 @@ const exception_msg = [32][]const u8{
 
 fn ignore(_: std.Io.Writer.Error!void) void {}
 
-export fn isr_handler_main(frame: *const amd64.IrqFrame) callconv(.c) void {
+extern const kep_abortables_end: u8;
+extern const kep_abortables_start: u8;
+extern const amd64_abort_return: u8;
+
+export fn isr_handler_main(frame: *amd64.IrqFrame) callconv(.c) void {
     const ipl = ke.ipl.set_hardware(.Device);
 
-    if (frame.intno < 32) {
+    var good = false;
+
+    if (frame.intno == 0xE) {
+        // Page fault. Check if this was an abortable instruction.
+        const start = @intFromPtr(&kep_abortables_start);
+        const end = @intFromPtr(&kep_abortables_end);
+        const ret_addr = @intFromPtr(&amd64_abort_return);
+
+        if (frame.rip >= start and frame.rip <= end) {
+            // Twiddle the RIP so that it points to the return function, which
+            // will return a non-zero status.
+            frame.rip = ret_addr;
+            good = true;
+        }
+    }
+
+    if (frame.intno < 32 and !good) {
         std.log.err("Unhandled exception: 0x{x} ({s}), err=0x{x}, pc=0x{x}", .{
             frame.intno,
             exception_msg[frame.intno],

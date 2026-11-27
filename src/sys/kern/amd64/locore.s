@@ -232,3 +232,52 @@ asm_thread_entry:
     mov %r13, %rsi
     jmp thread_entry
     ud2
+
+.global kep_abortables_start
+kep_abortables_start:
+
+/* int amd64_try_readN(const uN *src, uN *dst) */
+.macro TRY_READ name, reg
+.global \name
+\name:
+    mov (%rdi), %\reg
+    mov %\reg, (%rsi)
+    xor %eax, %eax
+    ret
+.endm
+
+/* int amd64_try_writeN(uN *dst, uN val) */
+.macro TRY_WRITE name, reg
+.global \name
+\name:
+    mov %\reg, (%rdi)
+    xor %eax, %eax
+    ret
+.endm
+
+TRY_READ amd64_try_read8, al
+TRY_READ amd64_try_read16, ax
+TRY_READ amd64_try_read32, eax
+TRY_READ amd64_try_read64, rax
+
+TRY_WRITE amd64_try_write8, sil
+TRY_WRITE amd64_try_write16, si
+TRY_WRITE amd64_try_write32, esi
+TRY_WRITE amd64_try_write64, rsi
+
+/* int amd64_try_copy(void *dst, const void *src, size_t len) */
+.global amd64_try_copy
+amd64_try_copy:
+    mov %rdx, %rcx
+    rep movsb
+    xor %eax, %eax
+    ret
+
+.global kep_abortables_end
+kep_abortables_end:
+
+/* Returns 1 on error */
+.global amd64_abort_return
+amd64_abort_return:
+    mov $1, %eax
+    ret

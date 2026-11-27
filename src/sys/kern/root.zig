@@ -35,6 +35,8 @@ pub const Process = p.process.Process;
 pub const panic = p.panic.panic;
 pub const init = p.init;
 
+pub const abort = p.abort;
+
 pub const ipl = struct {
     pub const raise = p.ipl.raise;
     pub const lower = p.ipl.lower;

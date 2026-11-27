@@ -257,3 +257,55 @@ pub inline fn current_thread() ?*ke.Thread {
 pub inline fn activate_aspace(root: r.PAddr) void {
     amd64.write_cr(3, root);
 }
+
+extern fn amd64_try_read8(src: *const anyopaque, dst: *u8) callconv(.c) bool;
+extern fn amd64_try_read16(src: *const anyopaque, dst: *u16) callconv(.c) bool;
+extern fn amd64_try_read32(src: *const anyopaque, dst: *u32) callconv(.c) bool;
+extern fn amd64_try_read64(src: *const anyopaque, dst: *u64) callconv(.c) bool;
+
+extern fn amd64_try_write8(dst: *anyopaque, val: u8) callconv(.c) bool;
+extern fn amd64_try_write16(dst: *anyopaque, val: u16) callconv(.c) bool;
+extern fn amd64_try_write32(dst: *anyopaque, val: u32) callconv(.c) bool;
+extern fn amd64_try_write64(dst: *anyopaque, val: u64) callconv(.c) bool;
+
+pub inline fn try_read8(src: *const anyopaque, dst: *u8) bool {
+    return amd64_try_read8(src, dst);
+}
+
+pub inline fn try_read16(src: *const anyopaque, dst: *u16) bool {
+    return amd64_try_read16(src, dst);
+}
+
+pub inline fn try_read32(src: *const anyopaque, dst: *u32) bool {
+    return amd64_try_read32(src, dst);
+}
+
+pub inline fn try_read64(src: *const anyopaque, dst: *u64) bool {
+    return amd64_try_read64(src, dst);
+}
+
+pub inline fn try_write8(dst: *anyopaque, val: u8) bool {
+    return amd64_try_write8(dst, val);
+}
+
+pub inline fn try_write16(dst: *anyopaque, val: u16) bool {
+    return amd64_try_write16(dst, val);
+}
+
+pub inline fn try_write32(dst: *anyopaque, val: u32) bool {
+    return amd64_try_write32(dst, val);
+}
+
+pub inline fn try_write64(dst: *anyopaque, val: u64) bool {
+    return amd64_try_write64(dst, val);
+}
+
+extern fn amd64_try_copy(
+    dst: *anyopaque,
+    src: *const anyopaque,
+    n: usize,
+) callconv(.c) bool;
+
+pub inline fn try_copy(dst: *anyopaque, src: *const anyopaque, n: usize) bool {
+    return amd64_try_copy(dst, src, n);
+}

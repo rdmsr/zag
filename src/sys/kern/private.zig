@@ -86,6 +86,79 @@ const ImplSchema = struct {
     pub fn current_thread() ?*ke.Thread {
         unreachable;
     }
+
+    /// Try to read a u8 from `src` into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_read8(src: *const anyopaque, dst: *u8) bool {
+        _ = src;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to read a u16 from `src` into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_read16(src: *const anyopaque, dst: *u16) bool {
+        _ = src;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to read a u32 from `src` into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_read32(src: *const anyopaque, dst: *u32) bool {
+        _ = src;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to read a u64 from `src` into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_read64(src: *const anyopaque, dst: *u64) bool {
+        _ = src;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to write a u8 into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_write8(dst: *anyopaque, val: u8) bool {
+        _ = val;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to write a u16 into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_write16(dst: *anyopaque, val: u16) bool {
+        _ = val;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to write a u32 into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_write32(dst: *anyopaque, val: u32) bool {
+        _ = val;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to write a u64 into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_write64(dst: *anyopaque, val: u64) bool {
+        _ = val;
+        _ = dst;
+        unreachable;
+    }
+
+    /// Try to copy N bytes from `src` into `dst`.
+    /// Returns true if a fault occurred.
+    pub fn try_copy(dst: *anyopaque, src: *const anyopaque, n: usize) bool {
+        _ = src;
+        _ = dst;
+        _ = n;
+        unreachable;
+    }
 };
 
 comptime {
@@ -116,3 +189,4 @@ pub const smr = @import("smr.zig");
 pub const ipi = @import("ipi.zig");
 pub const warden = @import("warden.zig");
 pub const process = @import("process.zig");
+pub const abort = @import("abort.zig");
