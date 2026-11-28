@@ -54,8 +54,7 @@
 //! A slab represents a contiguous chunk of memory holding a fixed number of
 //! constructed objects, and is allocated via the kernel's virtual memory
 //! allocator. Allocation in the slab is managed by a bitmap and slab metadata
-//! is retrieved through the `mm.Page` structure representing the page
-//! of allocated memory.
+//! is retrieved through the VPNDB, which has metadata for every heap VA page.
 //!
 //! Hardening features
 //! ------------------
@@ -417,10 +416,6 @@ const Cpu = struct {
     free_rounds: u8,
     /// Local per-CPU depot.
     depot: Depot,
-};
-
-pub const Page = extern struct {
-    slab: *Slab,
 };
 
 fn fill_with_poison(ptr: *anyopaque, len: usize, pattern: u32) void {
@@ -1016,21 +1011,18 @@ pub const Zone = struct {
         }
 
         // Find the slab for the buffer.
+        const page_va = std.mem.alignBackward(
+            usize,
+            @intFromPtr(obj),
+            mm.page_size,
+        );
+
         const slab: *Slab = if (self.obj_size > small_slab_size) blk: {
-            const page_va = std.mem.alignBackward(
-                usize,
-                @intFromPtr(obj),
-                mm.page_size,
-            );
-            const phys = mmp.kernel_space.pmap.query(page_va) orelse
-                unreachable;
-            const page = mm.Page.from_paddr(phys);
-            break :blk page.alloced.slab_data.slab;
-        } else blk: {
-            break :blk @ptrFromInt(
-                std.mem.alignBackward(usize, @intFromPtr(obj), mm.page_size),
-            );
-        };
+            const vpe = mmp.Vpn.from_vaddr(page_va).to_vpe();
+            const tag, const desc = vpe.get();
+            assert(tag == .Slab);
+            break :blk @ptrCast(@alignCast(desc));
+        } else @ptrFromInt(page_va);
 
         const was_full = slab.refcount == slab.capacity;
         const idx = (@intFromPtr(obj) - slab.base) / self.chunk_size;
@@ -1558,11 +1550,9 @@ pub const Zone = struct {
         ret.alloc_rr = 0;
 
         for (0..self.slab_size / mm.page_size) |i| {
-            const phys_page = mmp.kernel_space.pmap.query(
-                @intFromPtr(buf) + i * mm.page_size,
-            ) orelse @panic("Could not query page");
-            const page = mm.Page.from_paddr(phys_page);
-            page.alloced.slab_data.slab = ret;
+            const va = @intFromPtr(buf) + i * mm.page_size;
+            const vpe = mmp.Vpn.from_vaddr(va).to_vpe();
+            vpe.set(.Slab, ret);
         }
 
         for (0..capacity) |i| {

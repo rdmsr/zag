@@ -54,10 +54,6 @@ pub const PageFree = extern struct {
 pub const Page = extern union {
     free: PageFree,
 
-    alloced: extern struct {
-        slab_data: zone.Page,
-    },
-
     pub inline fn to_pfn(page: *const Page) Pfn {
         return Pfn.from_page(page);
     }

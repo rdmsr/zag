@@ -9,10 +9,14 @@ pub const PMap = pmap.PMap;
 pub const tlb = @import("tlb.zig");
 pub const balance = @import("balance.zig");
 pub const kalloc = @import("kalloc.zig");
+pub const vpndb = @import("vpndb.zig");
 
 const r = @import("root");
 const ke = r.ke;
 const ex = r.ex;
+
+pub const Vpe = vpndb.Vpe;
+pub const Vpn = vpndb.Vpn;
 
 pub const Space = struct {
     pmap: PMap,

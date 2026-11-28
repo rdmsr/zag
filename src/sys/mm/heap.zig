@@ -54,6 +54,8 @@ pub fn alloc(size: usize, policy: mm.WaitPolicy) mm.Error!*anyopaque {
         );
     }
 
+    try mmp.vpndb.create_vpes(addr, npages, policy);
+
     mmp.kernel_space.lock.release();
     return @ptrFromInt(addr);
 }
